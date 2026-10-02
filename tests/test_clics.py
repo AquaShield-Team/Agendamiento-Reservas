@@ -2492,9 +2492,10 @@ class TestCosco(ConRegistro):
         self.assertEqual(c.exception.buscaba,
                          "una sugerencia de Chile para el puerto de carga «Lirquen» (en la fila, «CORONEL»)")
         # La celda se normaliza antes del mapa: la parte antes de la primera coma, en mayúsculas, sin tildes, con todo
-        # signo como separador, y sin «CHILE» al final (_cosco_puerto_de_la_celda, CICLO-inicio-de-todas.md). Hasta
-        # c4df3ab, «CORONEL, CHILE» y «Lirquén» no se traducían: se buscaban «CORONEL» y «Lirquén», y la de tilde no calza
-        # con las sugerencias de COSCO, que no la llevan.
+        # signo como separador, y sin el país al final, «CHILE» o «CL» (_cosco_puerto_de_la_celda,
+        # CICLO-inicio-de-todas.md; «CL», decisión de Marcelo, encargo 46: hasta ahí COSCO buscaba «CORONEL CL»).
+        # Hasta c4df3ab, «CORONEL, CHILE» y «Lirquén» no se traducían: se buscaban «CORONEL» y «Lirquén», y la de tilde
+        # no calza con las sugerencias de COSCO, que no la llevan.
         m = MarcoOrigen(self.mod, {"Lirquen": "LIRQUEN, CHILE", "PUERTO ALFA": "PUERTO ALFA, CHILE",
                                    "San Vicente": "SAN VICENTE, CHILE"})
         for celda, buscado in (("CORONEL, CHILE", "Lirquen"), ("Coronel (Chile)", "Lirquen"), ("CORONEL - CHILE", "Lirquen"),
@@ -2503,14 +2504,17 @@ class TestCosco(ConRegistro):
                                ("LIRQUÉN, CHILE", "Lirquen"), ("Concepción", "Lirquen"), ("CORONEL, BIOBIO, CHILE", "Lirquen"),
                                ("San  Vicente,  Chile", "San Vicente"), ("San Vicente, Talcahuano", "San Vicente"),
                                ("Puerto Álfa, Chile", "PUERTO ALFA"), ("puerto alfa", "PUERTO ALFA"),
-                               ("CORONEL CHILE CHILE", "Lirquen")):
+                               ("CORONEL CHILE CHILE", "Lirquen"), ("CORONEL CL", "Lirquen"),
+                               ("Coronel - CL", "Lirquen"), ("CORONEL CHILE CL", "Lirquen"),
+                               ("CORONEL CL CHILE", "Lirquen"), ("Puerto Álfa (CL)", "PUERTO ALFA")):
             with self.subTest(celda=celda):
                 self.assertEqual(f(m, {"pol": celda}, reg), buscado)
         # «CHILE» sale solo al final: en medio del nombre es parte del puerto. Y la celda con solo el país da vacío:
         # desde la revisión final del encargo 42, _puerto_de_carga la corta igual (no mira «CHILE» en ninguna
         # posición), así que el contrato de la normalización se prueba aquí, directo.
         self.assertEqual(self.mod._cosco_puerto_de_la_celda("PUERTO CHILE ALFA"), "PUERTO CHILE ALFA")
-        for celda in ("CHILE", "Chile (Chile)", "CHILE CHILE"):
+        self.assertEqual(self.mod._cosco_puerto_de_la_celda("PUERTO CL ALFA"), "PUERTO CL ALFA")
+        for celda in ("CHILE", "Chile (Chile)", "CHILE CHILE", "CL", "CL CL", "Chile - CL"):
             with self.subTest(normalizada=celda):
                 self.assertEqual(self.mod._cosco_puerto_de_la_celda(celda), "")
         # Con el puerto normalizado distinto de la celda, el motivo trae también la celda.
@@ -4285,7 +4289,7 @@ console.log(JSON.stringify(r));
                                     "transito": transito}
         # Las dos primeras salen el mismo día: la que tarda menos. La tercera tarda menos, pero sale después.
         r, clics, log = self.elegir([[s(0, 9, "44 days 6 hours"), s(1, 9, "40 days 2 hours"), s(2, 16, "30 days")]])
-        self.assertEqual((r, clics), (("nave: MAERSK NAVE", None, None), [("book", 1)]))
+        self.assertEqual((r, clics), (("nave: MAERSK NAVE", None, None, None), [("book", 1)]))
         nueve = datetime.date.today() + datetime.timedelta(days=9)
         self.assertIn(f"2 salidas de la nave salen el {nueve:%d-%m-%Y}: elijo la de menor tiempo de tránsito, 40 días y 2 "
                       "horas (las otras: 44 días y 6 horas)", log)
@@ -4305,7 +4309,7 @@ console.log(JSON.stringify(r));
                     "igual": igual}
         otra = dict(s(0, 2, 0), calza=False)
         r, clics, log = self.elegir([[otra, s(1, 9, 1), s(2, 9, 1), s(3, 9, 1), s(4, 16, 4)]])
-        self.assertEqual((r, clics), (("nave: MAERSK NAVE", None, None), [("book", 1)]))
+        self.assertEqual((r, clics), (("nave: MAERSK NAVE", None, None, None), [("book", 1)]))
         self.assertIn("4 tarjetas de la nave; 2 son copias de otra, con el HTML entero idéntico: cuentan como una sola "
                       "salida (quedan 2)", log)
         # Una del mismo día que difiere en algo: el empate sigue, entre las que quedan, como antes.
@@ -4318,10 +4322,10 @@ console.log(JSON.stringify(r));
         self.assertEqual((r[0], [x["i"] for x in r[1][0]], r[1][1], clics), ("", [0, 1], "empate", []))
         self.assertNotIn("copia", log)
 
-    def elegir(self, lotes, reserva=None, prueba=False, cargando=0, botones=1):
+    def elegir(self, lotes, reserva=None, prueba=False, cargando=0, botones=1, altura=400):
         self.n_sailing = getattr(self, "n_sailing", 0) + 1
         reg, vistas, log = self.corrida(f"sailing_{self.n_sailing}")
-        pagina = PaginaSailing(self.mod, lotes, cargando, botones)
+        pagina = PaginaSailing(self.mod, lotes, cargando, botones, altura)
         self.pagina_sailing = pagina
         entorno = {k: v for k, v in os.environ.items() if k != "AQUASHIELD_PRIMERA_NAVE"}
         if prueba:
@@ -4337,18 +4341,18 @@ console.log(JSON.stringify(r));
                                                       "book": book}
         # La próxima que se puede reservar: las de mañana no traen «Book» (como en la corrida medida) y no cuentan.
         r, clics, log = self.elegir([[s(0, True, 1, 0), s(1, True, 1, 0), s(2, False, 3), s(3, True, 16), s(4, True, 9)]])
-        self.assertEqual((r, clics), (("nave: MAERSK NAVE", None, None), [("book", 4)]))
+        self.assertEqual((r, clics), (("nave: MAERSK NAVE", None, None, None), [("book", 4)]))
         self.assertIn("2 salida(s) de la nave sin un solo «Book»: el portal no deja reservarlas", log)
         # Empate: no pulsa nada y devuelve las salidas, el motivo y la fecha desde la que eligió.
         r, clics, _ = self.elegir([[s(0, True, 9), s(1, True, 9), s(2, True, 16)]])
         self.assertEqual((r[0], [x["i"] for x in r[1][0]], r[1][1:], r[2], clics), ("", [0, 1, 2], ("empate", hoy), None, []))
         # No está: pide más salidas y la encuentra en el lote siguiente.
         r, clics, _ = self.elegir([[s(0, False, 2)], [s(0, False, 2), s(1, True, 12)]])
-        self.assertEqual((r, clics), (("nave: MAERSK NAVE", None, None), [("mas",), ("book", 1)]))
+        self.assertEqual((r, clics), (("nave: MAERSK NAVE", None, None, None), [("mas",), ("book", 1)]))
         # No está en ningún lote: dice hasta qué fecha buscó (CICLO-ampliar-la-busqueda.md).
         r, clics, log = self.elegir([[s(0, False, 2), s(1, False, 9)]])
         dos, nueve = (hoy + datetime.timedelta(days=n) for n in (2, 9))
-        self.assertEqual((r, clics), (("", None, ([dos, nueve], self.mod.NO_AMPLIA_MAS)), []))
+        self.assertEqual((r, clics), (("", None, ([dos, nueve], self.mod.NO_AMPLIA_MAS), None), []))
         self.assertIn(f"nave 'MAERSK NAVE': no se encontró en itinerarios disponibles; busqué hasta el {nueve:%d-%m-%Y}, "
                       "la última salida que mostró el portal, y el portal no deja ampliar más la búsqueda", log)
         # Con viaje en la fila: solo las de ese viaje, si hay alguna.
@@ -4374,10 +4378,10 @@ console.log(JSON.stringify(r));
         # Antes de cortar amplía la búsqueda, y si el viaje aparece, lo elige (decisión de Marcelo,
         # CICLO-ampliar-la-busqueda.md). Hasta 4cae528 cortaba con el primer lote: aquí, sin pedir más.
         r, clics, _ = self.elegir([[s(0, 3), s(1, 10)], [s(0, 3), s(1, 10), s(2, 17, viaje=True)]], reserva)
-        self.assertEqual((r, clics), (("nave: MAERSK NAVE", None, None), [("mas",), ("book", 2)]))
+        self.assertEqual((r, clics), (("nave: MAERSK NAVE", None, None, None), [("mas",), ("book", 2)]))
         # Con una que lo trae, esa, aunque salga después.
         r, clics, _ = self.elegir([[s(0, 3), s(1, 10, viaje=True)]], reserva)
-        self.assertEqual((r, clics), (("nave: MAERSK NAVE", None, None), [("book", 1)]))
+        self.assertEqual((r, clics), (("nave: MAERSK NAVE", None, None, None), [("book", 1)]))
         # Sin la nave, su camino de siempre: pide más salidas y no la encuentra.
         r, clics, log = self.elegir([[s(0, 3, calza=False)]], reserva)
         self.assertEqual((r[:2], r[2][1], clics), (("", None), self.mod.NO_AMPLIA_MAS, []))
@@ -4430,7 +4434,7 @@ console.log(JSON.stringify(r));
         espera = self.mod.MK_ESPERA_MAS
         # Mientras carga, espera; después lo pulsa y encuentra la nave.
         r, clics, _ = self.elegir([[s(0, False, 2)], [s(0, False, 2), s(1, True, 12)]], cargando=3)
-        self.assertEqual((r, clics), (("nave: MAERSK NAVE", None, None), [("mas",), ("book", 1)]))
+        self.assertEqual((r, clics), (("nave: MAERSK NAVE", None, None, None), [("mas",), ("book", 1)]))
         self.assertEqual(self.pagina_sailing.consultas, 4)
         # Si no se habilita, no lo pulsa, y dice por qué.
         r, clics, _ = self.elegir([[s(0, False, 2)], [s(0, False, 2), s(1, True, 12)]], cargando=10 ** 6)
@@ -4486,7 +4490,7 @@ console.log(JSON.stringify(r));
         f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_maersk")
         eleccion = [n for n in ast.walk(f) if isinstance(n, ast.Assign) and "_mk_elegir_nave" in ast.unparse(n.value)]
         self.assertEqual([ast.unparse(n) for n in eleccion],
-                         ["modo, sin_una, sin_nave = _mk_elegir_nave(page, reserva, reg)"])
+                         ["modo, sin_una, sin_nave, sin_book = _mk_elegir_nave(page, reserva, reg)"])
         sin_una = [n for n in ast.walk(f) if isinstance(n, ast.If) and ast.unparse(n.test) == "sin_una"]
         self.assertEqual([ast.unparse(s) for s in sin_una[0].body],
                          ["return _mk_sin_una_salida(page, reg, reserva, *sin_una)"])
@@ -4494,6 +4498,76 @@ console.log(JSON.stringify(r));
         self.assertLess(eleccion[0].lineno, sin_una[0].lineno)
         self.assertLess(sin_una[0].lineno, corte[0].lineno)
         self.assertLess(corte[0].lineno, linea_guarda(f))
+
+    # --- El «Book» de la salida elegida (decisión de Marcelo, encargo 46, CICLO-maersk-pulsa-el-book.md) ---
+    def test_trae_la_tarjeta_a_la_vista_antes_de_mirar_el_book(self):
+        # Antes de mirar a qué altura está el «Book» de la salida elegida, trae su tarjeta a la vista
+        # (scroll_into_view_if_needed, sin clics ni teclas), y la regla de los 100 px se aplica después. Hasta el
+        # encargo 46 la miraba antes: el 2026-10-01 la tarjeta elegida había quedado arriba de la ventana, y no la
+        # pulsó (encargo 45, CICLO-login-msc-y-maersk.md). Un solo clic (el mc-button y su botón interno son el mismo
+        # control), y si no lo pulsa, dice por qué.
+        f = self.mod._mk_pulsar_book
+        pagina = PaginaBook()
+        self.assertEqual(f(pagina, 7), "")
+        self.assertEqual(pagina.eventos, [("trae", 7), ("altura", 7), ("trae el book", 7), ("clic", 7)])
+        regla = ("con su tarjeta a la vista, el «Book» quedó a {} px del borde de arriba de la ventana, y lo pulso "
+                 "solo si está a más de 100 px")
+        for despues in (80, 100):                 # la regla se mantiene: a 100 px o menos, no lo pulsa
+            with self.subTest(despues=despues):
+                pagina = PaginaBook(despues=despues)
+                self.assertEqual(f(pagina, 7), regla.format(despues))
+                self.assertEqual(pagina.eventos, [("trae", 7), ("altura", 7), ("altura", 7)])
+        pagina = PaginaBook(falla_clic=True)
+        self.assertEqual(f(pagina, 7), "el clic en el «Book» falló (RuntimeError: otro elemento recibiría el clic)")
+        self.assertEqual(pagina.eventos, [("trae", 7), ("altura", 7), ("trae el book", 7), ("clic", 7)])
+        pagina = PaginaBook(falla_traer=True)
+        self.assertEqual(f(pagina, 7), "no pude traer su tarjeta a la vista (RuntimeError: la tarjeta se movió)")
+        self.assertEqual(pagina.eventos, [("trae", 7)])
+        pagina = PaginaBook(sin_book=True)
+        self.assertEqual(f(pagina, 7), "su tarjeta no trae un «Book» a la vista")
+        self.assertEqual(pagina.eventos, [("trae", 7)])
+
+    def test_el_book_que_no_pudo_pulsar_vuelve_con_la_salida_y_el_porque(self):
+        # Si la nave está y no pudo pulsar el «Book» de la salida elegida, _mk_elegir_nave lo devuelve aparte, con la
+        # salida y por qué (decisión de Marcelo, encargo 46). Hasta ahí devolvía lo mismo que la nave que no está, y
+        # reservar_maersk seguía por _mk_sin_nave: «no está en los itinerarios».
+        s = {"i": 0, "calza": True, "viaje": False, "salida": self.salida(9), "book": 1}
+        r, clics, log = self.elegir([[s]], altura=50)
+        por_que = ("con su tarjeta a la vista, el «Book» quedó a 50 px del borde de arriba de la ventana, y lo "
+                   "pulso solo si está a más de 100 px")
+        self.assertEqual((r, clics), (("", None, None, (s, por_que)), []))
+        # Lo último que anota (la carpeta de la corrida es la de las otras pruebas de elegir, y su log.txt se suma).
+        self.assertTrue(log.rstrip("\n").endswith(f"    no pude pulsar el «Book» de la salida elegida: {por_que}"))
+
+    def test_el_book_sin_pulsar_queda_no_enviada_con_evidencia(self):
+        # La nave estaba y no se pudo pulsar su «Book»: NO ENVIADA, con la evidencia de «Select sailing»
+        # (mk_f<fila>_detenida: la captura de la ventana y su HTML) y un motivo que dice que la nave estaba (decisión de
+        # Marcelo, encargo 46). Hasta ahí, REVISAR con «la nave … no está en los itinerarios».
+        reg, vistas, log = self.corrida("mk_book_sin_pulsar")
+        pagina = PaginaMaersk()
+        salida = {"i": 7, "salida": "18 Oct 2026, 08:30"}
+        por_que = "el clic en el «Book» falló (RuntimeError: otro elemento recibiría el clic)"
+        r = self.mod._mk_book_sin_pulsar(pagina, reg, {"fila": 30, "nave": "MAERSK NAVE"}, salida, por_que)
+        detalle = ("MAERSK: la nave 'MAERSK NAVE' estaba en «Select sailing» y elegí su salida (sale 18 Oct 2026, "
+                   f"08:30), pero no pude pulsar su «Book»: {por_que}. No pulsé nada más, y la reserva no se envió")
+        self.assertEqual(r, ("NO ENVIADA", detalle))
+        self.assertEqual(pagina.capturas, [("mk_f30_detenida.png", False)])
+        self.assertTrue((self.sb / "mk_book_sin_pulsar" / "mk_f30_detenida.html").exists())
+        for donde in (log.read_text(encoding="utf-8"), "\n".join(vistas)):
+            self.assertIn(f"· ✗ NO ENVIADA · {detalle}", donde)
+            self.assertNotIn("no está en los itinerarios", donde)
+
+    def test_el_book_sin_pulsar_no_sigue_por_la_nave_que_no_esta(self):
+        # En reservar_maersk, el «Book» que no se pudo pulsar tiene su rama (_mk_book_sin_pulsar), antes de la de la
+        # nave que no está y antes de la guarda (decisión de Marcelo, encargo 46).
+        tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
+        f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_maersk")
+        [rama] = [n for n in ast.walk(f) if isinstance(n, ast.If) and ast.unparse(n.test) == "sin_book"]
+        self.assertEqual([ast.unparse(s) for s in rama.body],
+                         ["return _mk_book_sin_pulsar(page, reg, reserva, *sin_book)"])
+        [corte] = [n for n in ast.walk(f) if isinstance(n, ast.If) and ast.unparse(n.test) == "not modo"]
+        self.assertLess(rama.lineno, corte.lineno)
+        self.assertLess(rama.lineno, linea_guarda(f))
 
 
 class BotonRetiro:
@@ -6316,6 +6390,68 @@ console.log(JSON.stringify(r));
             self.assertNotIn(forma, ast.get_source_segment(fuente, f))
 
 
+class LocBook:
+    """Localizador falso de PaginaBook: la lista de tarjetas, la tarjeta i, o el «Book» de esa tarjeta (el mc-button y
+    su botón interno: dos elementos, el mismo control). Cada acción queda anotada en la página."""
+
+    def __init__(self, pagina, que, i=None):
+        self.pagina, self.que, self.i = pagina, que, i
+
+    def nth(self, j):
+        return LocBook(self.pagina, "tarjeta", j) if self.que == "tarjetas" else self
+
+    def scroll_into_view_if_needed(self, **k):
+        if self.que != "tarjeta":
+            self.pagina.eventos.append(("trae el book", self.i))
+            return
+        self.pagina.eventos.append(("trae", self.i))
+        if self.pagina.falla_traer:
+            raise RuntimeError("la tarjeta se movió")
+        self.pagina.a_la_vista = True
+
+    def locator(self, sel):
+        if self.que != "tarjeta" or sel != "mc-button, button, [role='button']":
+            raise AssertionError(f"localizador inesperado: {sel}")
+        return LocBook(self.pagina, "book", self.i)
+
+    def filter(self, has_text=None):
+        if not (has_text and has_text.search(" Book ") and not has_text.search("Booking")):
+            raise AssertionError("filtro inesperado")
+        return self
+
+    def count(self):
+        return 0 if self.pagina.sin_book else 2
+
+    def is_visible(self):
+        return True
+
+    def bounding_box(self):
+        self.pagina.eventos.append(("altura", self.i))
+        return {"y": self.pagina.despues if self.pagina.a_la_vista else self.pagina.antes}
+
+    def click(self, **k):
+        self.pagina.eventos.append(("clic", self.i))
+        if self.pagina.falla_clic:
+            raise RuntimeError("otro elemento recibiría el clic")
+
+
+class PaginaBook(soporte.PaginaFalsa):
+    """«Select sailing» falsa para _mk_pulsar_book (encargo 46): el «Book» de cada tarjeta está a 'antes' px del
+    borde de arriba de la ventana hasta que su tarjeta se trae a la vista, y a 'despues' desde ahí. Con 'falla_traer',
+    traer la tarjeta falla; con 'falla_clic', el clic; con 'sin_book', la tarjeta no trae «Book». 'eventos' anota cada
+    acción, en orden."""
+
+    def __init__(self, antes=-300, despues=600, falla_traer=False, falla_clic=False, sin_book=False):
+        super().__init__()
+        self.antes, self.despues, self.falla_traer, self.falla_clic = antes, despues, falla_traer, falla_clic
+        self.sin_book, self.a_la_vista, self.eventos = sin_book, False, []
+
+    def locator(self, sel):
+        if sel != "mc-card.new-sailings-card":
+            raise AssertionError(f"localizador inesperado: {sel}")
+        return LocBook(self, "tarjetas")
+
+
 class LocSailing:
     """Localizador falso de «Select sailing» de MAERSK: la lista de tarjetas, el «Book» de una tarjeta (el mc-button y su
     botón interno: dos elementos, el mismo control), «Search more sailing options» o la espera de los precios."""
@@ -6351,7 +6487,7 @@ class LocSailing:
         return self.pagina.habilitado()
 
     def bounding_box(self):
-        return {"y": 400}
+        return {"y": self.pagina.altura}
 
     def scroll_into_view_if_needed(self, **k):
         pass
@@ -6368,12 +6504,12 @@ class PaginaSailing(soporte.PaginaFalsa):
     """«Select sailing» falsa: cada lote es lo que responde _JS_MK_SALIDAS (con «igual», solo si la lectura lo pide,
     como el JavaScript; encargo 43); «Search more sailing options» está a la vista mientras quede otro lote ('botones'
     dice cuántos), sigue deshabilitado las primeras 'cargando' consultas y pasa al lote siguiente. Otro JavaScript
-    hace caer la prueba."""
+    hace caer la prueba. El «Book» de cada tarjeta está a 'altura' px del borde de arriba de la ventana (encargo 46)."""
 
-    def __init__(self, mod, lotes, cargando=0, botones=1):
+    def __init__(self, mod, lotes, cargando=0, botones=1, altura=400):
         super().__init__(texto=self.responder)
         self.mod, self.lotes, self.clics = mod, list(lotes), []
-        self.cargando, self.botones, self.consultas = cargando, botones, 0
+        self.cargando, self.botones, self.consultas, self.altura = cargando, botones, 0, altura
 
     def habilitado(self):
         self.consultas += 1

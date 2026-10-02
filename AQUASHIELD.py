@@ -270,7 +270,8 @@ def _evidencia_antes_de_la_guarda(page, reg, nombre, momento="en la guarda", com
     - _cma_ajustes_reefer la deja con el panel Reefer abierto y tras guardarlo: «cma_f<fila>_reefer_panel» y
       «cma_f<fila>_reefer_guardado», con la captura de la ventana (la de página completa dispara un «resize»).
     - Donde la reserva se detiene antes de la guarda, con la captura de la ventana (CICLO-cola-nueve-items.md):
-      «mk_f<fila>_detenida» (MAERSK sin nave y, desde el encargo 40, sin salidas, en SIN-CUPO),
+      «mk_f<fila>_detenida» (MAERSK sin nave y, desde el encargo 40, sin salidas, en SIN-CUPO; desde el 46, también con
+      la nave y sin poder pulsar su «Book»),
       «one_f<fila>_detenida» (ONE sin Review Booking) y
       «cosco_f<fila>_itinerarios» (COSCO con más de un itinerario para la nave).
     - reservar_hyundai la deja justo antes de escribir el Remark: «hmm_f<fila>_remark», con la captura de la ventana
@@ -2234,20 +2235,22 @@ def _sugerencia_que_elegir(celda):
 
 # El país del puerto de carga, como puede venir en su celda: su nombre y su sigla. «CL» cuenta como el país, igual que
 # «CHILE» (decisión de Marcelo, encargo 43, CICLO-maersk-elige-exacto.md): hasta ahí, «CL» solo pasaba como un puerto,
-# COSCO buscaba «CL» y, en CMA, calzaba con el código de cualquier puerto de Chile.
+# COSCO buscaba «CL» y, en CMA, calzaba con el código de cualquier puerto de Chile. Desde el encargo 46, COSCO también
+# lo quita al final del puerto, como «CHILE» (_cosco_puerto_de_la_celda; decisión de Marcelo,
+# CICLO-maersk-pulsa-el-book.md).
 PAIS_DEL_PUERTO = ("CHILE", "CL")
 
 
 def _puerto_de_carga(celda):
     """El puerto de carga de una celda, como lo busca COSCO (_cosco_puerto_de_la_celda: antes de la primera coma, en
-    mayúsculas, sin tildes y sin «CHILE» al final), si trae una palabra que no sea el país; si no, "". La palabra se
+    mayúsculas, sin tildes y sin el país al final), si trae una palabra que no sea el país; si no, "". La palabra se
     mide con _ciudad_de en la celda tal como viene (así «№» no la inventa al normalizarse: daría «NO») y en el puerto
     sin el país (PAIS_DEL_PUERTO: «CHILE» o «CL») en ninguna posición: «X CHILE», «CHILE X», «Chile - X», «CHILE 1»,
     «CL» o «X CL» no traen el puerto. Las letras se cuentan después de normalizar: A-Z sin tildes y números (el puerto
     de carga es de Chile). Una sola regla para _falta_en_la_fila y _cosco_puerto_de_carga (revisiones del encargo 42,
     CICLO-maersk-y-fila-sin-ruta.md: hasta ahí, «X CHILE» pasaba y COSCO buscaba «X», y después «CHILE X» pasaba y
-    «№» también; «CL», desde el encargo 43). Con otra palabra, COSCO busca lo que quedó, «CL» incluida: al final solo
-    quita «CHILE» (_cosco_puerto_de_la_celda)."""
+    «№» también; «CL», desde el encargo 43). Con otra palabra, COSCO busca lo que quedó: al final quita el país, «CHILE»
+    o, desde el encargo 46, «CL»; en medio del nombre, los dos quedan (_cosco_puerto_de_la_celda)."""
     puerto = _cosco_puerto_de_la_celda(celda)
     sin_pais = " ".join(p for p in puerto.split() if p not in PAIS_DEL_PUERTO)
     return puerto if _ciudad_de(celda) and _ciudad_de(sin_pais) else ""
@@ -5629,12 +5632,14 @@ MAPA_PUERTOS_COSCO = {
 def _cosco_puerto_de_la_celda(celda):
     """El puerto de carga de la celda, normalizado antes de MAPA_PUERTOS_COSCO (decisión de Marcelo,
     CICLO-inicio-de-todas.md): la parte antes de la primera coma, en mayúsculas y sin tildes (_norm_ctrl), con todo lo
-    que no es letra ni número como separador, y sin «CHILE» al final, las veces que venga, que es el país: el origen de
-    COSCO siempre es de Chile (preferir_chile). Así «CORONEL, CHILE», «Coronel (Chile)», «CORONEL - CHILE» y
-    «CORONEL–CHILE» dan «CORONEL», y «Lirquén», «LIRQUEN». Vacío si la celda no trae el puerto («», «, CHILE», «CHILE»):
-    buscar el texto vacío, o solo el país, calzaría con cualquier sugerencia de Chile."""
+    que no es letra ni número como separador, y sin el país al final (PAIS_DEL_PUERTO: «CHILE» o «CL»), las veces que
+    venga: el origen de COSCO siempre es de Chile (preferir_chile). Así «CORONEL, CHILE», «Coronel (Chile)», «CORONEL -
+    CHILE», «CORONEL–CHILE» y «CORONEL CL» dan «CORONEL», y «Lirquén», «LIRQUEN». En medio del nombre, el país queda.
+    Vacío si la celda no trae el puerto («», «, CHILE», «CHILE», «CL»): buscar el texto vacío, o solo el país, calzaría
+    con cualquier sugerencia de Chile. «CL» se quita desde el encargo 46 (decisión de Marcelo,
+    CICLO-maersk-pulsa-el-book.md): hasta ahí, solo «CHILE», y COSCO buscaba, por ejemplo, «CORONEL CL»."""
     palabras = _re_mk.sub(r"[^0-9A-Z]+", " ", _norm_ctrl(str(celda or "").split(",")[0])).split()
-    while palabras and palabras[-1] == "CHILE":
+    while palabras and palabras[-1] in PAIS_DEL_PUERTO:
         palabras = palabras[:-1]
     return " ".join(palabras)
 
@@ -7589,11 +7594,15 @@ def _mk_base(sugerencia):
 
 
 def _mk_sugerencias(page, ciudad):
-    """Las sugerencias a la vista de MAERSK (mc-option) que traen los primeros 5 caracteres ASCII de la ciudad, con los
-    espacios de a uno (una letra con tilde o una ñ se cae): con ellas sabe _mk_ciudad que llegó la lista de lo que
-    escribió, y entre ellas elige (_mk_las_exactas). Hasta la revisión de código del encargo 43, con un espacio doble
-    entre las 5 primeras letras («SAN  ALFA») el prefijo no estaba en ninguna sugerencia."""
-    plano = " ".join(str(ciudad or "").split())
+    """Las sugerencias a la vista de MAERSK (mc-option) que traen los primeros 5 caracteres ASCII de la ciudad, sin sus
+    tildes (la Ñ como N) y con los espacios de a uno (_mk_plano): con ellas sabe _mk_ciudad que llegó la lista de lo que
+    escribió, y entre ellas elige (_mk_las_exactas). Otra letra fuera de ASCII se cae. Hasta el encargo 46, la letra con
+    tilde y la ñ también se caían: con una de ellas entre la segunda y la quinta letra, el prefijo no estaba en ninguna
+    sugerencia y la fila quedaba NO ENVIADA en ese campo (decisión de Marcelo, CICLO-maersk-pulsa-el-book.md; pregunta 2
+    del encargo 43, CICLO-maersk-elige-exacto.md). La sugerencia se mira como viene: en las 119 de las 6 listas de
+    MAERSK de logs/, ninguna trae una letra fuera de ASCII. Hasta la revisión de código del encargo 43, con un espacio
+    doble entre las 5 primeras letras («SAN  ALFA») el prefijo no estaba en ninguna sugerencia."""
+    plano = _mk_plano(ciudad)
     prefijo = "".join(ch for ch in plano if ord(ch) < 128).strip()[:5] or plano[:4]
     return page.locator("mc-option:visible").filter(has_text=_re_mk.compile(_re_mk.escape(prefijo), _re_mk.I))
 
@@ -8090,7 +8099,8 @@ def _mk_listo_para_reservar(page, cliente, reg, intentos=5):
 
 def _mk_detenida(page, reg, fila):
     """MAERSK se detuvo en «Select sailing»: deja la captura y el HTML de esa pantalla (mk_f<fila>_detenida) con el
-    mecanismo de la guarda, sin clics ni esperas."""
+    mecanismo de la guarda, sin clics ni esperas. Sin la nave, sin una sola salida, en SIN-CUPO y, desde el encargo 46,
+    con la nave y sin poder pulsar su «Book» (_mk_book_sin_pulsar)."""
     _evidencia_antes_de_la_guarda(page, reg, f"mk_f{fila}_detenida", "donde se detuvo", completa=False)
 
 
@@ -8106,6 +8116,18 @@ def _mk_sin_una_salida(page, reg, reserva, salidas, motivo, desde):
         return _no_enviada(reg, f"MAERSK: {por_que} ('{reserva['nave']}')")
     return _no_enviada(reg, f"MAERSK: no elegí salida para esa nave ('{reserva['nave']}'): {por_que}. Revisa la fila y "
                             f"elige la salida en el portal.")
+
+
+def _mk_book_sin_pulsar(page, reg, reserva, salida, por_que):
+    """La nave de la fila estaba en «Select sailing» y el programa eligió su salida, pero no pudo pulsar su «Book»
+    (_mk_pulsar_book dice por qué): la reserva queda NO ENVIADA, con la evidencia de esa pantalla (_mk_detenida: la
+    captura de la ventana y su HTML) y un motivo que dice que la nave estaba (decisión de Marcelo, encargo 46,
+    CICLO-maersk-pulsa-el-book.md). Hasta ahí seguía por la rama de la nave que no está (_mk_sin_nave): el 2026-10-01
+    quedó REVISAR con «la nave … no está en los itinerarios», y estaba (encargo 45, CICLO-login-msc-y-maersk.md)."""
+    _mk_detenida(page, reg, reserva["fila"])
+    return _no_enviada(reg, f"MAERSK: la nave '{reserva['nave']}' estaba en «Select sailing» y elegí su salida (sale "
+                            f"{salida.get('salida')}), pero no pude pulsar su «Book»: {por_que}. No pulsé nada más, y "
+                            f"la reserva no se envió")
 
 
 def _mk_sin_nave(page, reg, reserva, det, busqueda=None):
@@ -9500,12 +9522,15 @@ def reservar_maersk(page, reserva, creds, reg, on_pausa=None):
     # Hasta el encargo 39 había aquí una rama para «indefinido», que _mk_desenlace_sailing nunca devuelve.
 
     # Selección de nave (Select sailing): leer y elegir
-    modo, sin_una, sin_nave = _mk_elegir_nave(page, reserva, reg)
+    modo, sin_una, sin_nave, sin_book = _mk_elegir_nave(page, reserva, reg)
     reg.captura(page, f"mk_f{f}_5_nave", full=True)
     if os.environ.get("AQUASHIELD_DESCUBRIR"):
         _guardar_html(page, "maersk_sailing.html", reg)
     if sin_una:
         return _mk_sin_una_salida(page, reg, reserva, *sin_una)
+    # La nave estaba y no se pudo pulsar su «Book»: NO ENVIADA, con su propio motivo (decisión de Marcelo, encargo 46).
+    if sin_book:
+        return _mk_book_sin_pulsar(page, reg, reserva, *sin_book)
     if not modo:
         return _mk_sin_nave(page, reg, reserva, det, sin_nave)
 
@@ -9784,19 +9809,37 @@ def _mk_transito(salida):
 
 def _mk_pulsar_book(page, i):
     """Pulsa el «Book» de la salida i (su mc-card.new-sailings-card) como lo hacía hasta 16d3583 la búsqueda por
-    jerarquía: el primer botón «Book» visible de esa tarjeta, debajo del encabezado de la página. El mc-button y su
-    botón interno son el mismo control. Devuelve si pulsó."""
-    b = page.locator("mc-card.new-sailings-card").nth(i).locator("mc-button, button, [role='button']").filter(
+    jerarquía: el primer botón «Book» visible de esa tarjeta, a más de 100 px del borde de arriba de la ventana. El
+    mc-button y su botón interno son el mismo control: un solo clic. Antes de mirar esa altura trae la tarjeta a la
+    vista (scroll_into_view_if_needed, sin clics ni teclas), y la regla de los 100 px se aplica después (decisión de
+    Marcelo, encargo 46, CICLO-maersk-pulsa-el-book.md). Hasta el encargo 46 la miraba antes: el 2026-10-01, la salida
+    elegida, la primera de 3 tarjetas idénticas, había quedado arriba de la ventana, y no la pulsó (encargo 45,
+    CICLO-login-msc-y-maersk.md). Devuelve "" si lo pulsó; si no, por qué, para el motivo (_mk_book_sin_pulsar)."""
+    tarjeta = page.locator("mc-card.new-sailings-card").nth(i)
+    try:
+        tarjeta.scroll_into_view_if_needed(timeout=3000)
+    except Exception as e:
+        return f"no pude traer su tarjeta a la vista ({_texto_error(e)})"
+    b = tarjeta.locator("mc-button, button, [role='button']").filter(
         has_text=_re_mk.compile(r"^\s*Book\s*$", _re_mk.I))
+    altura = None
     for j in range(b.count()):
         btn = b.nth(j)
         if btn.is_visible():
             box = btn.bounding_box()
             if box and box['y'] > 100:
-                btn.scroll_into_view_if_needed(timeout=3000)
-                btn.click(timeout=4000)
-                return True
-    return False
+                try:
+                    btn.scroll_into_view_if_needed(timeout=3000)
+                    btn.click(timeout=4000)
+                except Exception as e:
+                    return f"el clic en el «Book» falló ({_texto_error(e)})"
+                return ""
+            if box and altura is None:
+                altura = round(box['y'])
+    if altura is not None:
+        return (f"con su tarjeta a la vista, el «Book» quedó a {altura} px del borde de arriba de la ventana, y lo "
+                f"pulso solo si está a más de 100 px")
+    return "su tarjeta no trae un «Book» a la vista"
 
 
 # Cuánto espera MAERSK, en segundos, a que «Search more sailing options» se habilite (mientras carga, el portal lo
@@ -9885,14 +9928,18 @@ def _mk_elegir_nave(page, reserva, reg):
     """En «Select sailing», entre las salidas de la nave de la fila que el portal deja reservar (si la fila trae viaje,
     las de ese viaje), la próxima desde hoy o desde el día de carga (_desde, _proxima_salida; decisión de Marcelo,
     CICLO-proxima-salida.md). Si no está en lo cargado, pide más salidas (_mk_ampliar) hasta encontrarla o hasta que el
-    portal no deje ampliar más (decisión de Marcelo, CICLO-ampliar-la-busqueda.md). Devuelve (modo, sin_una, sin_nave):
-    - (etiqueta, None, None) si la eligió y pulsó su «Book»; ("", None, None) si no pudo pulsarlo;
-    - ("", (salidas, motivo, desde), None) si no queda una sola; con motivo «no-reservable» si el viaje de la fila
+    portal no deje ampliar más (decisión de Marcelo, CICLO-ampliar-la-busqueda.md). Devuelve (modo, sin_una, sin_nave,
+    sin_book):
+    - (etiqueta, None, None, None) si la eligió y pulsó su «Book»;
+    - ("", None, None, (salida, por_que)) si la eligió y no pudo pulsar su «Book» (_mk_pulsar_book dice por qué): la
+      nave estaba (decisión de Marcelo, encargo 46, CICLO-maersk-pulsa-el-book.md). Hasta ahí devolvía lo mismo que la
+      nave que no está, y el motivo decía «no está en los itinerarios» (el 2026-10-01, encargo 45);
+    - ("", (salidas, motivo, desde), None, None) si no queda una sola; con motivo «no-reservable» si el viaje de la fila
       está, pero solo en salidas sin «Book» (no amplía: ese viaje es una sola salida), o si, sin viaje en la fila y
       ampliada la búsqueda, la nave está solo en salidas sin «Book»; con «sin-viaje» si, ampliada la búsqueda, la nave
       está y ninguna de sus salidas trae el viaje de la fila (decisión de Marcelo, CICLO-cierre-de-frenos.md);
-    - ("", None, (fechas, por_que)) si la nave no apareció: las fechas de salida de todo lo que cargó y por qué dejó de
-      ampliar, para _hasta_donde_busque.
+    - ("", None, (fechas, por_que), None) si la nave no apareció: las fechas de salida de todo lo que cargó y por qué
+      dejó de ampliar, para _hasta_donde_busque.
     Hasta 4cae528 pedía más salidas solo hasta 3 veces, esperando 7 s, y no decía hasta dónde buscó: el 2026-09-25 se
     rindió con el botón todavía cargando. También cortaba por el viaje con el primer lote, y la salida pedida sin «Book»
     quedaba REVISAR como una nave que no está. Hasta 4948e16, sin el viaje de la fila elegía entre todas las de la nave.
@@ -9932,17 +9979,18 @@ def _mk_elegir_nave(page, reserva, reg):
         if cand:
             elegida, motivo = _proxima_salida(_mk_salidas(cand), desde, _mk_transito)
             if elegida is None:
-                return "", (cand, motivo, desde), None
+                return "", (cand, motivo, desde), None, None
             if len(cand) > 1:
                 reg.info(f"{len(cand)} salidas calzan con '{nave_solicitada}'; elijo la próxima desde el {desde:%d-%m-%Y}")
                 _anotar_desempate(reg, _mk_salidas(cand), desde, _mk_transito)
-            if _mk_pulsar_book(page, elegida["i"]):
+            sin_pulsar = _mk_pulsar_book(page, elegida["i"])
+            if not sin_pulsar:
                 reg.info(f"nave seleccionada: {nave_solicitada}, sale {elegida.get('salida')}")
-                return f"nave: {nave_solicitada}", None, None
-            reg.info("no pude pulsar el «Book» de la salida elegida")
-            return "", None, None
+                return f"nave: {nave_solicitada}", None, None, None
+            reg.info(f"no pude pulsar el «Book» de la salida elegida: {sin_pulsar}")
+            return "", None, None, (elegida, sin_pulsar)
         if viaje_solicitado and pedidas:
-            return "", (pedidas, "no-reservable", desde), None
+            return "", (pedidas, "no-reservable", desde), None, None
         if ampliadas >= AMPLIAR_MAX:
             por_que = f"ya amplié la búsqueda {AMPLIAR_MAX} veces, el tope"
             break
@@ -9954,11 +10002,11 @@ def _mk_elegir_nave(page, reserva, reg):
     if de_la_nave:
         # El motivo de la NO ENVIADA no dice que la búsqueda se cortó: queda en log.txt (revisión del encargo 32).
         reg.info(f"dejé de ampliar la búsqueda: {por_que}")
-        return "", (de_la_nave, "sin-viaje" if viaje_solicitado else "no-reservable", desde), None
+        return "", (de_la_nave, "sin-viaje" if viaje_solicitado else "no-reservable", desde), None, None
     fechas = [_mk_fecha_salida(s.get("salida")) for s in salidas]
     reg.info(f"nave '{nave_solicitada}': no se encontró en itinerarios disponibles; "
              f"{_hasta_donde_busque(fechas, por_que)}")
-    return "", None, (fechas, por_que)
+    return "", None, (fechas, por_que), None
 
 
 

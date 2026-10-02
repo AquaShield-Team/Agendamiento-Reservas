@@ -2456,14 +2456,14 @@ MUTACIONES += [
     dict(id="mk-cuenta-sin-book", pruebas=[ELIGE_MK],
          viejo='        cand = [s for s in pedidas if s.get("book") == 1]\n', nuevo="        cand = list(pedidas)\n"),
     dict(id="mk-empate-elige", pruebas=[ELIGE_MK],
-         viejo='            if elegida is None:\n                return "", (cand, motivo, desde), None\n',
+         viejo='            if elegida is None:\n                return "", (cand, motivo, desde), None, None\n',
          nuevo="            if elegida is None:\n                elegida = cand[0]\n"),
     dict(id="mk-viaje-no-filtra", pruebas=[ELIGE_MK],
          viejo='        pedidas = [s for s in de_la_nave if s.get("viaje")] if viaje_solicitado else de_la_nave\n',
          nuevo="        pedidas = de_la_nave\n"),
     dict(id="mk-pulsar-otra-tarjeta", pruebas=[ELIGE_MK],
-         viejo='    b = page.locator("mc-card.new-sailings-card").nth(i).locator(',
-         nuevo='    b = page.locator("mc-card.new-sailings-card").nth(0).locator('),
+         viejo='    tarjeta = page.locator("mc-card.new-sailings-card").nth(i)\n',
+         nuevo='    tarjeta = page.locator("mc-card.new-sailings-card").nth(0)\n'),
     dict(id="mk-sin-una-sin-evidencia", pruebas=[SIN_UNA_MK],
          viejo='    _mk_detenida(page, reg, reserva["fila"])\n    por_que = _por_que_sin_salida(motivo, _mk_salidas(salidas)',
          nuevo='    por_que = _por_que_sin_salida(motivo, _mk_salidas(salidas)'),
@@ -3335,6 +3335,8 @@ MUTACIONES += [
 # desde el puerto fijo del código (CICLO-cola-seis-items.md). ---
 K5 = "test_clics.TestCosco."
 ORIGEN = K5 + "test_puerto_de_carga_sin_sugerencia_corta"
+# Encargo 46: la línea que quita el país al final del puerto de COSCO («CHILE» o «CL», PAIS_DEL_PUERTO).
+SIN_PAIS_AL_FINAL = '    while palabras and palabras[-1] in PAIS_DEL_PUERTO:\n'
 # Desde el encargo 41, con la evidencia de la lista (CICLO-origen-y-destino.md).
 AUTO_ORIGEN = ('_cosco_autocomplete(frame, "origin ci", pol_ciudad, pol_ciudad, reg, "Origin City", '
                'preferir_chile=True,\n'
@@ -3383,15 +3385,17 @@ MUTACIONES += [
     # cortar en la coma («San Vicente, Talcahuano» no se traduciría).
     dict(id="cosco-origen-con-tildes", pruebas=[ORIGEN],
          viejo=NORMALIZA, nuevo='    palabras = _re_mk.sub(r"[^0-9A-ZÁÉÍÓÚ]+", " ", str(celda or "").split(",")[0].upper()).split()\n'),
-    dict(id="cosco-origen-con-el-pais", pruebas=[ORIGEN],
-         viejo='    while palabras and palabras[-1] == "CHILE":\n', nuevo='    while False:\n'),
-    dict(id="cosco-origen-busca-el-pais-solo", pruebas=[ORIGEN],
-         viejo='    while palabras and palabras[-1] == "CHILE":\n', nuevo='    while len(palabras) > 1 and palabras[-1] == "CHILE":\n'),
+    dict(id="cosco-origen-con-el-pais", pruebas=[ORIGEN], viejo=SIN_PAIS_AL_FINAL, nuevo='    while False:\n'),
+    dict(id="cosco-origen-busca-el-pais-solo", pruebas=[ORIGEN], viejo=SIN_PAIS_AL_FINAL,
+         nuevo='    while len(palabras) > 1 and palabras[-1] in PAIS_DEL_PUERTO:\n'),
     dict(id="cosco-origen-quita-chile-en-medio", pruebas=[ORIGEN],
-         viejo='    while palabras and palabras[-1] == "CHILE":\n        palabras = palabras[:-1]\n',
-         nuevo='    palabras = [p for p in palabras if p != "CHILE"]\n'),
-    dict(id="cosco-origen-un-solo-chile", pruebas=[ORIGEN],
-         viejo='    while palabras and palabras[-1] == "CHILE":\n', nuevo='    if palabras and palabras[-1] == "CHILE":\n'),
+         viejo=SIN_PAIS_AL_FINAL + '        palabras = palabras[:-1]\n',
+         nuevo='    palabras = [p for p in palabras if p not in PAIS_DEL_PUERTO]\n'),
+    dict(id="cosco-origen-un-solo-chile", pruebas=[ORIGEN], viejo=SIN_PAIS_AL_FINAL,
+         nuevo='    if palabras and palabras[-1] in PAIS_DEL_PUERTO:\n'),
+    # Encargo 46: al final quita solo «CHILE», como hasta ahí: «CORONEL CL» buscaría «CORONEL CL».
+    dict(id="cosco-origen-quita-solo-chile", pruebas=[ORIGEN], viejo=SIN_PAIS_AL_FINAL,
+         nuevo='    while palabras and palabras[-1] == "CHILE":\n'),
     dict(id="cosco-origen-solo-los-signos-de-norm-ctrl", pruebas=[ORIGEN],
          viejo=NORMALIZA, nuevo='    palabras = _norm_ctrl(str(celda or "").split(",")[0]).split()\n'),
     dict(id="cosco-origen-sin-coma", pruebas=[ORIGEN],
@@ -3780,7 +3784,8 @@ MUTACIONES += [
          viejo='    if motivo == "no-reservable":\n        return SALIDA_NO_RESERVABLE\n', nuevo=""),
     # La salida pedida sin «Book»: amplía como si no estuviera; sin viaje en la fila, otro motivo; o el motivo de siempre.
     dict(id="mk-no-reservable-amplia", pruebas=[MK_NO_RES],
-         viejo='        if viaje_solicitado and pedidas:\n            return "", (pedidas, "no-reservable", desde), None\n',
+         viejo=('        if viaje_solicitado and pedidas:\n'
+                '            return "", (pedidas, "no-reservable", desde), None, None\n'),
          nuevo=""),
     dict(id="mk-no-reservable-sin-viaje-otro-motivo", pruebas=[MK_NO_RES],
          viejo='"sin-viaje" if viaje_solicitado else "no-reservable"',
@@ -3792,7 +3797,8 @@ MUTACIONES += [
     dict(id="mk-viaje-corta-sin-ampliar", pruebas=[MK_VIAJE],
          viejo="        if viaje_solicitado and pedidas:\n",
          nuevo='        if viaje_solicitado and de_la_nave and not pedidas:\n'
-               '            return "", (de_la_nave, "sin-viaje", desde), None\n        if viaje_solicitado and pedidas:\n'),
+               '            return "", (de_la_nave, "sin-viaje", desde), None, None\n'
+               '        if viaje_solicitado and pedidas:\n'),
     # Cómo amplía: sin esperar a que se habilite; con dos botones; sin esperar las salidas nuevas; sin tope; sin contar;
     # buscando otro texto.
     dict(id="mk-mas-sin-esperar", pruebas=[MK_AMPLIA],
@@ -5768,6 +5774,8 @@ MUTACIONES += [
 SUG_QUIETA = SUG + "test_maersk_decide_con_la_lista_quieta"
 SUG_CAMPO = SUG + "test_maersk_lee_el_campo_como_la_regla"
 SUG_ESPACIOS = SUG + "test_maersk_escribe_y_compara_con_los_espacios_de_a_uno"
+# Desde el encargo 46, el prefijo sale de _mk_plano: sin tildes y con los espacios de a uno.
+PREFIJO_MK = "    plano = _mk_plano(ciudad)\n"
 CALZA_MK = "                        calza = _mk_plano(quedo) == _mk_plano(txt)\n"
 
 MUTACIONES += [
@@ -5782,8 +5790,8 @@ MUTACIONES += [
     dict(id="mk-campo-exacto", pruebas=[SUG_CAMPO], viejo=CALZA_MK,
          nuevo="                        calza = quedo == txt\n"),
     # El prefijo con los espacios como vienen.
-    dict(id="mk-prefijo-con-los-espacios", pruebas=[SUG_ESPACIOS],
-         viejo='    plano = " ".join(str(ciudad or "").split())\n', nuevo='    plano = str(ciudad or "")\n'),
+    dict(id="mk-prefijo-con-los-espacios", pruebas=[SUG_ESPACIOS], viejo=PREFIJO_MK,
+         nuevo='    plano = "".join(_mk_plano(ch) or ch for ch in str(ciudad or ""))\n'),
     # Lo que quedó en el campo, devuelto como la sugerencia: desde que el campo se compara como la regla pueden
     # diferir, y esta mutación, que el commit 1 quitó por equivalente, vuelve a morder.
     dict(id="mk-ruta-sin-el-campo", pruebas=[SUG_CAMPO],
@@ -5881,4 +5889,57 @@ MUTACIONES += [
          viejo='((nombres or cuenta) and modo != "--almacen")', nuevo='(cuenta or (nombres and modo != "--almacen"))'),
     dict(id="sonda-generadores-entran", archivo=SONDA, pruebas=[SC + "test_los_generadores_no_entran"],
          viejo='"*.tmp", "crear_*.py", "generar_manuales.py"]', nuevo='"*.tmp"]'),
+]
+
+# --- Encargo 46: MAERSK trae la tarjeta de la salida elegida a la vista antes de mirar la altura de su «Book», y si
+# aun así no lo pulsa, NO ENVIADA con su propio motivo; el prefijo de su lista, sin tildes
+# (CICLO-maersk-pulsa-el-book.md) ---
+BOOK_MK = MK + "test_trae_la_tarjeta_a_la_vista_antes_de_mirar_el_book"
+BOOK_VUELVE = MK + "test_el_book_que_no_pudo_pulsar_vuelve_con_la_salida_y_el_porque"
+BOOK_NO_ENVIADA = MK + "test_el_book_sin_pulsar_queda_no_enviada_con_evidencia"
+BOOK_RAMA = MK + "test_el_book_sin_pulsar_no_sigue_por_la_nave_que_no_esta"
+SUG_TILDES = SUG + "test_maersk_reconoce_la_lista_con_una_tilde_en_las_primeras_letras"
+TRAE_TARJETA = ("    try:\n        tarjeta.scroll_into_view_if_needed(timeout=3000)\n    except Exception as e:\n"
+                "        return f\"no pude traer su tarjeta a la vista ({_texto_error(e)})\"\n")
+CLIC_BOOK = ("                try:\n                    btn.scroll_into_view_if_needed(timeout=3000)\n"
+             "                    btn.click(timeout=4000)\n                except Exception as e:\n"
+             "                    return f\"el clic en el «Book» falló ({_texto_error(e)})\"\n")
+
+MUTACIONES += [
+    # Mira la altura sin traer la tarjeta, como hasta ahí; o la trae sin atrapar su falla.
+    dict(id="mk-book-sin-traer-la-tarjeta", pruebas=[BOOK_MK], viejo=TRAE_TARJETA, nuevo=""),
+    dict(id="mk-book-traer-sin-atrapar", pruebas=[BOOK_MK], viejo=TRAE_TARJETA,
+         nuevo="    tarjeta.scroll_into_view_if_needed(timeout=3000)\n"),
+    # Sin la regla de los 100 px, o con el borde incluido.
+    dict(id="mk-book-sin-la-regla", pruebas=[BOOK_MK], viejo="            if box and box['y'] > 100:\n",
+         nuevo="            if box:\n"),
+    dict(id="mk-book-regla-con-el-borde", pruebas=[BOOK_MK], viejo="            if box and box['y'] > 100:\n",
+         nuevo="            if box and box['y'] >= 100:\n"),
+    # El clic que falla: sin atraparlo, o probando el otro elemento del mismo control (un clic nuevo).
+    dict(id="mk-book-clic-sin-atrapar", pruebas=[BOOK_MK], viejo=CLIC_BOOK,
+         nuevo=("                btn.scroll_into_view_if_needed(timeout=3000)\n"
+                "                btn.click(timeout=4000)\n")),
+    dict(id="mk-book-reintenta-el-clic", pruebas=[BOOK_MK],
+         viejo='                    return f"el clic en el «Book» falló ({_texto_error(e)})"\n',
+         nuevo="                    continue\n"),
+    # _mk_elegir_nave devuelve el «Book» sin pulsar como la nave que no está, o sin decir por qué en log.txt.
+    dict(id="mk-elegir-book-como-sin-nave", pruebas=[BOOK_VUELVE],
+         viejo="            return \"\", None, None, (elegida, sin_pulsar)\n",
+         nuevo="            return \"\", None, None, None\n"),
+    dict(id="mk-elegir-book-sin-el-porque", pruebas=[BOOK_VUELVE],
+         viejo='            reg.info(f"no pude pulsar el «Book» de la salida elegida: {sin_pulsar}")\n',
+         nuevo='            reg.info("no pude pulsar el «Book» de la salida elegida")\n'),
+    # El motivo: sin la evidencia, o REVISAR.
+    dict(id="mk-book-sin-evidencia", pruebas=[BOOK_NO_ENVIADA],
+         viejo='    _mk_detenida(page, reg, reserva["fila"])\n    return _no_enviada(reg, f"MAERSK: la nave',
+         nuevo='    return _no_enviada(reg, f"MAERSK: la nave'),
+    dict(id="mk-book-revisar", pruebas=[BOOK_NO_ENVIADA, MK + "test_revisar_solo_si_la_nave_no_esta"],
+         viejo="    return _no_enviada(reg, f\"MAERSK: la nave '{reserva['nave']}' estaba en «Select sailing» y elegí",
+         nuevo="    return (\"REVISAR\", f\"MAERSK: la nave '{reserva['nave']}' estaba en «Select sailing» y elegí"),
+    # reservar_maersk sin la rama: seguiría por la de la nave que no está.
+    dict(id="mk-reserva-sigue-sin-book", pruebas=[BOOK_RAMA],
+         viejo="    if sin_book:\n        return _mk_book_sin_pulsar(page, reg, reserva, *sin_book)\n", nuevo=""),
+    # El prefijo como hasta ahí: la letra con tilde y la ñ se caen.
+    dict(id="mk-prefijo-quita-las-tildes", pruebas=[SUG_TILDES], viejo=PREFIJO_MK,
+         nuevo='    plano = " ".join(str(ciudad or "").split())\n'),
 ]

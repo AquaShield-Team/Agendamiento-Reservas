@@ -1742,6 +1742,24 @@ class TestListaDeSugerencias(ConRegistro):
         self.assertEqual(despues, [("pulsa", SUGERIDA)] + [("espera",)] * 4)
         self.assertEqual(self.mod.MK_LECTURAS_CAMPO, 5)
 
+    def test_maersk_reconoce_la_lista_con_una_tilde_en_las_primeras_letras(self):
+        # Decisión de Marcelo (encargo 46, pendiente del 43): el prefijo con que _mk_ciudad espera su lista toma la
+        # letra con tilde como la letra sin ella, y la ñ como n (_mk_plano). Hasta ahí se caían: «PEÑA ALFA» esperaba
+        # «PEA A» y «PUÉRTO ALFA», «PURTO», que ninguna sugerencia trae, y la fila quedaba NO ENVIADA en ese campo. Con
+        # la letra con tilde en la primera, la lista se reconocía igual (revisión del encargo 43). «Igual a lo escrito»
+        # sigue sin distinguir tildes, y lo escrito en el campo, con ellas.
+        for celda, opcion in (("PEÑA ALFA, PAIS", "Pena Alfa, Pais"), ("PUÉRTO ALFA", "Puerto Alfa, Pais"),
+                              ("ÁLFA SUR, PAIS", "Alfa Sur, Pais")):
+            with self.subTest(celda=celda):
+                _, reg, _ = self.corrida()
+                pagina = PaginaSugerencias(self.mod)
+                pagina.opcion = opcion
+                self.assertEqual(self.llamar_con("_mk_ciudad", pagina, reg, celda, evidencia="mk_f5_origen"),
+                                 (opcion, opcion))
+                self.assertEqual(pagina.eventos, [("campo",), ("escribe", celda.split(",")[0].upper())]
+                                 + [("espera",)] * 3 + self.evidencia("_mk_ciudad", "mk_f5_origen")
+                                 + [("pulsa", opcion)] + self.DESPUES["_mk_ciudad"])
+
     def test_maersk_escribe_y_compara_con_los_espacios_de_a_uno(self):
         # Revisión de código del encargo 43: el prefijo con que espera la lista se toma con los espacios de a uno, como
         # compara la regla («SAN  ALFA» escrito encuentra «San Alfa, …»; hasta ahí, su prefijo «SAN  » no estaba en
