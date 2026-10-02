@@ -1,0 +1,52 @@
+# Esta carpeta es a la vez el programa y su lugar de trabajo: convive con
+# credenciales, sesiones de los portales, planillas y capturas de reservas reales.
+# Por eso el .gitignore es una LISTA BLANCA: todo lo de la raiz queda fuera
+# salvo lo que se nombra al final con "!". Para versionar un archivo nuevo,
+# agregalo abajo como "!/nombre".
+/*
+
+# --- Fuera siempre, aunque alguien quite la linea "/*" de arriba ---
+# Credenciales y su escritura temporal
+config.json
+*.json.tmp
+# Sesiones de Chrome de los portales y registros de corridas (logs con capturas)
+perfiles/
+logs/
+# Planillas y salidas con reservas reales
+Reservas AQUASHIELD.xlsx
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+~$*
+*_dump.html
+maersk_sailing.html
+SIMULADOR_AQUASHIELD.html
+*.zip
+# Material hecho con capturas de corridas reales
+*.mp4
+*.docx
+*.png
+# Basura de Python y de trabajo
+__pycache__/
+*.pyc
+_para_borrar/
+*.tmp
+
+# --- Lo que SI se versiona ---
+!/.gitignore
+!/.gitattributes
+!/AQUASHIELD.py
+!/AQUASHIELD_EMISION.py
+!/Iniciar AQUASHIELD.bat
+!/Iniciar AQUASHIELD_EMISION.bat
+!/config.example.json
+!/CLAUDE.md
+!/LEEME.md
+!/CICLO-*.md
+# Red de verificacion offline: solo codigo y casos sinteticos (las planillas de
+# prueba se generan al correr; la capa explicita de arriba sigue aplicando adentro)
+!/tests/
+# Los generadores de material (crear_*.py, generar_manuales.py) y el logo de la empresa quedan fuera desde el
+# encargo 44: traen datos de la empresa y de las personas. Siguen en el equipo, sin versionar
+# (CICLO-publicar-el-repo.md).

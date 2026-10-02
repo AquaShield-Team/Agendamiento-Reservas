@@ -1,0 +1,5 @@
+# Todo el texto se guarda y se entrega con LF, que es como estan hoy los archivos.
+# Sin esto, core.autocrlf=true (configuracion de sistema de esta maquina) los
+# devolveria con CRLF al clonar.
+* text=auto eol=lf
+*.png binary

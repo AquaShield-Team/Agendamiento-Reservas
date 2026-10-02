@@ -1,0 +1,91 @@
+{
+  "_comentario": "Copia este archivo como config.json y completa usuario, clave y contrato de cada naviera (o hazlo desde el panel, en Credenciales). Viene sin credenciales: si restauras la configuración desde aquí, hay que volver a escribir las claves. Las credenciales NUNCA salen de tu equipo. En COSCO, «nombre_en_pantalla» es el nombre con que el portal muestra tu sesión iniciada: ayuda a reconocerla y puede quedar vacío. En «opciones → contratos_por_defecto» van los contratos que se usan cuando ni la fila ni las credenciales traen uno: ONE para Estados Unidos y para otros mercados, MSC y HYUNDAI; y «codigo_shipper_hyundai», el código con que HYUNDAI identifica a la empresa como Shipper.",
+  "opciones": {
+    "headless": false,
+    "navegador": "chrome",
+    "segundos_visible": 6,
+    "peso_reefer_kg": 22500,
+    "temperatura_reefer_c": -20,
+    "contratos_por_defecto": {
+      "one_usa": "",
+      "one_otros": "",
+      "msc": "",
+      "hyundai": ""
+    },
+    "codigo_shipper_hyundai": ""
+  },
+  "usuarios": {
+    "usuario1": {
+      "descripcion": "Operador 1 (rellenar)",
+      "cma": {
+        "usuario": "",
+        "clave": "",
+        "contrato": ""
+      },
+      "cosco": {
+        "usuario": "",
+        "clave": "",
+        "contrato": "",
+        "nombre_en_pantalla": ""
+      },
+      "one": {
+        "usuario": "",
+        "clave": "",
+        "contrato": ""
+      },
+      "msc": {
+        "usuario": "",
+        "clave": "",
+        "contrato": ""
+      },
+      "hyundai": {
+        "usuario": "",
+        "clave": "",
+        "contrato": "",
+        "url": "https://www.hmm21.com/"
+      },
+      "maersk": {
+        "usuario": "",
+        "clave": "",
+        "contrato": "",
+        "url": "https://www.maersk.com/"
+      }
+    },
+    "usuario2": {
+      "descripcion": "Operador 2 (rellenar)",
+      "cma": {
+        "usuario": "",
+        "clave": "",
+        "contrato": ""
+      },
+      "cosco": {
+        "usuario": "",
+        "clave": "",
+        "contrato": "",
+        "nombre_en_pantalla": ""
+      },
+      "one": {
+        "usuario": "",
+        "clave": "",
+        "contrato": ""
+      },
+      "msc": {
+        "usuario": "",
+        "clave": "",
+        "contrato": ""
+      },
+      "hyundai": {
+        "usuario": "",
+        "clave": "",
+        "contrato": "",
+        "url": "https://www.hmm21.com/"
+      },
+      "maersk": {
+        "usuario": "",
+        "clave": "",
+        "contrato": "",
+        "url": "https://www.maersk.com/"
+      }
+    }
+  }
+}
