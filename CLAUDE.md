@@ -247,13 +247,15 @@ cerrado:
   código apuntan a la misma (abajo).
 - **MAERSK marca los términos por su texto** (decisión de Marcelo, `CICLO-maersk-retiro-y-terminos.md`): la única
   casilla a la vista cuyo texto entero es «I have read and accept all the terms and conditions of this booking»
-  (`MK_TERMINOS`), leído con OCR en las capturas de la revisión del 21-09; su HTML no está medido. `_mk_marcar_terminos`
-  baja al final, deja `mk_f<fila>_terminos` y, solo si sabe que está sin marcar, pulsa su `input` con un clic de
-  JavaScript. El 21-09 la marcó un clic del mouse en el centro del `mc-checkbox`, pero ahí puede estar el enlace de
-  «terms and conditions»; el de JavaScript no está probado en el portal. Después pide una sola casilla, marcada y en la
-  misma dirección; si no, NO ENVIADA sin otro clic. Hasta el encargo 36 era «el último checkbox», por cuatro vías
-  (FRENO, cerrado): así se marcó el 21-09. A MAERSK ya no le queda ninguna forma genérica en la foto: el respaldo de
-  «Continue» (`primero-por-textContent`) se quitó en el encargo 39.
+  (`MK_TERMINOS`), leído con OCR en las capturas de la revisión del 21-09; su HTML se guardó por primera vez el
+  2026-10-02 (`mk_f10_terminos`). `_mk_marcar_terminos` baja al final, deja `mk_f<fila>_terminos` y, solo si sabe que
+  está sin marcar, pulsa su `input` con un clic de JavaScript. El 21-09 la marcó un clic del mouse en el centro del
+  `mc-checkbox`, pero ahí puede estar el enlace de «terms and conditions». El de JavaScript se probó en el portal el
+  2026-10-02 (encargo 49, `CICLO-corridas-de-la-tarde-02-10.md`): la casilla, sin marcar en `mk_f10_terminos`, quedó
+  marcada en el HTML de la guarda. Después pide una sola casilla, marcada y en la misma dirección; si no, NO ENVIADA
+  sin otro clic. Hasta el encargo 36 era «el último checkbox», por cuatro vías (FRENO, cerrado): así se marcó el 21-09.
+  A MAERSK ya no le queda ninguna forma genérica en la foto: el respaldo de «Continue» (`primero-por-textContent`) se
+  quitó en el encargo 39.
 - **MAERSK pulsa «Continue» de «Recommended services» solo si hay uno a la vista** (decisión de Marcelo, encargo 39,
   `CICLO-maersk-cuatro-puntos.md`; `_mk_continuar_servicios`, `_JS_MK_CONTINUAR`, `MK_CONTINUAR`; desde el encargo 40,
   con el ayudante `_mk_pulsar_unico`): un `mc-button` (por su `label` o su texto), un `button`, un enlace o
@@ -326,11 +328,12 @@ cerrado:
     los términos, porque su estilo no está en el HTML guardado. Antes deja `mk_f<fila>_casilla`, y después anota si
     estaba marcada, vuelve a comprobar la tarjeta y, si el buscador sigue abierto, pulsa su «Close». Si no coinciden, NO
     ENVIADA con `mk_f<fila>_shipper`, y el motivo dice por qué. No está probado en el portal.
-  - **Sin medir:** si el clic en el resultado lo elige (va al `label`, que no tiene `for`; la casilla de opción está a
-    su lado) y si el buscador se cierra solo al elegir. Hasta el encargo 38, después del Shipper se pulsaba la tecla
-    Escape, y se quitó (decisión de Marcelo); no está medido si el buscador se cerraba por ella o solo. Si la tarjeta no
-    queda con AQUACHILE, ni con su casilla, o el buscador sigue abierto y su «Close» no lo cierra, la reserva queda NO
-    ENVIADA ahí, y su HTML lo mide.
+  - **Medido una vez, el 2026-10-02** (encargo 49, `CICLO-corridas-de-la-tarde-02-10.md`): el clic en el resultado (va
+    al `label`, que no tiene `for`; la casilla de opción está a su lado) eligió a AQUACHILE, y el buscador se cerró
+    solo. Ni la casilla ni el «Close» hicieron falta, y siguen sin probarse en el portal. Hasta el encargo 38, después
+    del Shipper se pulsaba la tecla Escape, y se quitó (decisión de Marcelo); no está medido si el buscador se cerraba
+    por ella o solo. Si la tarjeta no queda con AQUACHILE, ni con su casilla, o el buscador sigue abierto y su «Close»
+    no lo cierra, la reserva queda NO ENVIADA ahí, y su HTML lo mide.
   - En el encargo 37 cortaba sin pulsar nada (FRENO, cerrado): el HTML del 27-09 es de después de los clics de antes, y
     lo más probable es que ellos eligieran a AQUACHILE, porque el Shipper viene vacío (no medido).
   - Un HTML guardado en un corte es de después de todo lo que el programa pulsó antes: no es el estado de partida. Así
@@ -401,7 +404,9 @@ cerrado:
       una vez cada uno. Si no, ningún día tiene fecha, y NO ENVIADA, como antes. `log.txt` lo dice («cabecera: 31»).
     - Hasta el encargo 48 el lector no le ponía fecha a ninguno (0 de 31), y la fila del 02-10 quedó NO ENVIADA ahí. Con
       ese calendario (5 días habilitados, del lunes 12 al viernes 16 de octubre), la regla elige el 13: el 05-10 no
-      estaba habilitado, y el 12 es feriado en Chile (medido sin red sobre el HTML guardado).
+      estaba habilitado, y el 12 es feriado en Chile (medido sin red sobre el HTML guardado). La tarde del 02-10, en el
+      portal, lo leyó por su cabecera, eligió el 13 con los mismos días habilitados, y la tarjeta lo mostró (encargo 49,
+      `CICLO-corridas-de-la-tarde-02-10.md`).
   - «Review booking» es el único mc-button a la vista con ese texto (`_mk_pulsar_revision`, `MK_REVISION`; en el HTML
     del 27-09, el mc-button y su botón interno son el mismo control), buscado hasta `MK_INTENTOS_REVISION` veces. Sin
     uno solo, NO ENVIADA (`ObjetivoNoEncontrado`, con lo que el portal pide); si está pero no acepta el clic, NO ENVIADA
@@ -610,12 +615,16 @@ línea cambian). De arriba hacia abajo:
      - Hasta el encargo 45 repetía el login hasta 2 veces tras un 502 (`MSC_REINTENTOS_502`) y recargaba si salía tras
        el «Next»: el 2026-10-01 tardó 214 s y dio por iniciada una sesión que no existía, porque `_msc_logueado`
        aceptaba la página de error de MSC. La recarga y los reintentos dejaron la sesión en 7 de los 10 logins con error
-       de logs/, sin volver a enviar la clave. Del encargo 45 al 47 no recargaba: el 2026-10-02, en los 2 logins (el de
-       solo login y el de la corrida), el «Next» dio el 502 y la ida a eBooking llevó a la portada de myMSC, sin la
-       sesión.
+       de logs/, sin volver a enviar la clave. Del encargo 45 al 47 no recargaba: el 2026-10-02 por la mañana, en los 2
+       logins (el de solo login y el de la corrida), el «Next» dio el 502 y la ida a eBooking llevó a la portada de
+       myMSC, sin la sesión.
+     - La tarde del 2026-10-02, con la recarga (encargo 49, `CICLO-corridas-de-la-tarde-02-10.md`), el «Next» pasó en
+       los 3 logins, así que la recarga no actuó. En 2 (el de solo login y el de la corrida de las seis), el 502 llegó
+       en la vuelta a myMSC, después de la clave, y la ida a eBooking llevó otra vez a la portada; el tercero, 5 min
+       después, entró. Tras un error, la ida a eBooking no dejó la sesión en ninguna de las 4 veces medidas.
      - Medido en el historial del perfil: b2clogin acepta la clave e identityserver acepta su vuelta; el error lo da
        www.mymsc.com, en TriggerOidcLogin tras el «Next» o en la vuelta desde identityserver. Antes del 21-09, 35 de 35
-       logins llegaron a myMSC en su primera pasada; desde entonces, 10 de 16 hasta el 01-10, y 0 de 2 el 02-10. Si es
+       logins llegaron a myMSC en su primera pasada; desde entonces, 10 de 16 hasta el 01-10, y 1 de 5 el 02-10. Si es
        la protección contra robots, no está medido: falta la respuesta del portal (estado, cabeceras, cuerpo).
    - CMA: con el aviso «We are improving the eBusiness area» (mantenimiento), el login entra, pero Click & Book no
      carga. `reservar_cma` lo reconoce apenas abre Click & Book (`_cma_en_mantenimiento`), y la fila queda NO ENVIADA
