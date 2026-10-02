@@ -93,9 +93,10 @@ la captura de la página completa y el mismo HTML, para medir con el candado cer
   `_reefer_guardado`), con la captura de la ventana, porque ahí el flujo sigue (`CICLO-cma-reefer-y-fecha-maersk.md`).
 - La dejan también, con la captura de la ventana, donde la reserva se detiene antes de la guarda
   (`CICLO-cola-nueve-items.md`, `CICLO-proxima-salida.md`). `test_evidencia.test_solo_ahi` fija quién la llama:
-  - MAERSK sin nave o sin una sola salida, y desde el encargo 40 también en SIN-CUPO (`_mk_detenida`:
-    `mk_f<fila>_detenida`; que SIN-CUPO la deje lo vigila
-    `test_clics.TestMaersk.test_sin_cupo_deja_la_evidencia_de_select_sailing`);
+  - MAERSK sin nave o sin una sola salida, desde el encargo 40 también en SIN-CUPO y desde el 46 con la nave y sin
+    poder pulsar su «Book» (`_mk_detenida`: `mk_f<fila>_detenida`; que SIN-CUPO la deje lo vigila
+    `test_clics.TestMaersk.test_sin_cupo_deja_la_evidencia_de_select_sailing`, y el «Book»,
+    `test_el_book_sin_pulsar_queda_no_enviada_con_evidencia`);
   - ONE cuando no llega a Review Booking o no le queda una sola salida (`one_f<fila>_detenida`);
   - COSCO sin un solo itinerario para la nave (`cosco_f<fila>_itinerarios`);
   - MSC sin una sola salida para la nave (`msc_f<fila>_itinerarios`).
@@ -179,8 +180,9 @@ cerrado:
   normalizado sin el país en ninguna posición (`_puerto_de_carga`, que usan la regla y el origen de COSCO; ahí las
   letras son A-Z sin tildes y números): «CHILE», «X CHILE», «CHILE X» o «№» no son un puerto (revisiones del encargo 42;
   con «X CHILE», COSCO buscaba «X»). Desde el encargo 43, «CL» también es el país, igual que «CHILE»
-  (`PAIS_DEL_PUERTO`), y «-» en el destino final, sin otra cosa, es la celda vacía: los dos lectores lo leen así
-  (`_destino_final_de`), y el destino pasa a ser el original (decisiones de Marcelo, `CICLO-maersk-elige-exacto.md`). El
+  (`PAIS_DEL_PUERTO`; desde el 46, COSCO también lo quita al final del puerto que busca), y «-» en el destino final,
+  sin otra cosa, es la celda vacía: los dos lectores lo leen así (`_destino_final_de`), y el destino pasa a ser el
+  original (decisiones de Marcelo, `CICLO-maersk-elige-exacto.md`). El
   motivo es «a la fila le falta el puerto de carga» o «a la fila le falta el destino» (`FILA_SIN_PUERTO`,
   `FILA_SIN_DESTINO`, `_sin_ruta`). Desde el encargo 43, el panel web la marca antes de correr, en la celda que le
   falta, y la cuenta aparte, como la fila sin nave (`sin_puerto` y `sin_destino` de `/api/filas`). El panel y la consola
@@ -355,10 +357,12 @@ cerrado:
   `test_login_sin_clic_generico`.
 - **COSCO elige el puerto de carga de la fila** (`_cosco_puerto_de_carga`, `CICLO-cola-seis-items.md`): la celda del
   puerto de carga normalizada (`_cosco_puerto_de_la_celda`, `CICLO-inicio-de-todas.md`: la parte antes de la primera
-  coma, en mayúsculas, sin tildes, con todo signo como separador y sin «CHILE» al final), traducida por
-  `MAPA_PUERTOS_COSCO` o tal como quedó, con la sugerencia de Chile que calce en «Origin City». Si COSCO no la sugiere, o si la celda viene vacía o
-  solo con el país, corta como objetivo no encontrado (NO ENVIADA, `cosco_f<fila>_sin_objetivo`). Hasta `f68ce6c` caía
-  al puerto fijo «Lirquen»; hasta `c4df3ab`, «CORONEL, CHILE» o «Lirquén» no se traducían.
+  coma, en mayúsculas, sin tildes, con todo signo como separador y sin el país al final: «CHILE» o, desde el encargo
+  46, «CL»), traducida por `MAPA_PUERTOS_COSCO` o tal como quedó, con la sugerencia de Chile que calce en «Origin
+  City». Si COSCO no la sugiere, o si la celda viene vacía o solo con el país, corta como objetivo no encontrado (NO
+  ENVIADA, `cosco_f<fila>_sin_objetivo`). Hasta `f68ce6c` caía al puerto fijo «Lirquen»; hasta `c4df3ab`, «CORONEL,
+  CHILE» o «Lirquén» no se traducían; hasta el encargo 46, «CORONEL CL» se buscaba tal cual (decisión de Marcelo,
+  `CICLO-maersk-pulsa-el-book.md`).
 - **MAERSK elige la fecha de retiro con la regla de Marcelo** (`CICLO-maersk-retiro-y-terminos.md`): el primer día hábil
   después del día en que se corre el programa (`_mk_dia_de_retiro`, `_mk_dia_habil`: de lunes a viernes y sin los
   feriados de Chile) y, si no está habilitado en el calendario, el siguiente día hábil habilitado
@@ -421,8 +425,9 @@ cerrado:
     la línea que la trae (`clase`, en `JS_INDEX`).
   - **El origen y el destino, con la regla de Marcelo** (encargo 43, `CICLO-maersk-elige-exacto.md`; de los encargos 40
     al 42, un FRENO). `_mk_ciudad` escribe la ciudad (la parte de la celda antes de la primera coma), espera las
-    sugerencias que traen sus primeros 5 caracteres ASCII, con los espacios de a uno (`_mk_sugerencias`; una letra con
-    tilde o una ñ se cae), y pulsa, entre las Container Yard, la única cuya parte antes de la primera coma, sin lo que
+    sugerencias que traen sus primeros 5 caracteres ASCII, sin tildes (la Ñ como N; hasta el encargo 46, la letra con
+    tilde y la ñ se caían) y con los espacios de a uno (`_mk_sugerencias`), y pulsa, entre las Container Yard, la única
+    cuya parte antes de la primera coma, sin lo que
     va entre paréntesis, es lo escrito, sin distinguir mayúsculas ni tildes y con los espacios de a uno
     (`_mk_las_exactas`, `_mk_base`, `_mk_plano`; los signos cuentan, y los paréntesis se quitan solo de la sugerencia).
     «Container Yard» está en la raíz shadow de la opción, donde lo ve el filtro de Playwright y no `text_content`
@@ -483,7 +488,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 563 pruebas al 2026-10-01 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 568 pruebas al 2026-10-02 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -601,8 +606,9 @@ línea cambian). De arriba hacia abajo:
    (`ObjetivoNoEncontrado`, ver el candado), cuando no queda una sola salida, cuando CMA está en mantenimiento, cuando
    la salida pedida ya no se puede reservar (MAERSK), cuando MAERSK no abre el formulario, lo deja incompleto, no puede
    pulsar un solo «Continue to book» o «Continue» para pasar a la selección de nave, no avanza en «Booking Information»,
-   no puede pulsar un solo «Continue» en «Recommended services», elegir la fecha de retiro, escribir la referencia,
-   elegir a AQUACHILE como Shipper, pulsar «Review booking» o marcar la casilla de los términos, cuando la fila no pide
+   no puede pulsar el «Book» de la salida elegida, aunque la nave esté (encargo 46), no puede pulsar un solo «Continue»
+   en «Recommended services», elegir la fecha de retiro, escribir la referencia, elegir a AQUACHILE como Shipper,
+   pulsar «Review booking» o marcar la casilla de los términos, cuando la fila no pide
    una nave o HYUNDAI no ofrece mantenerla (ver «Solo la nave que la fila pide»), o cuando a la fila con nave le falta
    el puerto de carga o el destino, o un ayudante de origen, destino o lugar de entrega no eligió ninguna sugerencia
    (ver «Antes de la guarda no hay clics a ciegas», encargo 42), o cuando el login de MSC no deja la sesión iniciada
@@ -669,10 +675,15 @@ línea cambian). De arriba hacia abajo:
      directa.
    - MAERSK: lee sus salidas con `_JS_MK_SALIDAS` y pulsa el «Book» de la elegida (`_mk_pulsar_book`). El tránsito es
      su «Transit time», con días y horas. El «Book» se cuenta por el atributo `label` del `mc-button` (arriba).
-     `_mk_pulsar_book` pulsa un «Book» solo si está a más de 100 px del borde de arriba de la ventana, y lo mira antes
-     de traerlo a la vista; si no pulsa, `reservar_maersk` sigue por la rama de la nave que no está, y el motivo dice
-     «no está en los itinerarios». Así quedó REVISAR la fila del 2026-10-01: la nave estaba, y la salida elegida, la
-     primera de 3 copias, quedó arriba de la ventana (encargo 45, `CICLO-login-msc-y-maersk.md`; sin arreglar).
+     `_mk_pulsar_book` trae a la vista la tarjeta de la elegida (`scroll_into_view_if_needed`, sin clics ni teclas) y
+     después pulsa su «Book» solo si está a más de 100 px del borde de arriba de la ventana (decisión de Marcelo,
+     encargo 46, `CICLO-maersk-pulsa-el-book.md`). Si aun así no lo pulsa, la fila queda NO ENVIADA con
+     `mk_f<fila>_detenida` y un motivo que dice que la nave estaba y por qué no pudo (`_mk_book_sin_pulsar`). Hasta el
+     encargo 46 miraba la altura antes de traerla y, si no pulsaba, seguía por la rama de la nave que no está: así quedó
+     REVISAR, con «no está en los itinerarios», la fila del 2026-10-01, cuya salida elegida, la primera de 3 copias,
+     había quedado arriba de la ventana (encargo 45, `CICLO-login-msc-y-maersk.md`). Si la tarjeta (`mc-card`) no
+     tuviera caja propia (sus estilos no viajan en el HTML guardado), Playwright la trae igual: medido con
+     `display: contents` en una página sintética (`CICLO-maersk-pulsa-el-book.md`).
    - Medido en las listas del 2026-09-25: en ONE, MSC y COSCO el tránsito que muestra la tarjeta es la llegada menos
      la salida en todas; en MAERSK, 4 horas menos, porque cada fecha va en la hora de su puerto.
    - HYUNDAI (desde el encargo 32, `CICLO-ampliar-la-busqueda.md`): entre las tarjetas cuya «1st Vessel» es la nave de
