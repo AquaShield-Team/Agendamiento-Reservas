@@ -98,7 +98,8 @@ la captura de la página completa y el mismo HTML, para medir con el candado cer
     `test_clics.TestMaersk.test_sin_cupo_deja_la_evidencia_de_select_sailing`, y el «Book»,
     `test_el_book_sin_pulsar_queda_no_enviada_con_evidencia`);
   - ONE cuando no llega a Review Booking o no le queda una sola salida (`one_f<fila>_detenida`);
-  - COSCO sin un solo itinerario para la nave (`cosco_f<fila>_itinerarios`);
+  - COSCO sin un solo itinerario para la nave (`cosco_f<fila>_itinerarios`) y, desde el encargo 48, sin el formulario
+    de New Booking (`_cosco_sin_formulario`: `cosco_f<fila>_sin_formulario`);
   - MSC sin una sola salida para la nave (`msc_f<fila>_itinerarios`).
 - HYUNDAI la deja justo antes de escribir el Remark (`hmm_f<fila>_remark`), con la captura de la ventana
   (`CICLO-evidencia-remark-hyundai.md`); con ella se identificó el campo (`CICLO-pendientes-con-evidencia.md`).
@@ -387,16 +388,20 @@ cerrado:
     y seguía).
   - **El calendario, medido el 2026-10-02** en `mk_f10_calendario.html`, el primero que guardó una corrida
     (`CICLO-msc-recarga-y-corrida-02-10.md`). `mkCalendario` (`_JS_MK_DIAS`) lo reconoce por su único «Done» a la vista
-    con al menos 28 días alrededor, y da la fecha de cada día por un atributo que la trae entera o por la leyenda de su
-    mes, sin los números de semana (`/week(?!end)/`) ni los días de otro mes. Si el día no se identifica, no está a la
-    vista o el calendario no aparece, NO ENVIADA sin otro clic: cambiar de mes es un clic que no está permitido (FRENO).
+    con al menos 28 días alrededor, y da la fecha de cada día por un atributo que la trae entera, por la leyenda de su
+    mes o, sin una leyenda, por su cabecera (abajo), sin los números de semana (`/week(?!end)/`) ni los días de otro
+    mes. Si el día no se identifica, no está a la vista o el calendario no aparece, NO ENVIADA sin otro clic: cambiar de
+    mes es un clic que no está permitido (FRENO).
     - Lo medido: va en un `mc-modal` («Container pick-up details»); el mes y el año, en dos `mc-button` de su cabecera
       (`label` «October» y «2026»), sin una leyenda que traiga los dos; cada día, un `mc-button` con su número por
-      `label` y, adentro, un `button` con el número por `aria-label` y `disabled` si no se puede elegir. Así el lector
-      no le pone fecha a ninguno (0 de 31), y la fila quedó NO ENVIADA ahí. Leer el mes y el año de esos dos botones lo
-      decide Marcelo (FRENO).
-    - Ese día había 5 habilitados, del lunes 12 al viernes 16 de octubre; con la regla, el 13: el 05-10 no estaba
-      habilitado, y el 12 es feriado en Chile.
+      `label` y, adentro, un `button` con el número por `aria-label` y `disabled` si no se puede elegir.
+    - **El mes y el año de la cabecera** (decisión de Marcelo, encargo 48, `CICLO-calendario-cosco-y-cma.md`): sin una
+      leyenda, un solo botón a la vista cuyo nombre (`label`, `aria-label` o texto) es un mes en inglés y uno solo cuyo
+      nombre es un año de 4 cifras, y solo si los días, sin los marcados de otro mes, van del 1 al último de ese mes,
+      una vez cada uno. Si no, ningún día tiene fecha, y NO ENVIADA, como antes. `log.txt` lo dice («cabecera: 31»).
+    - Hasta el encargo 48 el lector no le ponía fecha a ninguno (0 de 31), y la fila del 02-10 quedó NO ENVIADA ahí. Con
+      ese calendario (5 días habilitados, del lunes 12 al viernes 16 de octubre), la regla elige el 13: el 05-10 no
+      estaba habilitado, y el 12 es feriado en Chile (medido sin red sobre el HTML guardado).
   - «Review booking» es el único mc-button a la vista con ese texto (`_mk_pulsar_revision`, `MK_REVISION`; en el HTML
     del 27-09, el mc-button y su botón interno son el mismo control), buscado hasta `MK_INTENTOS_REVISION` veces. Sin
     uno solo, NO ENVIADA (`ObjetivoNoEncontrado`, con lo que el portal pide); si está pero no acepta el clic, NO ENVIADA
@@ -454,8 +459,10 @@ cerrado:
       no se guardó: si era la única no está medido.
     - El país no viene aparte en la lista: la raíz shadow trae el tipo de lugar y su sigla (CY o SD), y cada Container
       Yard viene repetida, con el mismo texto, como Store Door (medido el 30-09, `CICLO-maersk-y-fila-sin-ruta.md`). Las
-      otras cinco navieras eligen como antes: CMA, la primera con los mismos 5 caracteres (y el lugar de entrega, la
-      primera con «ramp»); ONE, la que trae la ciudad y está más arriba; HYUNDAI, la primera que la trae; MSC, la más
+      otras cinco navieras eligen como antes: CMA, la primera con los mismos 5 caracteres, que desde el encargo 48 arma
+      como MAERSK, sin tildes y con la Ñ como N (`_prefijo_de_la_lista`; decisión de Marcelo,
+      `CICLO-calendario-cosco-y-cma.md`), y el lugar de entrega, la primera con «ramp»; ONE, la que trae la ciudad y
+      está más arriba; HYUNDAI, la primera que la trae; MSC, la más
       corta a la vista que la trae; y COSCO, en el origen la que dice Chile y en el destino la que empieza con la ciudad
       y una coma, o la primera.
   - La fecha de zarpe: el día de carga de la planilla o, si falta o no se entiende, «Select tomorrow», y entonces
@@ -495,7 +502,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 569 pruebas al 2026-10-02 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 573 pruebas al 2026-10-02 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -628,9 +635,10 @@ línea cambian). De arriba hacia abajo:
    pulsar «Review booking» o marcar la casilla de los términos, cuando la fila no pide
    una nave o HYUNDAI no ofrece mantenerla (ver «Solo la nave que la fila pide»), o cuando a la fila con nave le falta
    el puerto de carga o el destino, o un ayudante de origen, destino o lugar de entrega no eligió ninguna sugerencia
-   (ver «Antes de la guarda no hay clics a ciegas», encargo 42), o cuando el login de MSC no deja la sesión iniciada
-   (encargo 45). `REVISAR`, entre otros (en MAERSK, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el
-   motivo dice hasta qué fecha buscó (ver «Ampliar la búsqueda»). Después: `EMITIDA`, `ENVIADA – REVISAR EN PORTAL`,
+   (ver «Antes de la guarda no hay clics a ciegas», encargo 42), cuando el login de MSC no deja la sesión iniciada
+   (encargo 45), o cuando New Booking de COSCO no muestra su formulario (encargo 48). `REVISAR`, entre otros (en MAERSK
+   y en COSCO, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el motivo dice hasta qué fecha buscó (ver
+   «Ampliar la búsqueda»). Después: `EMITIDA`, `ENVIADA – REVISAR EN PORTAL`,
    `NO ENVIADA`. El panel los pinta con
    `lecturaEstado` (en `JS_INDEX`):
    un estado nuevo necesita su rama ahí. `OK-EJEMPLO` es «lista», no «emitida»: la columna «N° reserva emitida» dice
@@ -642,10 +650,13 @@ línea cambian). De arriba hacia abajo:
    - separa los errores de validación (`_JS_COSCO_ERRORES`) del aviso del portal.
 
    Antes de la guarda, COSCO:
-   - Espera que el formulario de New Booking (su marco bkg2) muestre «Origin City», hasta 20 vueltas de 1,5 s; si no,
-     REVISAR («el formulario de COSCO no cargó los campos a tiempo»), con la captura `cosco_f<fila>_1_choose` y sin el
-     HTML (solo con `AQUASHIELD_DESCUBRIR`). Así quedó el 2026-10-02: la página mostraba sus pasos, sin el formulario
-     (`CICLO-msc-recarga-y-corrida-02-10.md`).
+   - Espera que el formulario de New Booking (su marco bkg2) muestre «Origin City», hasta 20 vueltas de 1,5 s. Sin el
+     marco o sin el campo, NO ENVIADA, con lo que faltó y los segundos desde que abrió New Booking, y deja la captura de
+     la ventana y el HTML de la página y de sus marcos (`_cosco_sin_formulario`, `cosco_f<fila>_sin_formulario`;
+     decisión de Marcelo, encargo 48, `CICLO-calendario-cosco-y-cma.md`). En `reservar_cosco`, REVISAR queda solo para
+     la nave no encontrada (`test_revisar_solo_si_la_nave_no_esta`). Hasta el encargo 48 quedaba REVISAR, y el HTML no
+     se guardaba (sin los campos, solo con `AQUASHIELD_DESCUBRIR`): así quedó el 2026-10-02, con la página mostrando sus
+     pasos sin el formulario (`CICLO-msc-recarga-y-corrida-02-10.md`).
    - Con más de un itinerario para la nave, elige la próxima salida (`_cosco_elegir_itinerario`, ver abajo). Si no
      queda uno solo, NO ENVIADA con la lista en la evidencia, y nunca el primero.
    - Su CONTROL lee Size Type por el texto visible del desplegable. Si no puede, dice «no pude leer», nunca «VACÍO».
