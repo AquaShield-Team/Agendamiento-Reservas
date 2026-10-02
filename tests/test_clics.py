@@ -1274,6 +1274,51 @@ def pagina_con_respuestas(respuestas):
     return pagina, hechos
 
 
+class PaginaLoginMsc(soporte.PaginaFalsa):
+    """El login de MSC en una página falsa: su estado decide la dirección, el texto a la vista y el campo que se ve. Cada
+    acción del login (el «Next», el botón de entrar, el goto, la pausa) puede traer un estado nuevo, que llega después
+    de tantas esperas (llega). Anota cada goto; no tiene reload: un reintento que recargue revienta."""
+    URLS = {"portada": "https://www.mymsc.com/myMSC/",
+            "clave": "https://mscciam.b2clogin.com/mscciam.onmicrosoft.com/oauth2/v2.0/authorize",
+            "sesión": "https://www.mymsc.com/myMSC/welcome", "ebooking": "https://www.mymsc.com/myMSC/booking/main",
+            "error_chrome": "chrome-error://chromewebdata/", "error_msc": "https://www.mymsc.com/mymsc/",
+            "validador": "https://mscciam.b2clogin.com/mscciam.onmicrosoft.com/api/validar",
+            "nada": "https://identityserver.msc.com/connect/authorize/callback"}
+    TEXTOS = {"error_chrome": "Esta página no funciona\nwww.mymsc.com no puede procesar esta solicitud ahora.",
+              "error_msc": "We are unable to complete your request at this time.",
+              "validador": "Please solve the captcha to continue"}
+
+    def __init__(self, estado):
+        super().__init__(texto=lambda js, *a: self.TEXTOS.get(self.estado, ""))
+        self.estado, self.pendiente, self.gotos = estado, None, []
+
+    @property
+    def url(self):
+        return self.URLS[self.estado]
+
+    @url.setter
+    def url(self, valor):
+        pass
+
+    def llega(self, estado, tras):
+        """'estado' llega después de 'tras' esperas (con 0, ya)."""
+        if tras:
+            self.pendiente = [tras, estado]
+        else:
+            self.estado, self.pendiente = estado, None
+
+    def avanza(self):
+        if self.pendiente:
+            self.pendiente[0] -= 1
+            if not self.pendiente[0]:
+                self.estado, self.pendiente = self.pendiente[1], None
+
+    def locator(self, selector):
+        visible = ((self.estado == "portada" and "#UserName" in selector)
+                   or (self.estado == "clave" and "password" in selector))
+        return types.SimpleNamespace(first=types.SimpleNamespace(is_visible=lambda *a, **k: visible))
+
+
 class TestMsc(ConRegistro):
     def lista(self, js, textos, *args):
         """Corre un JavaScript de MSC sobre una lista Kendo falsa con 'textos'; devuelve lo que respondió y los
@@ -1455,10 +1500,10 @@ console.log(JSON.stringify(f()));
         # de la página. El login no está en el universo de la foto; sus pasos están en _msc_entrar.
         tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
         funcs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
-        for nombre in ("login_msc", "_msc_abrir", "_msc_entrar", "_msc_verificar"):
+        for nombre in ("login_msc", "_msc_abrir", "_msc_entrar", "_msc_esperar", "_msc_tras_el_error"):
             self.assertNotIn("_JS_CLICK_BTN", [x.id for x in ast.walk(funcs[nombre]) if isinstance(x, ast.Name)], nombre)
         self.assertEqual([ast.unparse(c) for c in ast.walk(funcs["login_msc"]) if isinstance(c, ast.Call)
-                          and ast.unparse(c.func) == "_msc_entrar"], ["_msc_entrar(page, creds, reg)"])
+                          and ast.unparse(c.func) == "_msc_entrar"], ["_msc_entrar(page, creds, reg, on_pausa)"])
         f = funcs["_msc_entrar"]
         sin_boton = [n for n in ast.walk(f) if isinstance(n, ast.If) and ast.unparse(n.test).startswith("not click_si_existe(")]
         self.assertEqual([[ast.unparse(s) for s in n.body] for n in sin_boton],
@@ -1471,80 +1516,152 @@ console.log(JSON.stringify(f()));
                           "button:has-text('Login'), button:has-text('Sign In'), button:has-text('Next'), "
                           "button:has-text('Iniciar')"])
 
-    def test_error_502(self):
-        # La página de error de Chrome cuando MSC responde 502, medida con OCR en msc_final (CICLO-inicio-de-todas.md) y
-        # msc_paso_email (CICLO-cierre-de-frenos.md): «Esta página no funciona», «no puede procesar esta solicitud»,
-        # «HTTP ERROR 502».
-        f = self.mod._msc_error_502
-        casos = (("Esta página no funciona\nwww.mymsc.com no puede procesar esta solicitud ahora.\nHTTP ERROR 502", True),
-                 ("This page isn't working\nwww.mymsc.com is currently unable to handle this request.\nHTTP ERROR 502", True),
-                 ("Esta página no funciona\nwww.mymsc.com no puede procesar esta solicitud ahora.", True),  # sin el código
-                 ("Welcome to myMSC\nMy bookings", False),
-                 ("", False))
-        for texto, es in casos:
-            with self.subTest(texto=texto[:40]):
-                self.assertIs(f(soporte.PaginaFalsa(texto=texto)), es)
+    def test_error_del_portal(self):
+        # El error del portal en el login de MSC (_msc_error): la página de error de Chrome cuando MSC responde 502,
+        # medida con OCR en msc_final (CICLO-inicio-de-todas.md) y msc_paso_email (CICLO-cierre-de-frenos.md), por su
+        # texto o por su dirección (chrome-error://, la del final de los 2 logins de logs/ sin sesión), y la página de
+        # error del propio MSC, medida con OCR en las 2 capturas del 2026-10-01 (encargo 45, CICLO-login-msc-y-maersk.md).
+        f = self.mod._msc_error
+        casos = (("https://www.mymsc.com/myMSC/Account/OidcLoginCallBack",
+                  "Esta página no funciona\nwww.mymsc.com no puede procesar esta solicitud ahora.\nHTTP ERROR 502", True),
+                 ("https://www.mymsc.com/myMSC/",
+                  "This page isn't working\nwww.mymsc.com is currently unable to handle this request.\nHTTP ERROR 502", True),
+                 ("https://www.mymsc.com/myMSC/", "Esta página no funciona\nwww.mymsc.com no puede procesar esta solicitud "
+                                                  "ahora.", True),                       # sin el código
+                 ("https://www.mymsc.com/mymsc/", "We are unable to complete your request at this time.", True),
+                 ("chrome-error://chromewebdata/", "", True),
+                 ("https://www.mymsc.com/myMSC/welcome", "Welcome to myMSC\nMy bookings", False),
+                 ("https://www.mymsc.com/myMSC/", "", False))
+        for url, texto, es in casos:
+            with self.subTest(url=url, texto=texto[:40]):
+                self.assertIs(f(soporte.PaginaFalsa(texto=texto, url=url)), es)
 
         def falla(js, *a):
             raise RuntimeError("marco cerrado")
-        self.assertIs(f(soporte.PaginaFalsa(texto=falla)), False)            # no la pudo leer: no es el error
+        self.assertIs(f(soporte.PaginaFalsa(texto=falla, url="https://www.mymsc.com/myMSC/")), False)  # no la pudo leer
 
-    def login(self, resultados, sesion_al_reabrir=False):
-        """Corre login_msc con sus pasos falsos: _msc_abrir abre (con 'sesion_al_reabrir', la segunda vez ya hay sesión),
-        y cada _msc_entrar deja la página como dice 'resultados': «sesión», «502» u «otra» (sin sesión y sin el error)."""
+    def test_sesion_solo_en_su_pagina(self):
+        # La sesión de myMSC se reconoce por su página (_msc_sesion): /myMSC/welcome, donde terminan las 53 vueltas a
+        # myMSC del historial del perfil, y la de eBooking (MSC_EBOOKING). Hasta el encargo 45 bastaba que no se viera el
+        # formulario y que la dirección fuera de mymsc.com: el 2026-10-01 dio por iniciada la sesión en la página de error
+        # del propio MSC, en www.mymsc.com/mymsc/ (CICLO-login-msc-y-maersk.md).
+        f = self.mod._msc_sesion
+        si = ("https://www.mymsc.com/myMSC/welcome", "https://www.mymsc.com/mymsc/welcome/",
+              "https://www.mymsc.com/myMSC/booking/main", self.mod.MSC_EBOOKING)
+        no = ("https://www.mymsc.com/mymsc/", "https://www.mymsc.com/myMSC/", "https://www.mymsc.com/",
+              "https://www.mymsc.com/myMSC/Account/TriggerOidcLogin",
+              "https://www.mymsc.com/myMSC/Account/OidcLoginCallBack",
+              "https://identityserver.msc.com/connect/authorize/callback",
+              "https://mscciam.b2clogin.com/mscciam.onmicrosoft.com/oauth2/v2.0/authorize",
+              "chrome-error://chromewebdata/", "https://otro.ejemplo/myMSC/welcome", "about:blank")
+        for url in si + no:
+            with self.subTest(url=url):
+                self.assertIs(f(soporte.PaginaFalsa(url=url)), url in si)
+
+        class SinDireccion:
+            @property
+            def url(self):
+                raise RuntimeError("página cerrada")
+        self.assertIs(f(SinDireccion()), False)
+
+    def login_falso(self, guion, al_abrir="portada"):
+        """Corre login_msc sobre PaginaLoginMsc. 'guion' dice qué estado trae cada acción y tras cuántas esperas:
+        {"Next" | "entrar" | "goto" | "pausa": (estado, esperas)}. Devuelve (resultado, lo que hizo, las esperas, los
+        goto, log.txt y las capturas)."""
         self.n_login = getattr(self, "n_login", 0) + 1
-        reg, vistas, log = self.corrida(f"msc_login_{self.n_login}")
-        pagina = soporte.PaginaFalsa(url="https://www.mymsc.com/myMSC/")
-        pagina.estado = "formulario"
-        pendientes, hechos = list(resultados), []
+        reg, _, log = self.corrida(f"msc_login_{self.n_login}")
+        pagina = PaginaLoginMsc(al_abrir)
+        hechos, esperas = [], []
 
-        def abrir(page, reg):
-            hechos.append("abrir")
-            if sesion_al_reabrir and hechos.count("abrir") == 2:
-                page.estado = "sesión"
+        def accion(nombre):
+            hechos.append(nombre)
+            if nombre in guion:
+                pagina.llega(*guion[nombre])
 
-        def entrar(page, creds, reg):
-            hechos.append("entrar")
-            page.estado = pendientes.pop(0)
-        with mock.patch.multiple(self.mod, _msc_abrir=abrir, _msc_entrar=entrar,
-                                 _msc_verificar=lambda page, reg, on_pausa: hechos.append("verificar"),
-                                 _msc_logueado=lambda page: page.estado == "sesión",
-                                 _msc_error_502=lambda page: page.estado == "502",
-                                 esperar=lambda page, s, *a, **k: hechos.append(f"espera {s}")):
+        def rellenar(page, selector, valor, timeout_ms=15000, reg=None):
+            hechos.append("escribe la clave" if "password" in selector else "escribe el usuario")
+            return True
+
+        def pulsar(page, selector, timeout_ms=2500, reg=None):
+            accion("entrar" if "Login" in selector else "Next")
+            return True
+
+        def esperar(page, seg, *a, **k):
+            esperas.append(seg)
+            pagina.avanza()
+
+        def ir(url, **k):
+            # El goto termina en la página que carga (identityserver, en la cadena del login); lo que trae el guion
+            # llega después.
+            pagina.gotos.append(url)
+            pagina.estado = "nada"
+            accion("goto")
+        pagina.goto = ir
+        with mock.patch.multiple(self.mod, _msc_abrir=lambda page, reg: hechos.append("abrir"), rellenar=rellenar,
+                                 click_si_existe=pulsar, _msc_cookies=lambda page, reg: False, esperar=esperar,
+                                 pausa_manual=lambda reg, on_pausa, mensaje: accion("pausa")):
             r = self.mod.login_msc(pagina, {"usuario": "u", "clave": "c"}, reg)
-        return r, hechos, log.read_text(encoding="utf-8"), "\n".join(vistas)
+        return r, hechos, esperas, pagina.gotos, log.read_text(encoding="utf-8"), [c for c, _ in pagina.capturas]
 
-    def test_login_reintenta_tras_un_502(self):
-        # Si el login termina sin sesión en la página de error 502, lo repite desde el principio, hasta 2 veces, y avisa
-        # (decisión de Marcelo, CICLO-cierre-de-frenos.md). Hasta 4948e16 solo recargaba si el 502 salía tras el «Next»;
-        # el 2026-09-26 salió al pulsar el de entrar, y el login falló.
-        aviso = "· ⚠ MSC respondió HTTP 502 al entrar. Reintento el login ({} de 2)."
-        primera, vuelta = ["abrir", "entrar", "verificar"], ["espera 3.0", "abrir", "entrar", "verificar"]
-        r, hechos, log, pantalla = self.login(["502", "sesión"])
-        self.assertEqual((r, hechos), (True, primera + vuelta))
-        for donde in (log, pantalla):
-            self.assertIn(aviso.format(1), donde)
-            self.assertNotIn(aviso.format(2), donde)
-            self.assertNotIn("no reintento más", donde)
-        # Con el 502 cada vez: tres entradas en total, y lo dice.
-        r, hechos, log, pantalla = self.login(["502", "502", "502"])
-        self.assertEqual((r, hechos), (False, primera + vuelta * 2))
-        for donde in (log, pantalla):
-            self.assertIn(aviso.format(2), donde)
-            self.assertIn("· ⚠ MSC respondió HTTP 502 al entrar 3 veces; no reintento más.", donde)
-        # Sin el error (una clave rechazada, un validador), no reintenta: decide la verificación de la sesión, como antes.
-        r, hechos, log, _ = self.login(["otra"])
-        self.assertEqual((r, hechos), (False, primera))
-        self.assertNotIn("HTTP 502", log)
-        # Si al volver a abrir ya hay sesión (el 502 fue de la respuesta, no del login), no entra de nuevo.
-        r, hechos, _, _ = self.login(["502"], sesion_al_reabrir=True)
-        self.assertEqual((r, hechos), (True, primera + ["espera 3.0", "abrir"]))
-        self.assertEqual(self.mod.MSC_REINTENTOS_502, 2)
-        # El 502 tras el «Next», que ya recargaba, lo reconoce el mismo ayudante.
-        tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
-        f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_msc_entrar")
-        self.assertEqual([ast.unparse(n.test) for n in ast.walk(f) if isinstance(n, ast.If) and "502" in ast.unparse(n.test)],
-                         ["_msc_error_502(page)"])
+    def test_login_termina_con_lo_primero_que_llega(self):
+        # Cada espera del login de MSC termina con lo primero que llegue: el campo de la contraseña, la sesión o el error
+        # del portal (decisión de Marcelo, encargo 45, CICLO-login-msc-y-maersk.md). Hasta el encargo 45, tras el «Next»
+        # esperaba 3 s fijos y hasta 15 s la contraseña, y tras el botón de entrar hasta 5 s y tres vueltas de 3 s, sin
+        # mirar si la sesión ya estaba: el 2026-10-01 llegó a las 16:09:06, y el programa siguió esperando hasta las 16:09:46.
+        sondeo, tope = self.mod.MSC_SONDEO, self.mod.MSC_SONDEOS
+        self.assertEqual(sondeo * tope, 30)
+        # La sesión de identityserver seguía abierta: tras el «Next» llega la sesión, sin pedir la clave.
+        r, hechos, esperas, gotos, log, caps = self.login_falso({"Next": ("sesión", 3)})
+        self.assertEqual((r, hechos, esperas, gotos), (True, ["abrir", "escribe el usuario", "Next"], [sondeo] * 3, []))
+        self.assertIn("· Sesión iniciada.", log)
+        self.assertEqual(caps, ["msc_final.png"])
+        # La contraseña y después la sesión, cada una apenas llega.
+        r, hechos, esperas, gotos, _, _ = self.login_falso({"Next": ("clave", 2), "entrar": ("sesión", 5)})
+        self.assertEqual((r, hechos, esperas, gotos),
+                         (True, ["abrir", "escribe el usuario", "Next", "escribe la clave", "entrar"], [sondeo] * 7, []))
+        # Nada llega tras el «Next»: espera el tope, una sola vez, y no da la sesión por iniciada.
+        r, hechos, esperas, gotos, log, caps = self.login_falso({})
+        self.assertEqual((r, hechos, esperas, gotos), (False, ["abrir", "escribe el usuario", "Next"], [sondeo] * tope, []))
+        self.assertIn("· No confirmé la sesión.", log)
+        self.assertEqual(caps, ["msc_paso_email.png", "msc_final.png"])
+        # Ya había sesión al abrir: no escribe nada.
+        r, hechos, esperas, _, log, _ = self.login_falso({}, al_abrir="sesión")
+        self.assertEqual((r, hechos, esperas), (True, ["abrir"], []))
+        self.assertIn("· Ya había una sesión activa.", log)
+        # MSC pide una validación: pausa una vez para el operador y sigue esperando.
+        r, hechos, _, _, _, caps = self.login_falso({"Next": ("clave", 0), "entrar": ("validador", 1),
+                                                      "pausa": ("sesión", 0)})
+        self.assertEqual((r, hechos.count("pausa")), (True, 1))
+        self.assertIn("msc_validador.png", caps)
+
+    def test_ante_el_error_va_una_vez_a_ebooking_y_no_reintenta(self):
+        # Ante el error del portal, una sola navegación a la página desde la que sigue el programa (MSC_EBOOKING), y se
+        # comprueba la sesión; si no quedó, no vuelve a iniciar sesión: el portal podría bloquear la cuenta (decisión de
+        # Marcelo, encargo 45, CICLO-login-msc-y-maersk.md). Hasta el encargo 45 repetía el login entero hasta 2 veces y
+        # recargaba la página si el 502 salía tras el «Next»: el 2026-10-01 a las 16:02 tardó 214 s.
+        tope, ebooking = self.mod.MSC_SONDEOS, [self.mod.MSC_EBOOKING]
+        aviso = "· ⚠ MSC mostró una página de error al iniciar sesión."
+        entrar = ["abrir", "escribe el usuario", "Next", "escribe la clave", "entrar"]
+        # La página de error de MSC tras el botón de entrar, y la sesión en eBooking.
+        r, hechos, esperas, gotos, log, caps = self.login_falso(
+            {"Next": ("clave", 0), "entrar": ("error_msc", 2), "goto": ("ebooking", 1)})
+        self.assertEqual((r, hechos, gotos, len(esperas)), (True, entrar + ["goto"], ebooking, 3))
+        self.assertIn(aviso, log)
+        self.assertIn("· Sesión iniciada.", log)
+        self.assertEqual(caps, ["msc_error.png", "msc_final.png"])
+        # Sin la sesión en eBooking (vuelve el formulario): no la da por iniciada y no entra otra vez.
+        r, hechos, esperas, gotos, log, _ = self.login_falso(
+            {"Next": ("clave", 0), "entrar": ("error_chrome", 1), "goto": ("portada", 0)})
+        self.assertEqual((r, hechos, gotos, len(esperas)), (False, entrar + ["goto"], ebooking, 1))
+        self.assertIn("· ⚠ Después del error, la sesión de MSC no quedó iniciada; no reintento el inicio de sesión.", log)
+        self.assertNotIn("· Sesión iniciada.", log)
+        # El 502 tras el «Next», y en eBooking no llega nada: espera el tope una vez y se rinde.
+        r, hechos, esperas, gotos, _, _ = self.login_falso({"Next": ("error_chrome", 1), "goto": ("nada", 0)})
+        self.assertEqual((r, hechos, gotos, len(esperas)),
+                         (False, ["abrir", "escribe el usuario", "Next", "goto"], ebooking, 1 + tope))
+        # El error ya al abrir: no escribe nada y va una vez a eBooking.
+        r, hechos, _, gotos, _, _ = self.login_falso({"goto": ("error_msc", 0)}, al_abrir="error_msc")
+        self.assertEqual((r, hechos, gotos), (False, ["abrir", "goto"], ebooking))
 
     def test_search_schedule_sin_boton_corta(self):
         # «Search Schedule» con _msc_buscar_itinerarios: el botón por su texto (click_si_existe); si no está, corta como

@@ -18,7 +18,7 @@ import threading
 import traceback
 import weakref
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 import re as _re_mk
 
 if getattr(sys, "frozen", False):
@@ -999,43 +999,96 @@ def _msc_cookies(page, reg):
     return False
 
 
-def _msc_logueado(page):
-    """True si NO se ve el formulario de login (email/contraseña)."""
+# La sesión de myMSC se reconoce por su página (decisión de Marcelo, encargo 45, CICLO-login-msc-y-maersk.md): las 53
+# vueltas a myMSC (OidcLoginCallBack) del historial del perfil del programa, del 2026-08-24 al 2026-10-01, terminan en
+# /myMSC/welcome; con la sesión ya iniciada, www.mymsc.com lleva ahí (medido el 2026-08-24); y /myMSC/booking/main es
+# la página desde la que sigue el programa (MSC_EBOOKING). Hasta el encargo 45 bastaba que no se viera el formulario
+# de login y que la dirección fuera de mymsc.com (_msc_logueado): el 2026-10-01 a las 16:06 dio por iniciada la sesión
+# en la página de error del propio MSC, en www.mymsc.com/mymsc/, y el historial dice que no la había.
+MSC_PAGINAS_CON_SESION = ("/mymsc/welcome", "/mymsc/booking/main")
+# La página del portal desde la que sigue el programa después del login: la de eBooking, que reservar_msc abre primero.
+MSC_EBOOKING = "https://www.mymsc.com/myMSC/booking/main"
+# Los textos del error del portal de MSC en el texto a la vista: los de la página de error de Chrome cuando MSC responde
+# 502 («502» y «no puede procesar»; medidos con OCR en msc_final y msc_paso_email: CICLO-inicio-de-todas.md y
+# CICLO-cierre-de-frenos.md; en logs/, las 3 capturas con esa página nombran a www.mymsc.com), y el de la página de
+# error del propio MSC («We are unable to complete your request at this time»; medido con OCR en las 2 capturas del
+# 2026-10-01 a las 16:05 y 16:06, encargo 45).
+MSC_TEXTOS_DE_ERROR = ("502", "no puede procesar", "unable to complete your request")
+# Lo que dice la página cuando MSC pide una validación (captcha o código): el login pausa para el operador.
+MSC_VALIDACION = ("captcha", "verify", "verificación", "robot", "code")
+# Cada espera del login de MSC mira la página cada MSC_SONDEO s, hasta MSC_SONDEOS veces: unos 30 s. Hipótesis: 3 veces
+# lo más largo medido en el historial del perfil, de las credenciales aceptadas en b2clogin a la vuelta a myMSC (de 2 a
+# 10 s en 48 pasadas; sin pasar por b2clogin, de 3 a 5 s en 4; encargo 45).
+MSC_SONDEO = 0.5
+MSC_SONDEOS = 60
+# El motivo de la fila de MSC cuando el login no deja la sesión iniciada: queda NO ENVIADA, sin otro intento de inicio
+# de sesión (decisión de Marcelo, encargo 45: el portal podría bloquear la cuenta).
+MSC_SIN_SESION = ("no quedó iniciada la sesión de MSC: la reserva no se envió, y el inicio de sesión no se reintentó, "
+                  "para no arriesgar la cuenta (el detalle, en log.txt)")
+# Las navieras cuyas filas quedan NO ENVIADA, con su motivo, si su login no deja la sesión iniciada: solo MSC (decisión
+# de Marcelo, encargo 45). Con las otras, la fila queda sin estado, como antes.
+SIN_SESION = {"msc": MSC_SIN_SESION}
+
+
+def _msc_sesion(page):
+    """True si la página es de myMSC con la sesión iniciada: www.mymsc.com con una ruta de MSC_PAGINAS_CON_SESION, sin
+    distinguir mayúsculas. Si no puede leer la dirección, False."""
     try:
-        if page.locator("#UserName, input[type=email]").first.is_visible(timeout=2500):
-            return False
+        u = urlsplit(str(page.url))
+    except Exception:
+        return False
+    return u.netloc.lower() == "www.mymsc.com" and u.path.lower().rstrip("/") in MSC_PAGINAS_CON_SESION
+
+
+def _msc_error(page):
+    """True si la página es el error del portal de MSC: la página de error de Chrome (su dirección empieza con
+    «chrome-error://», como al terminar los 2 logins de logs/ que quedaron sin sesión, el 2026-09-21 y el 26) o una
+    cuyo texto a la vista trae uno de MSC_TEXTOS_DE_ERROR. Si no puede leer la página, False. Hasta el encargo 45 era
+    _msc_error_502, que no reconocía la página de error del propio MSC ni miraba la dirección."""
+    try:
+        if str(page.url).lower().startswith("chrome-error://"):
+            return True
     except Exception:
         pass
-    try:
-        if page.locator("input[type=password]").first.is_visible(timeout=1200):
-            return False
-    except Exception:
-        pass
-    return "mymsc.com" in page.url.lower()
-
-
-# El login de MSC pulsa el «Next» y el botón de entrar solo por su texto: click_si_existe toma el primero, en el orden de
-# la página, entre las alternativas de su selector. Si no encuentra uno, lo anota y no pulsa nada: la verificación de la
-# sesión, que sigue igual, dice si entró (decisiones de Marcelo, CICLO-inicio-de-todas.md y CICLO-cierre-de-frenos.md).
-# Hasta c4df3ab caía a _JS_CLICK_BTN, que pulsaba el primer botón, enlace o input submit de la página, fuera del
-# encabezado y de la navegación, cuyo texto calzara, visible o no; hasta 4948e16, el de entrar también podía ser el primer
-# button[type=submit] de la página. Medido en los 7 logins de MSC de logs/ (del 2026-09-21 al 26): el «Next» lo encontró
-# su selector las 7 veces, y el de entrar, 6; la vez que no (2026-09-21), el clic genérico tampoco dio la sesión.
-#
-# Si el login termina sin sesión en la página de error de MSC (_msc_error_502), lo repite desde el principio hasta
-# MSC_REINTENTOS_502 veces, y avisa cada vez (decisión de Marcelo, CICLO-cierre-de-frenos.md). Hasta 4948e16 solo
-# recargaba si el 502 salía tras el «Next»: el 2026-09-26 salió también al pulsar el de entrar, y el login falló. Cuántas
-# veces es una hipótesis, no medida: Marcelo pidió «pocas veces».
-MSC_REINTENTOS_502 = 2
-
-
-def _msc_error_502(page):
-    """True si la página es el error del portal de MSC: su texto a la vista trae «502» o «no puede procesar». Es la página
-    de error de Chrome («Esta página no funciona», «no puede procesar esta solicitud», «HTTP ERROR 502»), medida con OCR
-    en las capturas msc_final (CICLO-inicio-de-todas.md) y msc_paso_email (CICLO-cierre-de-frenos.md). Si no puede leer
-    la página, False."""
     txt = texto_pagina(page)
-    return "502" in txt or "no puede procesar" in txt
+    return any(t in txt for t in MSC_TEXTOS_DE_ERROR)
+
+
+def _msc_a_la_vista(page, selector):
+    try:
+        return bool(page.locator(selector).first.is_visible())
+    except Exception:
+        return False
+
+
+def _msc_esperar(page, reg, que, campo="", on_pausa=None, validar=False):
+    """Espera lo primero que llegue, mirando la página cada MSC_SONDEO s, hasta MSC_SONDEOS veces: la sesión
+    (_msc_sesion), el error del portal (_msc_error) o, con 'campo', ese campo a la vista. Devuelve "sesión", "error",
+    "campo" o "" si no llegó nada (decisión de Marcelo, encargo 45: la espera termina con el éxito o con el error, lo
+    que llegue primero). Con 'validar', si la página pide una validación (MSC_VALIDACION), deja msc_validador, pausa
+    una vez para el operador y vuelve a esperar desde ahí. Hasta el encargo 45, tras el «Next» esperaba 3 s fijos y
+    hasta 15 s el campo de la contraseña, y tras el botón de entrar hasta 5 s y tres vueltas de 3 s, sin mirar si la
+    sesión ya estaba: el 2026-10-01 llegó a las 16:09:06, y el programa esperó la contraseña y el botón hasta las
+    16:09:46."""
+    pauso, n = False, 0
+    while True:
+        if _msc_sesion(page):
+            return "sesión"
+        if _msc_error(page):
+            return "error"
+        if campo and _msc_a_la_vista(page, campo):
+            return "campo"
+        if validar and not pauso and any(k in texto_pagina(page) for k in MSC_VALIDACION):
+            reg.captura(page, "msc_validador")
+            pausa_manual(reg, on_pausa, "MSC pide una validación (captcha/código). Resuélvela en el navegador "
+                                        "y pulsa '✔ Ya lo resolví (continuar)'.")
+            pauso, n = True, 0
+            continue
+        if n >= MSC_SONDEOS:
+            reg.info(f"esperé {MSC_SONDEO * MSC_SONDEOS:.0f} s {que}, y no llegó")
+            return ""
+        n += 1
+        esperar(page, MSC_SONDEO)
 
 
 def _msc_abrir(page, reg):
@@ -1049,82 +1102,74 @@ def _msc_abrir(page, reg):
     _msc_cookies(page, reg)
 
 
-def _msc_entrar(page, creds, reg):
-    """Escribe el usuario, pulsa «Next», escribe la clave y pulsa el botón de entrar. Si el 502 sale tras el «Next»,
-    recarga una vez y repite el primer paso."""
-    # Paso 1: email + Next
+# El login de MSC pulsa el «Next» y el botón de entrar solo por su texto: click_si_existe toma el primero, en el orden de
+# la página, entre las alternativas de su selector. Si no encuentra uno, lo anota y no pulsa nada: la espera que sigue
+# dice si llegó la sesión (decisiones de Marcelo, CICLO-inicio-de-todas.md y CICLO-cierre-de-frenos.md). Hasta c4df3ab
+# caía a _JS_CLICK_BTN, que pulsaba el primer botón, enlace o input submit de la página, fuera del encabezado y de la
+# navegación, cuyo texto calzara, visible o no; hasta 4948e16, el de entrar también podía ser el primer
+# button[type=submit] de la página. Medido en los 7 logins de MSC de logs/ (del 2026-09-21 al 26): el «Next» lo
+# encontró su selector las 7 veces, y el de entrar, 6; la vez que no (2026-09-21), el clic genérico tampoco dio la sesión.
+def _msc_entrar(page, creds, reg, on_pausa=None):
+    """Escribe el usuario, pulsa «Next» y espera lo primero que llegue: el campo de la contraseña, la sesión (la de
+    identityserver seguía abierta: así pasó el 2026-09-27, el 29 y el 01-10, al volver a entrar) o el error (_msc_esperar).
+    Con el campo, escribe la clave, pulsa el botón de entrar y espera la sesión o el error, con la pausa si MSC pide una
+    validación. Devuelve "sesión", "error" o "" (no llegó ninguna); sin nada tras el «Next», deja msc_paso_email."""
     reg.paso("Ingresando credenciales...")
     rellenar(page, "#UserName, input[type=email]", creds["usuario"], 12000, reg)
     if not click_si_existe(page, "button:has-text('Next'), button:has-text('Siguiente')", 5000, reg):
         reg.info("no encontré el botón «Next» ni «Siguiente» del login de MSC; no pulsé nada")
-    esperar(page, 3, reg, "esperar contraseña")
     _msc_cookies(page, reg)
-
-    # Paso 2: contraseña + enviar
-    try:
-        page.wait_for_selector("input[type=password]", timeout=15000, state="visible")
-    except Exception:
-        try:
-            if _msc_error_502(page):
-                reg.info("MSC arrojó HTTP ERROR 502 del servidor. Recargando en 3s...")
-                esperar(page, 3.0)
-                page.reload()
-                esperar(page, 4.0)
-                _msc_cookies(page, reg)
-                rellenar(page, "#UserName, input[type=email]", creds["usuario"], 12000, reg)
-                click_si_existe(page, "button:has-text('Next'), button:has-text('Siguiente')", 5000, reg)
-                esperar(page, 3.0)
-                page.wait_for_selector("input[type=password]", timeout=15000, state="visible")
-        except Exception:
-            pass
-        if not page.locator("input[type=password]").first.is_visible():
+    paso = _msc_esperar(page, reg, "la contraseña, la sesión o el error tras el «Next»", campo="input[type=password]")
+    if paso != "campo":
+        if not paso:
             reg.info("no vi el campo de contraseña"); reg.captura(page, "msc_paso_email")
+        return paso
     rellenar(page, "input[type=password]", creds["clave"], 12000, reg)
     if not click_si_existe(page,
             "button:has-text('Login'), button:has-text('Sign In'), button:has-text('Next'), "
             "button:has-text('Iniciar')", 5000, reg):
         reg.info("no encontré el botón para entrar a MSC (Login, Sign In, Next o Iniciar); no pulsé nada")
-    esperar_hasta(page, "a[href*='ebooking'], a[href*='welcome'], nav", 5, reg, "asentar sesión", asentar=0.8)
+    return _msc_esperar(page, reg, "la sesión o el error tras el botón de entrar", on_pausa=on_pausa, validar=True)
 
 
-def _msc_verificar(page, reg, on_pausa):
-    """Espera la sesión unos 9 s; si la página pide una validación (captcha o código), pausa para el operador."""
-    for intento in range(3):
-        if _msc_logueado(page):
-            break
-        txt = texto_pagina(page)
-        if any(k in txt for k in ["captcha", "verify", "verificación", "robot", "code"]):
-            reg.captura(page, "msc_validador")
-            pausa_manual(reg, on_pausa,
-                "MSC pide una validación (captcha/código). Resuélvela en el navegador "
-                "y pulsa '✔ Ya lo resolví (continuar)'.")
-        else:
-            esperar(page, 3, reg, "reintentar verificación")
+def _msc_tras_el_error(page, reg):
+    """El error del portal en el login de MSC: lo dice, deja su captura (msc_error), va una sola vez a la página desde
+    la que sigue el programa (MSC_EBOOKING) y espera la sesión, el error o el formulario de login (_msc_esperar). Solo
+    la sesión cuenta: no vuelve a iniciar sesión, porque el portal podría bloquear la cuenta (decisión de Marcelo,
+    encargo 45). Si ir a eBooking deja la sesión no está medido (CICLO-login-msc-y-maersk.md)."""
+    reg.paso("⚠ MSC mostró una página de error al iniciar sesión. Voy una sola vez a eBooking para ver si la sesión "
+             "quedó iniciada; no vuelvo a iniciar sesión, para no arriesgar la cuenta.")
+    reg.url(page); reg.captura(page, "msc_error")
+    try:
+        page.goto(MSC_EBOOKING, wait_until="domcontentloaded")
+    except Exception as e:
+        reg.info(f"no pude ir a eBooking: {str(e)[:70]}")
+    desenlace = _msc_esperar(page, reg, "la sesión en eBooking",
+                             campo="#UserName, input[type=email], input[type=password]")
+    reg.url(page); reg.captura(page, "msc_final")
+    ok = desenlace == "sesión"
+    reg.paso("Sesión iniciada." if ok else "⚠ Después del error, la sesión de MSC no quedó iniciada; no reintento el "
+                                           "inicio de sesión.")
+    return ok
 
 
 def login_msc(page, creds, reg, on_pausa=None):
+    """Inicia sesión en myMSC desde su página (_msc_abrir, www.mymsc.com), con el «Next» y el botón de entrar por su
+    texto (_msc_entrar), nunca desde una dirección guardada; cada espera termina con lo primero que llegue, la sesión o
+    el error del portal (_msc_esperar), y ante el error va una sola vez a la página desde la que sigue el programa y
+    comprueba la sesión, sin otro intento de inicio de sesión (_msc_tras_el_error). Decisiones de Marcelo, encargo 45
+    (CICLO-login-msc-y-maersk.md). Hasta el encargo 45 repetía el login entero hasta 2 veces tras un 502
+    (MSC_REINTENTOS_502, CICLO-cierre-de-frenos.md) y recargaba la página si el 502 salía tras el «Next»: el 2026-10-01
+    a las 16:02 tardó 214 s y dio por iniciada una sesión que no existía."""
     reg.paso("Abriendo myMSC...")
     _msc_abrir(page, reg)
-
-    if _msc_logueado(page):
+    if _msc_sesion(page):
         reg.paso("Ya había una sesión activa."); reg.captura(page, "msc_final"); return True
-
-    for vez in range(MSC_REINTENTOS_502 + 1):
-        if vez:
-            reg.paso(f"⚠ MSC respondió HTTP 502 al entrar. Reintento el login ({vez} de {MSC_REINTENTOS_502}).")
-            esperar(page, 3.0)
-            _msc_abrir(page, reg)
-            if _msc_logueado(page):
-                break
-        _msc_entrar(page, creds, reg)
-        # Verificar sesión; si sigue el formulario, quizá hay validador/captcha -> pausa manual
-        _msc_verificar(page, reg, on_pausa)
-        if _msc_logueado(page) or not _msc_error_502(page):
-            break
-    else:
-        reg.paso(f"⚠ MSC respondió HTTP 502 al entrar {MSC_REINTENTOS_502 + 1} veces; no reintento más.")
+    desenlace = "error" if _msc_error(page) else _msc_entrar(page, creds, reg, on_pausa)
+    if desenlace == "error":
+        return _msc_tras_el_error(page, reg)
     reg.url(page); reg.captura(page, "msc_final")
-    ok = _msc_logueado(page)
+    ok = desenlace == "sesión"
     reg.paso("Sesión iniciada." if ok else "No confirmé la sesión.")
     return ok
 
@@ -4454,7 +4499,7 @@ def reservar_msc(page, reserva, creds, reg, on_pausa=None):
     _avisar_dia_carga(reserva, reg)
     reg.paso("Abriendo eBooking de MSC...")
     try:
-        page.goto("https://www.mymsc.com/myMSC/booking/main", wait_until="domcontentloaded")
+        page.goto(MSC_EBOOKING, wait_until="domcontentloaded")
     except Exception as e:
         reg.info(f"goto eBooking: {str(e)[:70]}")
     _msc_esperar_paso(page, "shipping-rates-tab", 14, reg, minimo=1.0)
@@ -11311,6 +11356,10 @@ def ejecutar_reservas(usuario, naviera_clave, cfg=None, on_log=None, on_pausa=No
 
         if not logueado:
             reg.paso("No se pudo iniciar sesión; no proceso reservas.")
+            # Sin la sesión de MSC, cada fila queda NO ENVIADA con su motivo, en la planilla y en log.txt (decisión de
+            # Marcelo, encargo 45, CICLO-login-msc-y-maersk.md). Con las otras navieras, como antes: no se toca.
+            for i, rsv in (con_nave if naviera_clave in SIN_SESION else ()):
+                anotar(i, rsv, NO_ENVIADA, SIN_SESION[naviera_clave])
         else:
             for i, rsv in con_nave:
                 reg.paso(f"----- Reserva {i}/{len(reservas)} -----")
@@ -12293,6 +12342,15 @@ def _web_worker(hoja, usuario, filas_pedidas):
 
                 if not logueado:
                     reg.paso(f"No se pudo iniciar sesión en {nombre}; no proceso sus reservas.")
+                    # Sin la sesión de MSC, cada fila queda NO ENVIADA con su motivo, sin otro intento de inicio de
+                    # sesión (decisión de Marcelo, encargo 45, CICLO-login-msc-y-maersk.md). Con las otras navieras,
+                    # como antes: la fila queda sin estado.
+                    for rsv in (sub_elegidas if nav in SIN_SESION else ()):
+                        reg.paso(f"✗ fila {rsv['fila']}: {NO_ENVIADA} · {SIN_SESION[nav]}")
+                        with _LOCK:
+                            _WEB["resultados"][str(rsv["fila"])] = {
+                                "estado": NO_ENVIADA, "detalle": SIN_SESION[nav], "booking": "",
+                                "nave": rsv.get("nave", ""), "hora": _dt.datetime.now().strftime("%H:%M")}
                 else:
                     for i, rsv in enumerate(sub_elegidas, start=1):
                         if _WEB["detener"] and _WEB["detener"].is_set():

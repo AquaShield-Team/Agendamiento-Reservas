@@ -635,12 +635,24 @@ class TestPanelCorridas(PanelBase):
 
     def test_login_fallido_no_reserva(self):
         with Navieras(self.mod, login_ok=False) as n:
-            e = self.correr("MSC", [5, 6])
-        # La 6 no trae nave: queda NO ENVIADA antes del login, y no depende de él. Hasta a198645 no tenía resultado
-        # (CICLO-solo-la-nave-pedida.md).
+            e = self.correr("ONE", [5, 7])
+        # La 7 no trae nave: queda NO ENVIADA antes del login, y no depende de él. Hasta a198645 no tenía resultado
+        # (CICLO-solo-la-nave-pedida.md). La 5 queda sin estado: así sigue el login fallido de las navieras que no son
+        # MSC (encargo 45; hasta ahí esta prueba usaba MSC).
         self.assertEqual((n.reservas, {k: (v["estado"], v["detalle"]) for k, v in e["resultados"].items()}),
-                         ([], {"6": ("NO ENVIADA", "la fila no trae una nave para reservar")}))
-        self.assertTrue(any("No se pudo iniciar sesión en MSC" in l for l in e["lineas"]))
+                         ([], {"7": ("NO ENVIADA", "la fila no trae una nave para reservar")}))
+        self.assertTrue(any("No se pudo iniciar sesión en ONE" in l for l in e["lineas"]))
+
+    def test_login_fallido_de_msc_queda_no_enviada(self):
+        # Sin la sesión de MSC, cada fila de MSC queda NO ENVIADA con su motivo, sin otro intento de inicio de sesión
+        # (decisión de Marcelo, encargo 45, CICLO-login-msc-y-maersk.md); hasta ahí quedaba sin estado.
+        with Navieras(self.mod, login_ok=False) as n:
+            e = self.correr("MSC", [5, 6])
+        self.assertEqual((n.reservas, [l[0] for l in n.logins],
+                          {k: (v["estado"], v["detalle"]) for k, v in e["resultados"].items()}),
+                         ([], ["msc"], {"5": ("NO ENVIADA", self.mod.MSC_SIN_SESION),
+                                        "6": ("NO ENVIADA", "la fila no trae una nave para reservar")}))
+        self.assertTrue(any(f"✗ fila 5: NO ENVIADA · {self.mod.MSC_SIN_SESION}" in l for l in e["lineas"]))
 
     def test_reservador_que_revienta(self):
         def respuesta(nav, rsv, on_pausa):

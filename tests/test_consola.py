@@ -482,9 +482,10 @@ class TestEjecutarReservas(ConPlanilla):
         self.assertEqual(sorted(p.name for p in self.sb.glob(RESPALDOS)), sorted(r.name for r in rutas))
 
     def test_sin_escrituras_no_deja_respaldo(self):
-        self.poner_nave("MSC", 6, "NAVE PRUEBA QUINCE")      # la columna F ya no es la nave (CICLO-cola-seis-items.md)
+        # Con HYUNDAI, que no deja la fila NO ENVIADA si su login falla; MSC sí, desde el encargo 45
+        # (test_login_fallido_de_msc_queda_no_enviada).
         with soporte.Navieras(self.mod, login_ok=False):
-            self.mod.ejecutar_reservas("op_prueba", "msc", esperar_cierre=lambda: None)
+            self.mod.ejecutar_reservas("op_prueba", "hyundai", esperar_cierre=lambda: None)
         self.assertEqual(list(self.sb.glob(RESPALDOS)), [])
 
     def test_solo_primera_fila(self):
@@ -497,12 +498,28 @@ class TestEjecutarReservas(ConPlanilla):
         self.assertEqual((res, len(n.reservas)), ({5: "OK-EJEMPLO"}, 1))
 
     def test_login_fallido_no_toca_la_planilla(self):
-        self.poner_nave("MSC", 6, "NAVE PRUEBA QUINCE")      # la columna F ya no es la nave (CICLO-cola-seis-items.md)
+        # Con HYUNDAI: el login fallido de las navieras que no son MSC no toca la planilla (encargo 45; hasta ahí, MSC).
         antes = self.planilla.read_bytes()
         with soporte.Navieras(self.mod, login_ok=False) as n:
-            res, _ = self.mod.ejecutar_reservas("op_prueba", "msc", esperar_cierre=lambda: None)
+            res, _ = self.mod.ejecutar_reservas("op_prueba", "hyundai", esperar_cierre=lambda: None)
         self.assertEqual((res, n.reservas), ({}, []))
         self.assertEqual(self.planilla.read_bytes(), antes)
+
+    def test_login_fallido_de_msc_queda_no_enviada(self):
+        # Sin la sesión de MSC, cada fila con nave queda NO ENVIADA con su motivo en la planilla, con la copia de la
+        # corrida antes (decisión de Marcelo, encargo 45, CICLO-login-msc-y-maersk.md); hasta ahí, no se tocaba.
+        self.poner_nave("MSC", 6, "NAVE PRUEBA QUINCE")      # la columna F ya no es la nave (CICLO-cola-seis-items.md)
+        with soporte.Navieras(self.mod, login_ok=False) as n:
+            res, _ = self.mod.ejecutar_reservas("op_prueba", "msc", esperar_cierre=lambda: None)
+        # La 8 es el encabezado repetido de la hoja sintética: el lector de la consola la lee como fila, como antes
+        # (test_planilla, CONSOLA["msc"]).
+        self.assertEqual((res, n.reservas), ({5: "NO ENVIADA", 6: "NO ENVIADA", 7: "NO ENVIADA", 8: "NO ENVIADA"}, []))
+        ws = openpyxl.load_workbook(self.planilla)["MSC"]
+        for f in (5, 6, 7, 8):
+            with self.subTest(fila=f):
+                self.assertIn(" · NO ENVIADA · ", ws[f"H{f}"].value)
+                self.assertTrue(ws[f"H{f}"].value.endswith(self.mod.MSC_SIN_SESION))
+        self.assertEqual(len(list(self.sb.glob(RESPALDOS))), 1)
 
     def test_reservador_que_revienta(self):
         def respuesta(nav, rsv, on_pausa):

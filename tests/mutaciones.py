@@ -3538,49 +3538,106 @@ MUTACIONES += [
          nuevo='    click_si_existe(page, "button:has-text(\'Search Schedule\')", 6000, reg)\n'),
 ]
 
-# --- Encargo 31 · ítem 1: MSC reintenta el login tras un 502, pocas veces y avisando, y su botón de entrar va solo por su
-# texto (decisiones de Marcelo, CICLO-cierre-de-frenos.md). ---
-MSC_502 = "test_clics.TestMsc.test_login_reintenta_tras_un_502"
-MSC_ERR = "test_clics.TestMsc.test_error_502"
-REABRE = "            esperar(page, 3.0)\n            _msc_abrir(page, reg)\n"
-
+# --- Encargo 31 · ítem 1: el botón de entrar del login de MSC va solo por su texto (decisión de Marcelo,
+# CICLO-cierre-de-frenos.md). Las mutaciones del reintento tras un 502 salieron en el encargo 45. ---
 MUTACIONES += [
-    # No reintenta, como hasta 4948e16; o reintenta más veces.
-    dict(id="msc-502-no-reintenta", pruebas=[MSC_502],
-         viejo="    for vez in range(MSC_REINTENTOS_502 + 1):\n", nuevo="    for vez in range(1):\n"),
-    dict(id="msc-502-mas-reintentos", pruebas=[MSC_502], viejo="MSC_REINTENTOS_502 = 2\n", nuevo="MSC_REINTENTOS_502 = 3\n"),
-    # Reintenta sin avisar, o sin decir que dejó de reintentar.
-    dict(id="msc-502-sin-aviso", pruebas=[MSC_502],
-         viejo='            reg.paso(f"⚠ MSC respondió HTTP 502 al entrar. Reintento el login ({vez} de {MSC_REINTENTOS_502}).")\n',
-         nuevo=""),
-    dict(id="msc-502-sin-aviso-final", pruebas=[MSC_502],
-         viejo='        reg.paso(f"⚠ MSC respondió HTTP 502 al entrar {MSC_REINTENTOS_502 + 1} veces; no reintento más.")\n',
-         nuevo="        pass\n"),
-    # Reintenta sobre la página de error, sin volver a abrir myMSC; o sin la pausa.
-    dict(id="msc-502-sin-reabrir", pruebas=[MSC_502], viejo=REABRE, nuevo="            esperar(page, 3.0)\n"),
-    dict(id="msc-502-sin-pausa", pruebas=[MSC_502], viejo=REABRE, nuevo="            _msc_abrir(page, reg)\n"),
-    # Al volver a abrir, entra de nuevo aunque ya haya sesión.
-    dict(id="msc-502-no-mira-la-sesion", pruebas=[MSC_502],
-         viejo="            if _msc_logueado(page):\n                break\n", nuevo=""),
-    # Reintenta tras cualquier login fallido, no solo tras el 502.
-    dict(id="msc-502-cualquier-falla", pruebas=[MSC_502],
-         viejo="        if _msc_logueado(page) or not _msc_error_502(page):\n",
-         nuevo="        if _msc_logueado(page):\n"),
-    # El 502 tras el «Next» con su propia lectura, no con el ayudante.
-    dict(id="msc-502-paso1-lectura-propia", pruebas=[MSC_502],
-         viejo="            if _msc_error_502(page):\n", nuevo='            if "502" in texto_pagina(page):\n'),
-    # El ayudante sin una de sus dos señales, o que da el error cuando no pudo leer la página.
-    dict(id="msc-error-502-sin-no-puede-procesar", pruebas=[MSC_ERR],
-         viejo='    return "502" in txt or "no puede procesar" in txt\n', nuevo='    return "502" in txt\n'),
-    dict(id="msc-error-502-sin-el-codigo", pruebas=[MSC_ERR],
-         viejo='    return "502" in txt or "no puede procesar" in txt\n', nuevo='    return "no puede procesar" in txt\n'),
-    dict(id="msc-error-502-sin-leer", pruebas=[MSC_ERR],
-         viejo='    txt = texto_pagina(page)\n    return "502" in txt',
-         nuevo='    txt = texto_pagina(page) or "502"\n    return "502" in txt'),
     # El de entrar vuelve a aceptar el primer botón de envío de la página, como hasta 4948e16.
     dict(id="msc-entrar-con-submit", pruebas=[MSC_LOGIN],
          viejo="""            "button:has-text('Iniciar')", 5000, reg):\n""",
          nuevo="""            "button:has-text('Iniciar'), button[type='submit']", 5000, reg):\n"""),
+]
+
+# --- Encargo 45: el login de MSC termina cada espera con lo primero que llegue, ante el error va una sola vez a eBooking
+# y no reintenta, reconoce la sesión por su página y el error también por la página de error del propio MSC; sin la
+# sesión, la fila de MSC queda NO ENVIADA (decisiones de Marcelo, CICLO-login-msc-y-maersk.md). Reemplazan las del
+# encargo 31 sobre el reintento tras un 502 (MSC_REINTENTOS_502) y _msc_error_502. ---
+MSC_ERR = "test_clics.TestMsc.test_error_del_portal"
+MSC_SES = "test_clics.TestMsc.test_sesion_solo_en_su_pagina"
+MSC_ESP = "test_clics.TestMsc.test_login_termina_con_lo_primero_que_llega"
+MSC_TRAS = "test_clics.TestMsc.test_ante_el_error_va_una_vez_a_ebooking_y_no_reintenta"
+TEXTOS_ERR = 'MSC_TEXTOS_DE_ERROR = ("502", "no puede procesar", "unable to complete your request")\n'
+SESION = '    return u.netloc.lower() == "www.mymsc.com" and u.path.lower().rstrip("/") in MSC_PAGINAS_CON_SESION\n'
+A_EBOOKING = ('        page.goto(MSC_EBOOKING, wait_until="domcontentloaded")\n    except Exception as e:\n'
+              '        reg.info(f"no pude ir a eBooking')
+
+MUTACIONES += [
+    # _msc_error sin la página de error de MSC, sin la de Chrome por su dirección o por uno de sus textos, o que da el
+    # error cuando no pudo leer la página.
+    dict(id="msc-error-sin-la-de-msc", pruebas=[MSC_ERR],
+         viejo=TEXTOS_ERR, nuevo='MSC_TEXTOS_DE_ERROR = ("502", "no puede procesar")\n'),
+    dict(id="msc-error-sin-chrome-error", pruebas=[MSC_ERR],
+         viejo='        if str(page.url).lower().startswith("chrome-error://"):\n            return True\n',
+         nuevo='        if str(page.url).lower().startswith("chrome-error://"):\n            pass\n'),
+    dict(id="msc-error-sin-502", pruebas=[MSC_ERR],
+         viejo=TEXTOS_ERR, nuevo='MSC_TEXTOS_DE_ERROR = ("no puede procesar", "unable to complete your request")\n'),
+    dict(id="msc-error-sin-no-puede-procesar", pruebas=[MSC_ERR],
+         viejo=TEXTOS_ERR, nuevo='MSC_TEXTOS_DE_ERROR = ("502", "unable to complete your request")\n'),
+    dict(id="msc-error-sin-leer", pruebas=[MSC_ERR],
+         viejo="    txt = texto_pagina(page)\n    return any(t in txt for t in MSC_TEXTOS_DE_ERROR)\n",
+         nuevo='    txt = texto_pagina(page) or "502"\n    return any(t in txt for t in MSC_TEXTOS_DE_ERROR)\n'),
+    # _msc_sesion como hasta el encargo 45 (cualquier página de mymsc.com), sin eBooking, de cualquier servidor, sin
+    # quitar la barra del final o distinguiendo mayúsculas.
+    dict(id="msc-sesion-como-antes", pruebas=[MSC_SES], viejo=SESION,
+         nuevo='    return "mymsc.com" in str(page.url).lower()\n'),
+    dict(id="msc-sesion-sin-ebooking", pruebas=[MSC_SES],
+         viejo='MSC_PAGINAS_CON_SESION = ("/mymsc/welcome", "/mymsc/booking/main")\n',
+         nuevo='MSC_PAGINAS_CON_SESION = ("/mymsc/welcome",)\n'),
+    dict(id="msc-sesion-cualquier-servidor", pruebas=[MSC_SES], viejo=SESION,
+         nuevo='    return u.path.lower().rstrip("/") in MSC_PAGINAS_CON_SESION\n'),
+    dict(id="msc-sesion-con-la-barra", pruebas=[MSC_SES], viejo=SESION,
+         nuevo='    return u.netloc.lower() == "www.mymsc.com" and u.path.lower() in MSC_PAGINAS_CON_SESION\n'),
+    dict(id="msc-sesion-con-mayusculas", pruebas=[MSC_SES], viejo=SESION,
+         nuevo='    return u.netloc.lower() == "www.mymsc.com" and u.path.rstrip("/") in MSC_PAGINAS_CON_SESION\n'),
+    # Las esperas: sin mirar la sesión, sin terminar con el campo, con otro tope, con la espera fija de antes tras el
+    # «Next», sin la pausa de la validación, o sin mirar si ya había sesión al abrir.
+    dict(id="msc-espera-sin-la-sesion", pruebas=[MSC_ESP],
+         viejo='        if _msc_sesion(page):\n            return "sesión"\n', nuevo=""),
+    dict(id="msc-espera-sin-el-campo", pruebas=[MSC_ESP],
+         viejo='        if campo and _msc_a_la_vista(page, campo):\n            return "campo"\n', nuevo=""),
+    dict(id="msc-espera-otro-tope", pruebas=[MSC_ESP], viejo="MSC_SONDEOS = 60\n", nuevo="MSC_SONDEOS = 61\n"),
+    dict(id="msc-espera-fija-tras-el-next", pruebas=[MSC_ESP],
+         viejo="    _msc_cookies(page, reg)\n    paso = _msc_esperar(",
+         nuevo='    esperar(page, 3, reg, "esperar contraseña")\n    _msc_cookies(page, reg)\n    paso = _msc_esperar('),
+    dict(id="msc-sin-la-pausa", pruebas=[MSC_ESP],
+         viejo="        if validar and not pauso and any(", nuevo="        if False and not pauso and any("),
+    dict(id="msc-ya-habia-sin-mirar", pruebas=[MSC_ESP],
+         viejo='    if _msc_sesion(page):\n        reg.paso("Ya había una sesión activa.")',
+         nuevo='    if False:\n        reg.paso("Ya había una sesión activa.")'),
+    # Ante el error: sin mirar el error en la espera, sin ir a eBooking, yendo dos veces, volviendo a entrar, dándola
+    # por iniciada sin mirar, sin mirar el error al abrir, sin su captura o sin decirlo.
+    dict(id="msc-espera-sin-el-error", pruebas=[MSC_TRAS],
+         viejo='        if _msc_error(page):\n            return "error"\n', nuevo=""),
+    dict(id="msc-error-sin-ir-a-ebooking", pruebas=[MSC_TRAS],
+         viejo=A_EBOOKING, nuevo=A_EBOOKING.replace('page.goto(MSC_EBOOKING, wait_until="domcontentloaded")', "pass")),
+    dict(id="msc-error-dos-veces-a-ebooking", pruebas=[MSC_TRAS],
+         viejo=A_EBOOKING, nuevo='        page.goto(MSC_EBOOKING, wait_until="domcontentloaded")\n' + A_EBOOKING),
+    dict(id="msc-error-reintenta-el-login", pruebas=[MSC_TRAS],
+         viejo='    desenlace = _msc_esperar(page, reg, "la sesión en eBooking",\n',
+         nuevo='    _msc_entrar(page, {"usuario": "u", "clave": "c"}, reg)\n'
+               '    desenlace = _msc_esperar(page, reg, "la sesión en eBooking",\n'),
+    dict(id="msc-error-sin-mirar-la-sesion", pruebas=[MSC_TRAS],
+         viejo='    ok = desenlace == "sesión"\n    reg.paso("Sesión iniciada." if ok else "⚠ Después',
+         nuevo='    ok = True\n    reg.paso("Sesión iniciada." if ok else "⚠ Después'),
+    dict(id="msc-error-al-abrir-sin-mirar", pruebas=[MSC_TRAS],
+         viejo='    desenlace = "error" if _msc_error(page) else _msc_entrar(page, creds, reg, on_pausa)\n',
+         nuevo="    desenlace = _msc_entrar(page, creds, reg, on_pausa)\n"),
+    dict(id="msc-error-sin-su-captura", pruebas=[MSC_TRAS],
+         viejo='    reg.url(page); reg.captura(page, "msc_error")\n', nuevo="    reg.url(page)\n"),
+    dict(id="msc-error-sin-aviso", pruebas=[MSC_TRAS],
+         viejo='    reg.paso("⚠ MSC mostró una página de error al iniciar sesión.',
+         nuevo='    reg.info("⚠ MSC mostró una página de error al iniciar sesión.'),
+    # Sin la sesión de MSC, la fila queda sin estado, como antes, en el panel o en la consola; o NO ENVIADA con
+    # cualquier naviera.
+    dict(id="msc-sin-sesion-panel-sin-estado", pruebas=[CO + "test_login_fallido_de_msc_queda_no_enviada"],
+         viejo="                    for rsv in (sub_elegidas if nav in SIN_SESION else ()):\n",
+         nuevo="                    for rsv in ():\n"),
+    dict(id="msc-sin-sesion-consola-sin-estado", pruebas=[ER + "test_login_fallido_de_msc_queda_no_enviada"],
+         viejo="            for i, rsv in (con_nave if naviera_clave in SIN_SESION else ()):\n",
+         nuevo="            for i, rsv in ():\n"),
+    dict(id="sin-sesion-cualquier-naviera",
+         pruebas=[CO + "test_login_fallido_no_reserva", ER + "test_login_fallido_no_toca_la_planilla"],
+         viejo='SIN_SESION = {"msc": MSC_SIN_SESION}\n',
+         nuevo='SIN_SESION = {k: MSC_SIN_SESION for k in ("one", "msc", "cma", "cosco", "hyundai", "maersk")}\n'),
 ]
 
 # --- Encargo 31 · ítem 2: ONE espera, después del login, la dirección que su portal usa hoy (decisión de Marcelo,
