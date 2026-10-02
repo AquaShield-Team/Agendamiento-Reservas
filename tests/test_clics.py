@@ -394,6 +394,32 @@ class MarcoConCampo:
         return 1
 
 
+class MarcoSinCampos:
+    """El marco del formulario de COSCO (bkg2) sin su campo «Origin City» (encargo 48): el JavaScript que lo cuenta da
+    0, y anota cuántas veces se lo corrió; da su HTML a la evidencia."""
+    url = "https://portal.invalid/bkg2"
+
+    def __init__(self, mod):
+        self.mod, self.cuentas = mod, 0
+
+    def evaluate(self, js, *a):
+        if js == self.mod._JS_HTML_COMPLETO:
+            return {"html": "<body>marco sintetico</body>", "sombras": 0}
+        self.cuentas += 1
+        return 0
+
+
+class PaginaNewBooking(soporte.PaginaFalsa):
+    """New Booking falsa de COSCO (encargo 48): anota cada dirección que se abre y da su HTML a la evidencia; 'marco'
+    es el marco del formulario, en sus frames."""
+
+    def __init__(self, mod, marco=None):
+        super().__init__(texto=lambda js, *a: {"html": "<body>new booking sintetica</body>", "sombras": 0}
+                         if js == mod._JS_HTML_COMPLETO else None, frames=[marco] if marco else [])
+        self.main_frame, self.abiertas = None, []
+        self.goto = lambda url, **k: self.abiertas.append(url)
+
+
 def _nada(*a, **k):
     return None
 
@@ -2592,6 +2618,57 @@ class TestCosco(ConRegistro):
         # Ningún «Lirquen» escrito en reservar_cosco: el único que queda está en MAPA_PUERTOS_COSCO, que traduce el
         # puerto de la celda ya normalizado. Hasta f68ce6c era el respaldo.
         self.assertNotIn("Lirquen", ast.unparse(f))
+
+    def test_sin_formulario_queda_no_enviada_con_evidencia(self):
+        # New Booking sin su formulario: sin su marco bkg2, o con el marco y sin el campo «Origin City» en 20 vueltas.
+        # La reserva queda NO ENVIADA, con lo que faltó y los segundos desde que abrió New Booking, y deja la captura de
+        # la ventana y el HTML de la página y de sus marcos (decisión de Marcelo, encargo 48,
+        # CICLO-calendario-cosco-y-cma.md). Hasta ahí quedaba REVISAR, y el HTML se guardaba solo con
+        # AQUASHIELD_DESCUBRIR: así quedó el 2026-10-02, sin poder medir qué mostraba.
+        reserva = {"fila": 9, "pol": "PUERTO ALFA, CHILE", "destino_orig": "PUERTO BETA",
+                   "destino_final": "CIUDAD GAMMA", "nave": "NAVE PRUEBA UNO", "viaje": "", "dia_carga": "",
+                   "cotizacion": ""}
+        fin = "; no pulsé nada y la reserva no se envió"
+        sin_marco = "no apareció el marco de su formulario (bkg2)"
+        sin_campos = "su formulario (el marco bkg2) no mostró sus campos («Origin City»)"
+        for que in (sin_marco, sin_campos):
+            with self.subTest(que=que):
+                marco = MarcoSinCampos(self.mod) if que == sin_campos else None
+                pagina, esperas = PaginaNewBooking(self.mod, marco), []
+                reg, vistas, log = self.corrida("sin_formulario_" + ("campos" if marco else "marco"))
+                with mock.patch.multiple(self.mod, _cosco_esperar_contenido=_nada, _cosco_frame=lambda *a, **k: marco,
+                                         esperar=lambda page, seg, *a, **k: esperas.append(seg)):
+                    r = self.mod.reservar_cosco(pagina, dict(reserva), {"contrato": "CT-PRUEBA"}, reg)
+                self.assertEqual(r[0], "NO ENVIADA")
+                self.assertRegex(r[1], rf"^COSCO: abrí New Booking y {re.escape(que)} en \d+ s{fin}$")
+                # La captura de siempre (de la ventana, salvo con AQUASHIELD_CAPTURA_FULL) y la de la evidencia.
+                antes = [("cosco_f9_1_choose.png", False)] if marco else [("cosco_f9_err.png", False)]
+                self.assertEqual(pagina.capturas, antes + [("cosco_f9_sin_formulario.png", False)])
+                self.assertEqual(sorted(p.name for p in log.parent.iterdir() if p.suffix == ".html"),
+                                 ["cosco_f9_sin_formulario.html"]
+                                 + (["cosco_f9_sin_formulario_marco1.html"] if marco else []))
+                self.assertEqual((pagina.abiertas, esperas, marco.cuentas if marco else 0),
+                                 (["https://elines.coscoshipping.com/ebusiness/bookingrequest/"],
+                                  [1.5] * 20 if marco else [], 20 if marco else 0))
+                total = 2 if marco else 1
+                for donde in (log.read_text(encoding="utf-8"), "\n".join(vistas)):
+                    self.assertIn(f"· ✗ NO ENVIADA · {r[1]}", donde)
+                    self.assertIn(f"evidencia sin el formulario de New Booking: cosco_f9_sin_formulario.png y "
+                                  f"{total} de {total} HTML", donde)
+        # Los segundos, desde 'desde' (time.monotonic).
+        reg, _, _ = self.corrida("sin_formulario_segundos")
+        r = self.mod._cosco_sin_formulario(PaginaNewBooking(self.mod), reg, 8, sin_marco,
+                                           self.mod.time.monotonic() - 35.2)
+        self.assertEqual(r, ("NO ENVIADA", f"COSCO: abrí New Booking y {sin_marco} en 35 s{fin}"))
+
+    def test_revisar_solo_si_la_nave_no_esta(self):
+        # En reservar_cosco, REVISAR queda solo para la nave no encontrada (decisión de Marcelo, encargo 48): sin el
+        # formulario de New Booking, NO ENVIADA (test_sin_formulario_queda_no_enviada_con_evidencia).
+        tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
+        f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_cosco")
+        revisar = [ast.unparse(n) for n in ast.walk(f) if isinstance(n, ast.Return) and "'REVISAR'" in ast.unparse(n)]
+        self.assertEqual(len(revisar), 1)
+        self.assertIn("no está en COSCO", revisar[0])
 
     def test_js_perfil_dice_si_pulso(self):
         def correr(hay, falla):
@@ -5185,6 +5262,59 @@ r.sombra = [s.raiz, s.dias.length, s.dias.filter(d => d.fecha).length];
         self.assertEqual(r["dos"], 2)
         self.assertEqual(r["pocos"], {"listos": 1, "raiz": False, "meses": [], "dias": []})
         self.assertEqual(r["sombra"], [True, 30, 30])       # dentro de una raíz shadow; el número de semana no cuenta
+
+    def test_js_calendario_por_su_cabecera(self):
+        # Sin una leyenda, el mes y el año salen de la cabecera: un solo botón a la vista cuyo nombre es un mes y uno
+        # solo cuyo nombre es un año, si los días, sin los de otro mes, van del 1 al último de ese mes (decisión de
+        # Marcelo, encargo 48, CICLO-calendario-cosco-y-cma.md). La forma es la medida el 2026-10-02: en un mc-modal, el
+        # mes y el año en dos mc-button de la cabecera, con su label; cada día, un mc-button con su número por label y,
+        # adentro, un button con el número por aria-label y disabled si no se puede elegir. Hasta ahí, ningún día tenía
+        # fecha, y la fila quedó NO ENVIADA.
+        r = self.js(r"""
+const boton = (label, opciones = {}) => el('mc-button', {label}, [],
+  Object.assign({shadow: [el('button', {part: 'button'}, [])]}, opciones));
+const diaMc = (n, atrs = {}) => el('mc-button', {label: String(n)}, [], {shadow: [el('button',
+  Object.assign({part: 'button', 'aria-label': String(n), 'data-prueba': 'd' + n}, atrs),
+  [el('div', {class: 'mc-text-and-icon small'}, [String(n)])])]});
+const octubre = n => diaMc(n, n >= 12 && n <= 16 ? {} : {disabled: ''});
+const semana = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => el('div', {class: 'weekday'}, [d]));
+const modal = (cabecera, dias, extra = []) => el('mc-modal', {open: ''}, [
+  el('p', {class: 'mds-headline--x-small'}, ['Container pick-up details']), el('div', {}, cabecera),
+  el('div', {}, semana), el('div', {class: 'body-days'}, dias)].concat(extra, [listo()]));
+const cab = (mes, anio, opciones = {}) => [boton('Previous month'), boton(mes, opciones), boton(anio),
+  boton('Next month')];
+const fechados = () => leer().dias.filter(d => d.fecha).length;
+pagina(modal(cab('October', '2026'), rango(1, 31, octubre)));
+const a = leer();
+r.medido = [a.raiz, a.meses, corto(a)];
+r.pulsa = [pulsar({fecha: '2026-10-13'}), pulsar({fecha: '2026-10-05'})].map(prueba);
+r.listo = prueba(leerListo());
+// Dos meses, sin el año o con el mes que no se ve: ningún día.
+pagina(modal([boton('October'), boton('November'), boton('2026')], rango(1, 31, octubre)));
+r.dosMeses = fechados();
+pagina(modal([boton('October')], rango(1, 31, octubre)));
+r.sinAnio = fechados();
+pagina(modal(cab('October', '2026', {invisible: true}), rango(1, 31, octubre)));
+r.oculto = fechados();
+// Con una leyenda, manda la leyenda.
+pagina(modal(cab('October', '2026'), rango(1, 31, octubre), [el('span', {}, ['October 2026'])]));
+r.leyenda = [...new Set(leer().dias.map(d => d.como))];
+// Tres días sin marca antes del 1: ninguno; los mismos, marcados de otro mes, no cuentan; septiembre no tiene 31.
+pagina(modal(cab('October', '2026'), rango(28, 30, octubre).concat(rango(1, 31, octubre))));
+r.sinMarca = fechados();
+pagina(modal(cab('October', '2026'), rango(28, 30, n => diaMc(n, {class: 'outside-month'}))
+  .concat(rango(1, 31, octubre))));
+const g = leer();
+r.marcados = [g.dias.filter(d => d.como === 'cabecera').length, g.dias.filter(d => d.como === 'otro-mes').length];
+pagina(modal(cab('September', '2026'), rango(1, 31, octubre)));
+r.septiembre = fechados();
+""")
+        octubre = [[n, f"2026-10-{n:02d}", "cabecera", 12 <= n <= 16] for n in range(1, 32)]
+        self.assertEqual(r["medido"], [True, [], octubre])
+        self.assertEqual((r["pulsa"], r["listo"]), (["d13", None], "listo-interno"))
+        self.assertEqual((r["dosMeses"], r["sinAnio"], r["oculto"]), (0, 0, 0))
+        self.assertEqual(r["leyenda"], ["mes"])
+        self.assertEqual((r["sinMarca"], r["marcados"], r["septiembre"]), (0, [31, 3], 0))
 
     def test_js_tarjeta_y_avisos_de_cargos(self):
         guion = DOM_AQ + "const puesto = " + self.mod._JS_MK_RETIRO_PUESTO + ";\nconst avisos = " + \

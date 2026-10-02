@@ -259,7 +259,10 @@ class TestCadaReservadorLaDeja(soporte.CasoAQ):
                                           # Desde el encargo 42, la misma evidencia cuando no ven ninguna que elegir:
                                           # la dejan los siete por _evidencia_sin_sugerencia
                                           # (test_sin_sugerencias_deja_la_evidencia_igual).
-                                          + ["_evidencia_sin_sugerencia"]))
+                                          + ["_evidencia_sin_sugerencia"]
+                                          # Desde el encargo 48, New Booking de COSCO sin su formulario
+                                          # (test_clics.TestCosco, CICLO-calendario-cosco-y-cma.md).
+                                          + ["_cosco_sin_formulario"]))
 
 
 class TestHtmlSinObjetivo(ConRegistro):
@@ -1759,6 +1762,24 @@ class TestListaDeSugerencias(ConRegistro):
                 self.assertEqual(pagina.eventos, [("campo",), ("escribe", celda.split(",")[0].upper())]
                                  + [("espera",)] * 3 + self.evidencia("_mk_ciudad", "mk_f5_origen")
                                  + [("pulsa", opcion)] + self.DESPUES["_mk_ciudad"])
+
+    def test_cma_reconoce_la_lista_con_una_tilde_en_las_primeras_letras(self):
+        # Decisión de Marcelo (encargo 48): CMA arma el prefijo con que reconoce su lista como MAERSK desde el encargo
+        # 46 (_prefijo_de_la_lista): la letra con tilde como la letra sin ella, y la ñ como n. Hasta ahí se caían:
+        # «PEÑA ALFA» esperaba «PEA A» y «PUÉRTO ALFA», «PURTO», que ninguna sugerencia trae, y la fila quedaba NO
+        # ENVIADA en ese campo. Lo escrito en el campo sigue con sus tildes.
+        for ayudante in ("_cma_puerto", "_cma_entrega"):
+            for celda, opcion in (("PEÑA ALFA, PAIS", "PENA ALFA, PAIS ; XX ; XXPNA"),
+                                  ("PUÉRTO ALFA", "PUERTO ALFA, PAIS ; XX ; XXPAL")):
+                with self.subTest(ayudante=ayudante, celda=celda):
+                    _, reg, _ = self.corrida()
+                    pagina = PaginaSugerencias(self.mod)
+                    pagina.opcion = opcion
+                    r = self.llamar_con(ayudante, pagina, reg, celda, evidencia="cma_f7_origen_puerto")
+                    self.assertEqual(r, True if ayudante == "_cma_puerto" else opcion)
+                    self.assertEqual(pagina.eventos, [("campo",), ("escribe", celda.split(",")[0].upper())]
+                                     + [("espera",)] * 2 + self.evidencia(ayudante, "cma_f7_origen_puerto")
+                                     + [("pulsa", opcion)] + self.DESPUES[ayudante])
 
     def test_maersk_escribe_y_compara_con_los_espacios_de_a_uno(self):
         # Revisión de código del encargo 43: el prefijo con que espera la lista se toma con los espacios de a uno, como

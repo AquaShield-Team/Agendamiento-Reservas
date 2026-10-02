@@ -5940,7 +5940,9 @@ MUTACIONES += [
     dict(id="mk-reserva-sigue-sin-book", pruebas=[BOOK_RAMA],
          viejo="    if sin_book:\n        return _mk_book_sin_pulsar(page, reg, reserva, *sin_book)\n", nuevo=""),
     # El prefijo como hasta ahí: la letra con tilde y la ñ se caen.
-    dict(id="mk-prefijo-quita-las-tildes", pruebas=[SUG_TILDES], viejo=PREFIJO_MK,
+    dict(id="mk-prefijo-quita-las-tildes",
+         pruebas=[SUG_TILDES, SUG + "test_cma_reconoce_la_lista_con_una_tilde_en_las_primeras_letras"],
+         viejo=PREFIJO_MK,
          nuevo='    plano = " ".join(str(ciudad or "").split())\n'),
 ]
 
@@ -5979,4 +5981,67 @@ MUTACIONES += [
          nuevo='    reg.info(f"⚠ MSC mostró una página de error al pulsar «Next».'),
     dict(id="msc-recarga-sin-captura", pruebas=[MSC_REC],
          viejo='    reg.url(page); reg.captura(page, "msc_error_next")\n', nuevo="    reg.url(page)\n"),
+]
+
+# --- Encargo 48: MAERSK toma el mes y el año del calendario de su cabecera; COSCO sin formulario, NO ENVIADA con
+# evidencia, y REVISAR solo para la nave no encontrada; CMA arma su prefijo como MAERSK (decisiones de Marcelo,
+# CICLO-calendario-cosco-y-cma.md) ---
+RT_JS_CABECERA = RT + "test_js_calendario_por_su_cabecera"
+COSCO_SIN_FORM = "test_clics.TestCosco.test_sin_formulario_queda_no_enviada_con_evidencia"
+COSCO_REVISAR = "test_clics.TestCosco.test_revisar_solo_si_la_nave_no_esta"
+CMA_TILDES = SUG + "test_cma_reconoce_la_lista_con_una_tilde_en_las_primeras_letras"
+CAB_USA = "        const cab = leyendas.length ? '' : cabecera();\n"
+CAB_VALIDA = ("            return numeros.length === ultimo && numeros.every((n, i) => n === i + 1)\n"
+              "                ? anio + '-' + String(mkMes(mes) + 1).padStart(2, '0') : '';\n")
+COSCO_EVID = ('    _evidencia_antes_de_la_guarda(page, reg, f"cosco_f{f}_sin_formulario", "sin el formulario de New '
+              'Booking",\n                                  completa=False)\n')
+COSCO_NO_ENVIADA = ('    return _no_enviada(reg, f"COSCO: abrí New Booking y {que} en {segundos:.0f} s; no pulsé '
+                    'nada y la ')
+SIN_MARCO = ('        return _cosco_sin_formulario(page, reg, f, "no apareció el marco de su formulario (bkg2)", '
+             'desde)\n')
+SIN_CAMPOS = ('        return _cosco_sin_formulario(page, reg, f, "su formulario (el marco bkg2) no mostró sus campos '
+              '(«Origin City»)",\n                                     desde)\n')
+PREF_VIEJO = '    pref = "".join(ch for ch in ciudad if ord(ch) < 128).strip()[:5] or ciudad[:4]\n'
+
+MUTACIONES += [
+    # La cabecera: sin usarla, también con una leyenda, con dos meses, oculta, con cualquier número por año, sin mirar
+    # los días, contando los de otro mes, o diciendo que la fecha salió de la leyenda.
+    dict(id="mk-cabecera-no-se-usa", pruebas=[RT_JS_CABECERA], viejo=CAB_USA, nuevo="        const cab = '';\n"),
+    dict(id="mk-cabecera-aunque-haya-leyenda", pruebas=[RT_JS_CABECERA], viejo=CAB_USA,
+         nuevo="        const cab = cabecera();\n"),
+    dict(id="mk-cabecera-con-dos-meses", pruebas=[RT_JS_CABECERA],
+         viejo="                return afuera.length === 1 ? nombre(afuera[0].el) : '';\n",
+         nuevo="                return afuera.length >= 1 ? nombre(afuera[0].el) : '';\n"),
+    dict(id="mk-cabecera-oculta", pruebas=[RT_JS_CABECERA],
+         viejo="            const botones = todos.filter(x => enRaiz(x) && esBoton(x.el) && mkVisible(x.el));\n",
+         nuevo="            const botones = todos.filter(x => enRaiz(x) && esBoton(x.el));\n"),
+    dict(id="mk-cabecera-anio-cualquier-numero", pruebas=[RT_JS_CABECERA],
+         viejo="anio = unico(t => /^\\d{4}$/.test(t));", nuevo="anio = unico(t => /^\\d+$/.test(t));"),
+    dict(id="mk-cabecera-sin-mirar-los-dias", pruebas=[RT_JS_CABECERA], viejo=CAB_VALIDA,
+         nuevo="            return anio + '-' + String(mkMes(mes) + 1).padStart(2, '0');\n"),
+    dict(id="mk-cabecera-cuenta-los-de-otro-mes", pruebas=[RT_JS_CABECERA],
+         viejo="celdas.filter(c => enRaiz(c.x) && !fueraDe(c)).map(c => c.dia)",
+         nuevo="celdas.filter(c => enRaiz(c.x)).map(c => c.dia)"),
+    dict(id="mk-cabecera-dice-mes", pruebas=[RT_JS_CABECERA],
+         viejo="como = fecha ? (cab ? 'cabecera' : 'mes') : '';", nuevo="como = fecha ? 'mes' : '';"),
+    # COSCO sin formulario: REVISAR, sin la evidencia, con la captura de la página entera o sin los segundos; y en
+    # reservar_cosco, los dos cortes de vuelta en REVISAR.
+    dict(id="cosco-sin-formulario-revisar", pruebas=[COSCO_SIN_FORM], viejo=COSCO_NO_ENVIADA,
+         nuevo=COSCO_NO_ENVIADA.replace("return _no_enviada(reg, ", 'return ("REVISAR", ')),
+    dict(id="cosco-sin-formulario-sin-evidencia", pruebas=[COSCO_SIN_FORM], viejo=COSCO_EVID, nuevo=""),
+    dict(id="cosco-sin-formulario-pagina-entera", pruebas=[COSCO_SIN_FORM], viejo=COSCO_EVID,
+         nuevo=COSCO_EVID.replace("completa=False", "completa=True")),
+    dict(id="cosco-sin-formulario-sin-segundos", pruebas=[COSCO_SIN_FORM], viejo=COSCO_NO_ENVIADA,
+         nuevo=COSCO_NO_ENVIADA.replace(" en {segundos:.0f} s", "")),
+    dict(id="cosco-sin-marco-revisar", pruebas=[COSCO_SIN_FORM, COSCO_REVISAR], viejo=SIN_MARCO,
+         nuevo='        return ("REVISAR", "no cargó el formulario de booking")\n'),
+    dict(id="cosco-sin-campos-revisar", pruebas=[COSCO_SIN_FORM, COSCO_REVISAR], viejo=SIN_CAMPOS,
+         nuevo='        return ("REVISAR", "el formulario de COSCO no cargó los campos a tiempo")\n'),
+    # CMA: el puerto o el lugar de entrega con el prefijo de antes, con la letra con tilde y la ñ caídas.
+    dict(id="cma-puerto-prefijo-con-tildes-caidas", pruebas=[CMA_TILDES],
+         viejo="    pref = _prefijo_de_la_lista(ciudad)\n    rx = _r.compile(_r.escape(pref), _r.I)\n",
+         nuevo=PREF_VIEJO + "    rx = _r.compile(_r.escape(pref), _r.I)\n"),
+    dict(id="cma-entrega-prefijo-con-tildes-caidas", pruebas=[CMA_TILDES],
+         viejo="    pref = _prefijo_de_la_lista(ciudad)\n    sel = ",
+         nuevo=PREF_VIEJO + "    sel = "),
 ]

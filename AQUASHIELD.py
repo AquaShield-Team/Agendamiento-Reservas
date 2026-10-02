@@ -273,7 +273,8 @@ def _evidencia_antes_de_la_guarda(page, reg, nombre, momento="en la guarda", com
       «mk_f<fila>_detenida» (MAERSK sin nave y, desde el encargo 40, sin salidas, en SIN-CUPO; desde el 46, también con
       la nave y sin poder pulsar su «Book»),
       «one_f<fila>_detenida» (ONE sin Review Booking) y
-      «cosco_f<fila>_itinerarios» (COSCO con más de un itinerario para la nave).
+      «cosco_f<fila>_itinerarios» (COSCO con más de un itinerario para la nave); y, desde el encargo 48,
+      «cosco_f<fila>_sin_formulario» (_cosco_sin_formulario: New Booking de COSCO sin su formulario).
     - reservar_hyundai la deja justo antes de escribir el Remark: «hmm_f<fila>_remark», con la captura de la ventana
       (CICLO-evidencia-remark-hyundai.md).
     - Con la captura de la ventana, también: MSC sin una sola salida para la nave («msc_f<fila>_itinerarios»,
@@ -5824,6 +5825,20 @@ def _cosco_leer_itinerarios(page, frame, reg, antes=0):
     return filas
 
 
+def _cosco_sin_formulario(page, reg, f, que, desde):
+    """New Booking de COSCO sin su formulario ('que' dice qué faltó: su marco bkg2, o sus campos): deja la captura de la
+    ventana y el HTML de la página y de sus marcos (cosco_f<fila>_sin_formulario), y la reserva queda NO ENVIADA, con lo
+    que faltó y los segundos desde que abrió New Booking ('desde', de time.monotonic). Decisión de Marcelo, encargo 48
+    (CICLO-calendario-cosco-y-cma.md): hasta ahí quedaba REVISAR, que en COSCO queda solo para la nave no encontrada,
+    y su HTML se guardaba solo con AQUASHIELD_DESCUBRIR. Así quedó el 2026-10-02, sin poder medir qué mostraba
+    (CICLO-msc-recarga-y-corrida-02-10.md)."""
+    segundos = time.monotonic() - desde
+    _evidencia_antes_de_la_guarda(page, reg, f"cosco_f{f}_sin_formulario", "sin el formulario de New Booking",
+                                  completa=False)
+    return _no_enviada(reg, f"COSCO: abrí New Booking y {que} en {segundos:.0f} s; no pulsé nada y la reserva no se "
+                            f"envió")
+
+
 @_con_la_nave_de_la_fila
 @_con_la_ruta_de_la_fila
 @_sin_clic_a_ciegas("cosco")
@@ -5836,6 +5851,7 @@ def reservar_cosco(page, reserva, creds, reg, on_pausa=None):
     _avisar_dia_carga(reserva, reg)
 
     # La pantalla New Booking se abre directo por URL (sin pelear con el menú)
+    desde = time.monotonic()
     try:
         page.goto("https://elines.coscoshipping.com/ebusiness/bookingrequest/",
                   wait_until="domcontentloaded")
@@ -5845,7 +5861,7 @@ def reservar_cosco(page, reserva, creds, reg, on_pausa=None):
     frame = _cosco_frame(page, reg)
     if not frame:
         reg.captura(page, f"cosco_f{f}_err", full=True)
-        return ("REVISAR", "no cargó el formulario de booking")
+        return _cosco_sin_formulario(page, reg, f, "no apareció el marco de su formulario (bkg2)", desde)
     # Esperar a que el formulario del iframe (bkg2) renderice sus campos
     listo = False
     for _ in range(20):
@@ -5865,7 +5881,8 @@ def reservar_cosco(page, reserva, creds, reg, on_pausa=None):
     if not listo:
         if os.environ.get("AQUASHIELD_DESCUBRIR"):
             _guardar_html(page, "cosco_dump.html", reg)
-        return ("REVISAR", "el formulario de COSCO no cargó los campos a tiempo")
+        return _cosco_sin_formulario(page, reg, f, "su formulario (el marco bkg2) no mostró sus campos («Origin City»)",
+                                     desde)
 
     # ---- Paso 1: Choose Service ----
     reg.paso("Paso 1 · Choose Service (ruta)...")
@@ -7632,17 +7649,27 @@ def _mk_base(sugerencia):
         t = sin
 
 
+def _prefijo_de_la_lista(ciudad):
+    """Con qué reconocen MAERSK (_mk_sugerencias) y CMA (_cma_puerto, _cma_entrega) su lista de sugerencias: los
+    primeros 5 caracteres ASCII de la ciudad en _mk_plano (sin tildes, la Ñ como N, en mayúsculas y con los espacios de
+    a uno); otra letra fuera de ASCII se cae, y si no queda ninguno, los primeros 4 en _mk_plano. CMA, desde el encargo
+    48 (decisión de Marcelo, CICLO-calendario-cosco-y-cma.md): hasta ahí armaba el suyo como MAERSK hasta el 46, con la
+    letra con tilde y la ñ caídas y los espacios como venían."""
+    plano = _mk_plano(ciudad)
+    return "".join(ch for ch in plano if ord(ch) < 128).strip()[:5] or plano[:4]
+
+
 def _mk_sugerencias(page, ciudad):
     """Las sugerencias a la vista de MAERSK (mc-option) que traen los primeros 5 caracteres ASCII de la ciudad, sin sus
-    tildes (la Ñ como N) y con los espacios de a uno (_mk_plano): con ellas sabe _mk_ciudad que llegó la lista de lo que
-    escribió, y entre ellas elige (_mk_las_exactas). Otra letra fuera de ASCII se cae. Hasta el encargo 46, la letra con
-    tilde y la ñ también se caían: con una de ellas entre la segunda y la quinta letra, el prefijo no estaba en ninguna
-    sugerencia y la fila quedaba NO ENVIADA en ese campo (decisión de Marcelo, CICLO-maersk-pulsa-el-book.md; pregunta 2
-    del encargo 43, CICLO-maersk-elige-exacto.md). La sugerencia se mira como viene: en las 119 de las 6 listas de
-    MAERSK de logs/, ninguna trae una letra fuera de ASCII. Hasta la revisión de código del encargo 43, con un espacio
-    doble entre las 5 primeras letras («SAN  ALFA») el prefijo no estaba en ninguna sugerencia."""
-    plano = _mk_plano(ciudad)
-    prefijo = "".join(ch for ch in plano if ord(ch) < 128).strip()[:5] or plano[:4]
+    tildes (la Ñ como N) y con los espacios de a uno (_prefijo_de_la_lista): con ellas sabe _mk_ciudad que llegó la
+    lista de lo que escribió, y entre ellas elige (_mk_las_exactas). Otra letra fuera de ASCII se cae. Hasta el encargo
+    46, la letra con tilde y la ñ también se caían: con una de ellas entre la segunda y la quinta letra, el prefijo no
+    estaba en ninguna sugerencia y la fila quedaba NO ENVIADA en ese campo (decisión de Marcelo,
+    CICLO-maersk-pulsa-el-book.md; pregunta 2 del encargo 43, CICLO-maersk-elige-exacto.md). La sugerencia se mira como
+    viene: en las 119 de las 6 listas de MAERSK de logs/, ninguna trae una letra fuera de ASCII. Hasta la revisión de
+    código del encargo 43, con un espacio doble entre las 5 primeras letras («SAN  ALFA») el prefijo no estaba en
+    ninguna sugerencia."""
+    prefijo = _prefijo_de_la_lista(ciudad)
     return page.locator("mc-option:visible").filter(has_text=_re_mk.compile(_re_mk.escape(prefijo), _re_mk.I))
 
 
@@ -8415,20 +8442,27 @@ _JS_MK_FECHAS = r"""
     }
 """
 
-# El calendario de la fecha de retiro no está medido: ninguna corrida guardó su HTML (el 21-09 no se guardaba, y del
-# 24-09 al encargo 36 no se abría). Lo que se sabe: tiene un «Done» (el código de antes de 0f1507e lo pulsaba), y sus
-# días llevan su número como texto (así los encontraba). mkCalendario lo lee sin suponer más:
+# El calendario de la fecha de retiro, medido el 2026-10-02 en mk_f10_calendario.html, el primero que guardó una
+# corrida (encargo 48, CICLO-calendario-cosco-y-cma.md): va en un mc-modal («Container pick-up details»); el mes y el
+# año, en dos mc-button de su cabecera, con label «October» y «2026», sin una leyenda que traiga los dos; cada día, un
+# mc-button con su número por label y, adentro, un button con el número por aria-label y disabled si no se puede
+# elegir. Hasta ahí se sabía solo que tiene un «Done» (el código de antes de 0f1507e lo pulsaba) y que sus días llevan
+# su número como texto (así los encontraba). mkCalendario lo lee así:
 # - el calendario es el ancestro más cercano del único «Done» a la vista que contiene al menos 28 celdas de día;
 # - una celda de día: algo que se puede pulsar (button, td, a, role gridcell, button u option, tabindex, o una etiqueta
 #   con «day») cuyo texto entero es un número del 1 al 31, sin los números de semana; lo de adentro con el mismo número
 #   es la misma celda;
 # - su fecha, por un atributo que la trae entera (aria-label, title, data-date…) con ese mismo día; si no, por el mes y
-#   el año de la única leyenda «September 2026» de su bloque. Los días marcados de otro mes no toman la leyenda, y una
-#   fecha que queda en dos celdas queda solo en la de su propio mes, o en ninguna;
+#   el año de la única leyenda «September 2026» de su bloque; y si el calendario no trae ninguna leyenda, por los de
+#   su cabecera: un solo botón a la vista cuyo nombre es un mes y uno solo cuyo nombre es un año, y solo si sus días,
+#   sin los marcados de otro mes, van del 1 al último de ese mes, una vez cada uno (decisión de Marcelo, encargo 48:
+#   con el calendario del 02-10, la regla elige el 13-10). Los días marcados de otro mes no toman la leyenda ni la
+#   cabecera, y una fecha que queda en dos celdas queda solo en la de su propio mes, o en ninguna;
 # - deshabilitada, si ella o lo de adentro trae disabled, aria-disabled="true", o una clase o un part con disab, inact,
 #   unavailable, out-of-range, not-allowed o blocked.
 # Lo que no se identifica así no se pulsa (_mk_elegir_dia_de_retiro): la reserva queda NO ENVIADA, y la evidencia
-# mk_f<fila>_calendario deja el HTML del calendario para medirlo.
+# mk_f<fila>_calendario deja el HTML del calendario para medirlo. Hasta el encargo 48, sin una leyenda, ningún día tenía
+# fecha: así quedó NO ENVIADA la fila de MAERSK del 2026-10-02 (CICLO-msc-recarga-y-corrida-02-10.md).
 _JS_MK_DIAS = r"""
     function mkCalendario() {
         const todos = mkRecorrer();
@@ -8480,13 +8514,32 @@ _JS_MK_DIAS = r"""
         const FUERA = new RegExp(['outside', 'other-?month', 'adjacent', 'out-?of-?month', 'not-?current',
                                   'prev-?month', 'next-?month', 'overflow', 'different-?month'].join('|'), 'i');
         const APAGADO = /disab|inact|unavailable|out-?of-?range|not-?allowed|blocked/i;
+        const fueraDe = c => FUERA.test(marcas(c)) || c.miembros.some(m => mkAtr(m.el, 'aria-hidden') === 'true');
+        // Sin una leyenda, el mes y el año de la cabecera (encargo 48): un solo botón a la vista cuyo nombre es un mes
+        // y uno solo cuyo nombre es un año, si los días, sin los de otro mes, van del 1 al último de ese mes.
+        const cabecera = () => {
+            const botones = todos.filter(x => enRaiz(x) && esBoton(x.el) && mkVisible(x.el));
+            const unico = calza => {
+                const c = botones.filter(x => calza(nombre(x.el)));
+                const de = new Set(c.map(x => x.el));
+                const afuera = c.filter(x => !x.anc.some(a => de.has(a)));
+                return afuera.length === 1 ? nombre(afuera[0].el) : '';
+            };
+            const mes = unico(t => /^[a-z]{3,9}$/.test(t) && mkMes(t) >= 0), anio = unico(t => /^\d{4}$/.test(t));
+            if (!mes || !anio) return '';
+            const ultimo = new Date(Date.UTC(+anio, mkMes(mes) + 1, 0)).getUTCDate();
+            const numeros = celdas.filter(c => enRaiz(c.x) && !fueraDe(c)).map(c => c.dia).sort((a, b) => a - b);
+            return numeros.length === ultimo && numeros.every((n, i) => n === i + 1)
+                ? anio + '-' + String(mkMes(mes) + 1).padStart(2, '0') : '';
+        };
+        const cab = leyendas.length ? '' : cabecera();
         const dias = celdas.filter(c => enRaiz(c.x)).map(c => {
-            const fuera = FUERA.test(marcas(c)) || c.miembros.some(m => mkAtr(m.el, 'aria-hidden') === 'true');
+            const fuera = fueraDe(c);
             let fecha = porAtributo(c), como = fecha ? 'atributo' : '';
             if (!fecha && !fuera) {
-                const k = mesDe(c);
+                const k = mesDe(c) || cab;
                 fecha = k ? mkIso(+k.slice(0, 4), +k.slice(5, 7) - 1, c.dia) : '';
-                como = fecha ? 'mes' : '';
+                como = fecha ? (cab ? 'cabecera' : 'mes') : '';
             }
             const habilitado = !APAGADO.test(marcas(c)) && !c.miembros.some(m => m.el.hasAttribute('disabled')
                                                                          || mkAtr(m.el, 'aria-disabled') === 'true');
@@ -10062,12 +10115,14 @@ def _cma_puerto(page, sel, texto, reg, etiqueta, evidencia=""):
     Con 'evidencia' (el origen y el destino), antes de pulsarla deja con ese nombre la captura de la ventana y el HTML
     de la página y de sus marcos, con la lista (decisión de Marcelo, CICLO-origen-y-destino.md); y después del clic,
     _avisar_lista_distinta. Sin una palabra antes de la primera coma (_ciudad_de: vacío, «-», «X») no escribe ni
-    pulsa nada: corta (_TEXTO_DE_LA_FILA; encargo 42), porque calzaba con cualquier sugerencia que lo trajera."""
+    pulsa nada: corta (_TEXTO_DE_LA_FILA; encargo 42), porque calzaba con cualquier sugerencia que lo trajera.
+    Reconoce la lista por _prefijo_de_la_lista, como MAERSK: desde el encargo 48, la letra con tilde y la ñ ya no se
+    caen (decisión de Marcelo, CICLO-calendario-cosco-y-cma.md). Lo escrito en el campo sigue con ellas."""
     import re as _r
     ciudad = _ciudad_de(texto)
     if not ciudad:
         raise ObjetivoNoEncontrado(f"{etiqueta} de CMA", _TEXTO_DE_LA_FILA)
-    pref = "".join(ch for ch in ciudad if ord(ch) < 128).strip()[:5] or ciudad[:4]
+    pref = _prefijo_de_la_lista(ciudad)
     rx = _r.compile(_r.escape(pref), _r.I)
 
     def _valor():
@@ -10143,12 +10198,13 @@ def _cma_entrega(page, texto, reg, evidencia=""):
     CICLO-origen-y-destino.md); y después del clic, _avisar_lista_distinta. Devuelve la sugerencia que pulsó, o ''
     si no pulsó ninguna: desde el encargo 42, reservar_cma corta ahí.
     Sin una palabra antes de la primera coma (_ciudad_de: vacío, «-», «X») no abre el campo, ni escribe ni pulsa
-    nada: corta (_TEXTO_DE_LA_FILA), porque calzaba con cualquier sugerencia que lo trajera."""
+    nada: corta (_TEXTO_DE_LA_FILA), porque calzaba con cualquier sugerencia que lo trajera. Reconoce la lista por
+    _prefijo_de_la_lista, como el puerto (encargo 48)."""
     import re as _r
     ciudad = _ciudad_de(texto)
     if not ciudad:
         raise ObjetivoNoEncontrado("Lugar de entrega de CMA", _TEXTO_DE_LA_FILA)
-    pref = "".join(ch for ch in ciudad if ord(ch) < 128).strip()[:5] or ciudad[:4]
+    pref = _prefijo_de_la_lista(ciudad)
     sel = "input[placeholder*='entrega' i], input[placeholder*='delivery' i]"
     try:
         if not page.locator(sel).first.is_visible():
