@@ -19,6 +19,10 @@ cada fila y, si se emitió, su N° de reserva.
 **SOLO INICIAR SESIÓN** entra a los portales y los deja abiertos para trabajar a mano. **DETENER** corta la
 corrida en curso.
 
+Si MSC muestra una página de error al iniciar sesión, el programa va una sola vez a su página de reservas para ver si
+la sesión quedó iniciada. Si no quedó, no vuelve a intentarlo, para no arriesgar la cuenta, y las filas de MSC quedan
+NO ENVIADA con el motivo: vuelve a armarlas más tarde.
+
 ## Modo seguro y emisión
 
 Con `Iniciar AQUASHIELD.bat` **nada se emite**: cada reserva se llena completa y se detiene antes del botón que

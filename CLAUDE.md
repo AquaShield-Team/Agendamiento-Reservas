@@ -483,7 +483,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 559 pruebas al 2026-10-01 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 563 pruebas al 2026-10-01 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -572,10 +572,22 @@ línea cambian). De arriba hacia abajo:
    - ONE: después del login, `login_one` espera `ONE_TRAS_LOGIN`, www.one-line.com/one-ecom/…, donde terminaron los 4
      logins nuevos medidos. Hasta `4948e16` esperaba ecomm.one-line.com/one-ecom, que ya no aparece: la espera vencía a
      los 25 s («no confirmé redirect en 25s») y cada login tardaba unos 32 s.
-   - MSC: el portal respondió HTTP 502 en 4 de 7 logins. `login_msc` recarga si sale tras el «Next» y, si el login
-     termina sin sesión en la página de error (`_msc_error_502`), lo repite desde el principio hasta
-     `MSC_REINTENTOS_502` veces (2, hipótesis), avisando cada vez. Hasta `4948e16` no lo repetía: así falló el del
-     2026-09-26, con el 502 al pulsar el botón de entrar.
+   - MSC (decisiones de Marcelo, encargo 45, `CICLO-login-msc-y-maersk.md`): `login_msc` parte de www.mymsc.com,
+     pulsa el «Next» y el de entrar por su texto (`_msc_entrar`), y cada espera termina con lo primero que llega: la
+     sesión, el error del portal o el campo que sigue (`_msc_esperar`, cada `MSC_SONDEO` s hasta `MSC_SONDEOS` veces,
+     unos 30 s; hipótesis). La sesión se reconoce por su página (`_msc_sesion`: /myMSC/welcome o eBooking), y el error,
+     por la página de error de Chrome o la del propio MSC (`_msc_error`, `MSC_TEXTOS_DE_ERROR`).
+     - Ante el error va una sola vez a eBooking (`MSC_EBOOKING`) y comprueba la sesión (`_msc_tras_el_error`); no vuelve
+       a iniciar sesión, porque el portal podría bloquear la cuenta. Sin la sesión, cada fila de MSC queda NO ENVIADA
+       con `MSC_SIN_SESION`, en el panel y en la consola (`SIN_SESION`; con las otras navieras, sigue sin estado).
+     - Hasta el encargo 45 repetía el login hasta 2 veces tras un 502 (`MSC_REINTENTOS_502`) y recargaba si salía tras
+       el «Next»: el 2026-10-01 tardó 214 s y dio por iniciada una sesión que no existía, porque `_msc_logueado`
+       aceptaba la página de error de MSC. La recarga y los reintentos dejaron la sesión en 7 de los 10 logins con error
+       de logs/, sin volver a enviar la clave; si la ida a eBooking la deja, no está medido.
+     - Medido en el historial del perfil: b2clogin acepta la clave e identityserver acepta su vuelta; el error lo da
+       www.mymsc.com, en TriggerOidcLogin tras el «Next» o en la vuelta desde identityserver. Antes del 21-09, 35 de 35
+       logins llegaron a myMSC en su primera pasada; desde entonces, 10 de 16. Si es la protección contra robots, no
+       está medido: falta la respuesta del portal (estado, cabeceras, cuerpo).
    - CMA: con el aviso «We are improving the eBusiness area» (mantenimiento), el login entra, pero Click & Book no
      carga. `reservar_cma` lo reconoce apenas abre Click & Book (`_cma_en_mantenimiento`), y la fila queda NO ENVIADA
      con `CMA_MANTENIMIENTO`, «el portal de CMA está en mantenimiento», y la captura `cma_f<fila>_mantenimiento`. Hasta
@@ -593,9 +605,10 @@ línea cambian). De arriba hacia abajo:
    elegir a AQUACHILE como Shipper, pulsar «Review booking» o marcar la casilla de los términos, cuando la fila no pide
    una nave o HYUNDAI no ofrece mantenerla (ver «Solo la nave que la fila pide»), o cuando a la fila con nave le falta
    el puerto de carga o el destino, o un ayudante de origen, destino o lugar de entrega no eligió ninguna sugerencia
-   (ver «Antes de la guarda no hay clics a ciegas», encargo 42). `REVISAR`, entre otros (en MAERSK, solo ese), cuando
-   la nave no apareció ni ampliando la búsqueda: el motivo dice hasta qué fecha buscó (ver
-   «Ampliar la búsqueda»). Después: `EMITIDA`, `ENVIADA – REVISAR EN PORTAL`, `NO ENVIADA`. El panel los pinta con
+   (ver «Antes de la guarda no hay clics a ciegas», encargo 42), o cuando el login de MSC no deja la sesión iniciada
+   (encargo 45). `REVISAR`, entre otros (en MAERSK, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el
+   motivo dice hasta qué fecha buscó (ver «Ampliar la búsqueda»). Después: `EMITIDA`, `ENVIADA – REVISAR EN PORTAL`,
+   `NO ENVIADA`. El panel los pinta con
    `lecturaEstado` (en `JS_INDEX`):
    un estado nuevo necesita su rama ahí. `OK-EJEMPLO` es «lista», no «emitida»: la columna «N° reserva emitida» dice
    «lista para emitir» y la píldora la cuenta aparte (`cuentaCorrida`); hasta el encargo 34 decía «✓ Confirmada».
@@ -656,6 +669,10 @@ línea cambian). De arriba hacia abajo:
      directa.
    - MAERSK: lee sus salidas con `_JS_MK_SALIDAS` y pulsa el «Book» de la elegida (`_mk_pulsar_book`). El tránsito es
      su «Transit time», con días y horas. El «Book» se cuenta por el atributo `label` del `mc-button` (arriba).
+     `_mk_pulsar_book` pulsa un «Book» solo si está a más de 100 px del borde de arriba de la ventana, y lo mira antes
+     de traerlo a la vista; si no pulsa, `reservar_maersk` sigue por la rama de la nave que no está, y el motivo dice
+     «no está en los itinerarios». Así quedó REVISAR la fila del 2026-10-01: la nave estaba, y la salida elegida, la
+     primera de 3 copias, quedó arriba de la ventana (encargo 45, `CICLO-login-msc-y-maersk.md`; sin arreglar).
    - Medido en las listas del 2026-09-25: en ONE, MSC y COSCO el tránsito que muestra la tarjeta es la llegada menos
      la salida en todas; en MAERSK, 4 horas menos, porque cada fecha va en la hora de su puerto.
    - HYUNDAI (desde el encargo 32, `CICLO-ampliar-la-busqueda.md`): entre las tarjetas cuya «1st Vessel» es la nave de
@@ -805,7 +822,9 @@ línea cambian). De arriba hacia abajo:
 10. **`main()`**: despacha entre consola, panel y web (si la web falla, cae al panel Tkinter).
 
 Todo navegador se abre con `launch_persistent_context` sobre `perfiles/<usuario>` (sesiones y cookies
-de los portales), canal `chrome` con fallback a Chromium, `STEALTH_JS` y `_args_chrome()`.
+de los portales), canal `chrome` con fallback a Chromium, `STEALTH_JS` y `_args_chrome()`. Playwright le agrega
+`--no-sandbox` porque no se le pasa `chromium_sandbox=True` (`lib/server/chromium/chromium.js` de Playwright 1.58.0): de
+ahí el aviso de Chrome por esa bandera. Cambiarlo es cambiar cómo se lanza el navegador: lo decide Marcelo (encargo 45).
 
 ### Agregar o tocar una naviera
 
