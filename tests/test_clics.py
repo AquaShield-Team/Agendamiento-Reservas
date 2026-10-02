@@ -396,28 +396,38 @@ class MarcoConCampo:
 
 class MarcoSinCampos:
     """El marco del formulario de COSCO (bkg2) sin su campo «Origin City» (encargo 48): el JavaScript que lo cuenta da
-    0, y anota cuántas veces se lo corrió; da su HTML a la evidencia."""
+    0, y anota cuántas veces se lo corrió; da su HTML a la evidencia. Otro JavaScript queda en 'prohibidos' (revisión
+    del encargo 48: el programa se traga sus errores)."""
     url = "https://portal.invalid/bkg2"
 
     def __init__(self, mod):
-        self.mod, self.cuentas = mod, 0
+        self.mod, self.cuentas, self.prohibidos = mod, 0, []
 
     def evaluate(self, js, *a):
         if js == self.mod._JS_HTML_COMPLETO:
             return {"html": "<body>marco sintetico</body>", "sombras": 0}
-        self.cuentas += 1
-        return 0
+        if "origin ci" in js:
+            self.cuentas += 1
+            return 0
+        self.prohibidos.append(js[:40])
+        return None
 
 
 class PaginaNewBooking(soporte.PaginaFalsa):
     """New Booking falsa de COSCO (encargo 48): anota cada dirección que se abre y da su HTML a la evidencia; 'marco'
-    es el marco del formulario, en sus frames."""
+    es el marco del formulario, en sus frames. Otro JavaScript queda en 'prohibidos', y cada espera, en 'esperas'
+    (revisión del encargo 48)."""
 
     def __init__(self, mod, marco=None):
-        super().__init__(texto=lambda js, *a: {"html": "<body>new booking sintetica</body>", "sombras": 0}
-                         if js == mod._JS_HTML_COMPLETO else None, frames=[marco] if marco else [])
-        self.main_frame, self.abiertas = None, []
+        super().__init__(frames=[marco] if marco else [])
+        self.mod, self.main_frame, self.abiertas, self.prohibidos = mod, None, [], []
         self.goto = lambda url, **k: self.abiertas.append(url)
+
+    def evaluate(self, js, *a):
+        if js == self.mod._JS_HTML_COMPLETO:
+            return {"html": "<body>new booking sintetica</body>", "sombras": 0}
+        self.prohibidos.append(js[:40])
+        return None
 
 
 def _nada(*a, **k):
@@ -2623,24 +2633,35 @@ class TestCosco(ConRegistro):
         # New Booking sin su formulario: sin su marco bkg2, o con el marco y sin el campo «Origin City» en 20 vueltas.
         # La reserva queda NO ENVIADA, con lo que faltó y los segundos desde que abrió New Booking, y deja la captura de
         # la ventana y el HTML de la página y de sus marcos (decisión de Marcelo, encargo 48,
-        # CICLO-calendario-cosco-y-cma.md). Hasta ahí quedaba REVISAR, y el HTML se guardaba solo con
-        # AQUASHIELD_DESCUBRIR: así quedó el 2026-10-02, sin poder medir qué mostraba.
+        # CICLO-calendario-cosco-y-cma.md). Hasta ahí quedaba REVISAR, y el HTML no se guardaba (sin los campos, solo
+        # con AQUASHIELD_DESCUBRIR): así quedó el 2026-10-02, sin poder medir qué mostraba.
         reserva = {"fila": 9, "pol": "PUERTO ALFA, CHILE", "destino_orig": "PUERTO BETA",
                    "destino_final": "CIUDAD GAMMA", "nave": "NAVE PRUEBA UNO", "viaje": "", "dia_carga": "",
                    "cotizacion": ""}
         fin = "; no pulsé nada y la reserva no se envió"
         sin_marco = "no apareció el marco de su formulario (bkg2)"
         sin_campos = "su formulario (el marco bkg2) no mostró sus campos («Origin City»)"
-        for que in (sin_marco, sin_campos):
+        # Un reloj que avanzan las esperas (revisión del encargo 48): la carga de New Booking, 3,7 s; sin el marco,
+        # su búsqueda, 18 s (12 de 1,5); y cada vuelta sin los campos, 1,5 s.
+        for que, segundos in ((sin_marco, 22), (sin_campos, 34)):
             with self.subTest(que=que):
                 marco = MarcoSinCampos(self.mod) if que == sin_campos else None
-                pagina, esperas = PaginaNewBooking(self.mod, marco), []
+                pagina, esperas, reloj = PaginaNewBooking(self.mod, marco), [], [1000.0]
+
+                def avanza(seg, devuelve=None):
+                    reloj[0] += seg
+                    return devuelve
+
+                def esperar(page, seg, *a, **k):
+                    esperas.append(seg)
+                    avanza(seg)
                 reg, vistas, log = self.corrida("sin_formulario_" + ("campos" if marco else "marco"))
-                with mock.patch.multiple(self.mod, _cosco_esperar_contenido=_nada, _cosco_frame=lambda *a, **k: marco,
-                                         esperar=lambda page, seg, *a, **k: esperas.append(seg)):
+                with mock.patch.multiple(self.mod, _cosco_esperar_contenido=lambda *a, **k: avanza(3.7),
+                                         _cosco_frame=lambda *a, **k: marco or avanza(18), esperar=esperar), \
+                        mock.patch.object(self.mod.time, "monotonic", lambda: reloj[0]):
                     r = self.mod.reservar_cosco(pagina, dict(reserva), {"contrato": "CT-PRUEBA"}, reg)
-                self.assertEqual(r[0], "NO ENVIADA")
-                self.assertRegex(r[1], rf"^COSCO: abrí New Booking y {re.escape(que)} en \d+ s{fin}$")
+                self.assertEqual(r, ("NO ENVIADA", f"COSCO: abrí New Booking y {que} en {segundos} s{fin}"))
+                self.assertEqual((pagina.prohibidos, pagina.esperas, marco.prohibidos if marco else []), ([], 0, []))
                 # La captura de siempre (de la ventana, salvo con AQUASHIELD_CAPTURA_FULL) y la de la evidencia.
                 antes = [("cosco_f9_1_choose.png", False)] if marco else [("cosco_f9_err.png", False)]
                 self.assertEqual(pagina.capturas, antes + [("cosco_f9_sin_formulario.png", False)])
@@ -2655,10 +2676,10 @@ class TestCosco(ConRegistro):
                     self.assertIn(f"· ✗ NO ENVIADA · {r[1]}", donde)
                     self.assertIn(f"evidencia sin el formulario de New Booking: cosco_f9_sin_formulario.png y "
                                   f"{total} de {total} HTML", donde)
-        # Los segundos, desde 'desde' (time.monotonic).
+        # Los segundos, desde 'desde' (time.monotonic), con el reloj fijo.
         reg, _, _ = self.corrida("sin_formulario_segundos")
-        r = self.mod._cosco_sin_formulario(PaginaNewBooking(self.mod), reg, 8, sin_marco,
-                                           self.mod.time.monotonic() - 35.2)
+        with mock.patch.object(self.mod.time, "monotonic", lambda: 135.4):
+            r = self.mod._cosco_sin_formulario(PaginaNewBooking(self.mod), reg, 8, sin_marco, 100.0)
         self.assertEqual(r, ("NO ENVIADA", f"COSCO: abrí New Booking y {sin_marco} en 35 s{fin}"))
 
     def test_revisar_solo_si_la_nave_no_esta(self):
@@ -5284,16 +5305,24 @@ const modal = (cabecera, dias, extra = []) => el('mc-modal', {open: ''}, [
 const cab = (mes, anio, opciones = {}) => [boton('Previous month'), boton(mes, opciones), boton(anio),
   boton('Next month')];
 const fechados = () => leer().dias.filter(d => d.fecha).length;
+// En el HTML medido, el button de adentro del mes y del año va sin nombre; si lo trajera, es el mismo control.
+const nombrado = label => el('mc-button', {label}, [], {shadow: [el('button', {part: 'button', 'aria-label': label},
+  [el('div', {class: 'mc-text-and-icon small'}, [label])])]});
 pagina(modal(cab('October', '2026'), rango(1, 31, octubre)));
 const a = leer();
 r.medido = [a.raiz, a.meses, corto(a)];
 r.pulsa = [pulsar({fecha: '2026-10-13'}), pulsar({fecha: '2026-10-05'})].map(prueba);
 r.listo = prueba(leerListo());
-// Dos meses, sin el año o con el mes que no se ve: ningún día.
+pagina(modal([boton('Previous month'), nombrado('October'), nombrado('2026'), boton('Next month')],
+             rango(1, 31, octubre)));
+r.nombrados = fechados();
+// Dos meses, sin el año, con el año fuera del calendario o con el mes que no se ve: ningún día.
 pagina(modal([boton('October'), boton('November'), boton('2026')], rango(1, 31, octubre)));
 r.dosMeses = fechados();
 pagina(modal([boton('October')], rango(1, 31, octubre)));
 r.sinAnio = fechados();
+pagina(el('div', {}, [boton('2026')]), modal([boton('October')], rango(1, 31, octubre)));
+r.anioAfuera = fechados();
 pagina(modal(cab('October', '2026', {invisible: true}), rango(1, 31, octubre)));
 r.oculto = fechados();
 // Con una leyenda, manda la leyenda.
@@ -5306,15 +5335,23 @@ pagina(modal(cab('October', '2026'), rango(28, 30, n => diaMc(n, {class: 'outsid
   .concat(rango(1, 31, octubre))));
 const g = leer();
 r.marcados = [g.dias.filter(d => d.como === 'cabecera').length, g.dias.filter(d => d.como === 'otro-mes').length];
+pagina(modal(cab('October', '2026'), rango(28, 30, n => diaMc(n, {'aria-hidden': 'true'}))
+  .concat(rango(1, 31, octubre))));
+const h = leer();
+r.ocultos = [h.dias.filter(d => d.como === 'cabecera').length, h.dias.filter(d => d.como === 'otro-mes').length];
+// 31 celdas, pero con el 15 dos veces y sin el 31: ninguno.
+pagina(modal(cab('October', '2026'), rango(1, 30, octubre).concat([octubre(15)])));
+r.repetido = fechados();
 pagina(modal(cab('September', '2026'), rango(1, 31, octubre)));
 r.septiembre = fechados();
 """)
         octubre = [[n, f"2026-10-{n:02d}", "cabecera", 12 <= n <= 16] for n in range(1, 32)]
         self.assertEqual(r["medido"], [True, [], octubre])
-        self.assertEqual((r["pulsa"], r["listo"]), (["d13", None], "listo-interno"))
-        self.assertEqual((r["dosMeses"], r["sinAnio"], r["oculto"]), (0, 0, 0))
+        self.assertEqual((r["pulsa"], r["listo"], r["nombrados"]), (["d13", None], "listo-interno", 31))
+        self.assertEqual((r["dosMeses"], r["sinAnio"], r["anioAfuera"], r["oculto"]), (0, 0, 0, 0))
         self.assertEqual(r["leyenda"], ["mes"])
-        self.assertEqual((r["sinMarca"], r["marcados"], r["septiembre"]), (0, [31, 3], 0))
+        self.assertEqual((r["sinMarca"], r["marcados"], r["ocultos"], r["septiembre"], r["repetido"]),
+                         (0, [31, 3], [31, 3], 0, 0))
 
     def test_js_tarjeta_y_avisos_de_cargos(self):
         guion = DOM_AQ + "const puesto = " + self.mod._JS_MK_RETIRO_PUESTO + ";\nconst avisos = " + \

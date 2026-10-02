@@ -5830,8 +5830,8 @@ def _cosco_sin_formulario(page, reg, f, que, desde):
     ventana y el HTML de la página y de sus marcos (cosco_f<fila>_sin_formulario), y la reserva queda NO ENVIADA, con lo
     que faltó y los segundos desde que abrió New Booking ('desde', de time.monotonic). Decisión de Marcelo, encargo 48
     (CICLO-calendario-cosco-y-cma.md): hasta ahí quedaba REVISAR, que en COSCO queda solo para la nave no encontrada,
-    y su HTML se guardaba solo con AQUASHIELD_DESCUBRIR. Así quedó el 2026-10-02, sin poder medir qué mostraba
-    (CICLO-msc-recarga-y-corrida-02-10.md)."""
+    y su HTML no se guardaba (sin los campos, solo con AQUASHIELD_DESCUBRIR; sin el marco, nunca). Así quedó el
+    2026-10-02, sin poder medir qué mostraba (CICLO-msc-recarga-y-corrida-02-10.md)."""
     segundos = time.monotonic() - desde
     _evidencia_antes_de_la_guarda(page, reg, f"cosco_f{f}_sin_formulario", "sin el formulario de New Booking",
                                   completa=False)

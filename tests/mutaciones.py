@@ -6045,3 +6045,24 @@ MUTACIONES += [
          viejo="    pref = _prefijo_de_la_lista(ciudad)\n    sel = ",
          nuevo=PREF_VIEJO + "    sel = "),
 ]
+
+# --- Encargo 48, lo que encontró la revisión del subagente: el mismo control con nombre en la cabecera, el año de fuera
+# del calendario, los días ocultos, un día repetido, y los segundos de cada corte de COSCO ---
+MUTACIONES += [
+    dict(id="mk-cabecera-sin-un-solo-control", pruebas=[RT_JS_CABECERA],
+         viejo="                const afuera = c.filter(x => !x.anc.some(a => de.has(a)));\n",
+         nuevo="                const afuera = c;\n"),
+    dict(id="mk-cabecera-boton-de-afuera", pruebas=[RT_JS_CABECERA],
+         viejo="            const botones = todos.filter(x => enRaiz(x) && esBoton(x.el) && mkVisible(x.el));\n",
+         nuevo="            const botones = todos.filter(x => esBoton(x.el) && mkVisible(x.el));\n"),
+    dict(id="mk-cabecera-cuenta-los-ocultos", pruebas=[RT_JS_CABECERA],
+         viejo="celdas.filter(c => enRaiz(c.x) && !fueraDe(c)).map(c => c.dia)",
+         nuevo="celdas.filter(c => enRaiz(c.x) && !FUERA.test(marcas(c))).map(c => c.dia)"),
+    dict(id="mk-cabecera-sin-mirar-cada-dia", pruebas=[RT_JS_CABECERA],
+         viejo="            return numeros.length === ultimo && numeros.every((n, i) => n === i + 1)\n",
+         nuevo="            return numeros.length === ultimo\n"),
+    dict(id="cosco-sin-marco-sin-desde", pruebas=[COSCO_SIN_FORM], viejo=SIN_MARCO,
+         nuevo=SIN_MARCO.replace("desde)", "time.monotonic())")),
+    dict(id="cosco-sin-campos-sin-desde", pruebas=[COSCO_SIN_FORM], viejo=SIN_CAMPOS,
+         nuevo=SIN_CAMPOS.replace("desde)", "time.monotonic())")),
+]
