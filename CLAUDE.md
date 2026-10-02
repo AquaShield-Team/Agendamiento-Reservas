@@ -385,11 +385,18 @@ cerrado:
     la tarjeta (`_mk_comprobar_retiro`, que la espera hasta 5 s mientras siga sin fecha o no la pueda leer): sin fecha,
     con otra o sin poder leerla, NO ENVIADA con `mk_f<fila>_retiro` (hasta el encargo 37, si no se podía leer, avisaba
     y seguía).
-  - **El calendario no está medido:** ninguna corrida guardó su HTML. `mkCalendario` (`_JS_MK_DIAS`) lo reconoce por su
-    único «Done» a la vista con al menos 28 días alrededor, y da la fecha de cada día por un atributo que la trae entera
-    o por la leyenda de su mes, sin los números de semana (`/week(?!end)/`) ni los días de otro mes. Si el día no se
-    identifica, no está a la vista o el calendario no aparece, NO ENVIADA sin otro clic: cambiar de mes es un clic que
-    no está permitido (FRENO). El primer `mk_f<fila>_calendario.html` es el que lo mide.
+  - **El calendario, medido el 2026-10-02** en `mk_f10_calendario.html`, el primero que guardó una corrida
+    (`CICLO-msc-recarga-y-corrida-02-10.md`). `mkCalendario` (`_JS_MK_DIAS`) lo reconoce por su único «Done» a la vista
+    con al menos 28 días alrededor, y da la fecha de cada día por un atributo que la trae entera o por la leyenda de su
+    mes, sin los números de semana (`/week(?!end)/`) ni los días de otro mes. Si el día no se identifica, no está a la
+    vista o el calendario no aparece, NO ENVIADA sin otro clic: cambiar de mes es un clic que no está permitido (FRENO).
+    - Lo medido: va en un `mc-modal` («Container pick-up details»); el mes y el año, en dos `mc-button` de su cabecera
+      (`label` «October» y «2026»), sin una leyenda que traiga los dos; cada día, un `mc-button` con su número por
+      `label` y, adentro, un `button` con el número por `aria-label` y `disabled` si no se puede elegir. Así el lector
+      no le pone fecha a ninguno (0 de 31), y la fila quedó NO ENVIADA ahí. Leer el mes y el año de esos dos botones lo
+      decide Marcelo (FRENO).
+    - Ese día había 5 habilitados, del lunes 12 al viernes 16 de octubre; con la regla, el 13: el 05-10 no estaba
+      habilitado, y el 12 es feriado en Chile.
   - «Review booking» es el único mc-button a la vista con ese texto (`_mk_pulsar_revision`, `MK_REVISION`; en el HTML
     del 27-09, el mc-button y su botón interno son el mismo control), buscado hasta `MK_INTENTOS_REVISION` veces. Sin
     uno solo, NO ENVIADA (`ObjetivoNoEncontrado`, con lo que el portal pide); si está pero no acepta el clic, NO ENVIADA
@@ -488,7 +495,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 568 pruebas al 2026-10-02 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 569 pruebas al 2026-10-02 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -582,17 +589,27 @@ línea cambian). De arriba hacia abajo:
      sesión, el error del portal o el campo que sigue (`_msc_esperar`, cada `MSC_SONDEO` s hasta `MSC_SONDEOS` veces,
      unos 30 s; hipótesis). La sesión se reconoce por su página (`_msc_sesion`: /myMSC/welcome o eBooking), y el error,
      por la página de error de Chrome o la del propio MSC (`_msc_error`, `MSC_TEXTOS_DE_ERROR`).
-     - Ante el error va una sola vez a eBooking (`MSC_EBOOKING`) y comprueba la sesión (`_msc_tras_el_error`); no vuelve
-       a iniciar sesión, porque el portal podría bloquear la cuenta. Sin la sesión, cada fila de MSC queda NO ENVIADA
-       con `MSC_SIN_SESION`, en el panel y en la consola (`SIN_SESION`; con las otras navieras, sigue sin estado).
+     - **El error tras el «Next»** (el 502 de TriggerOidcLogin): espera `MSC_PAUSA_RECARGA` s (20; hipótesis), recarga
+       esa página una sola vez y espera solo el campo de la clave, la sesión o el error (`_msc_recargar`; decisión de
+       Marcelo, encargo 47, `CICLO-msc-recarga-y-corrida-02-10.md`). No escribe ni pulsa nada: la clave, si aparece su
+       campo, la escribe `_msc_entrar` por primera vez; si vuelve el campo del usuario, no lo escribe, y el login queda
+       sin la sesión. El usuario no se espera con el mismo selector: `.first` miraría solo el primer campo de la página.
+       La página falsa del login anota cada recarga, también la que no se espera, porque `_msc_recargar` atrapa su
+       falla.
+     - Ante el error (el que sigue tras la recarga, o el del botón de entrar) va una sola vez a eBooking
+       (`MSC_EBOOKING`) y comprueba la sesión (`_msc_tras_el_error`); no vuelve a iniciar sesión, porque el portal
+       podría bloquear la cuenta. Sin la sesión, cada fila de MSC queda NO ENVIADA con `MSC_SIN_SESION`, en el panel y
+       en la consola (`SIN_SESION`; con las otras navieras, sigue sin estado).
      - Hasta el encargo 45 repetía el login hasta 2 veces tras un 502 (`MSC_REINTENTOS_502`) y recargaba si salía tras
        el «Next»: el 2026-10-01 tardó 214 s y dio por iniciada una sesión que no existía, porque `_msc_logueado`
        aceptaba la página de error de MSC. La recarga y los reintentos dejaron la sesión en 7 de los 10 logins con error
-       de logs/, sin volver a enviar la clave; si la ida a eBooking la deja, no está medido.
+       de logs/, sin volver a enviar la clave. Del encargo 45 al 47 no recargaba: el 2026-10-02, en los 2 logins (el de
+       solo login y el de la corrida), el «Next» dio el 502 y la ida a eBooking llevó a la portada de myMSC, sin la
+       sesión.
      - Medido en el historial del perfil: b2clogin acepta la clave e identityserver acepta su vuelta; el error lo da
        www.mymsc.com, en TriggerOidcLogin tras el «Next» o en la vuelta desde identityserver. Antes del 21-09, 35 de 35
-       logins llegaron a myMSC en su primera pasada; desde entonces, 10 de 16. Si es la protección contra robots, no
-       está medido: falta la respuesta del portal (estado, cabeceras, cuerpo).
+       logins llegaron a myMSC en su primera pasada; desde entonces, 10 de 16 hasta el 01-10, y 0 de 2 el 02-10. Si es
+       la protección contra robots, no está medido: falta la respuesta del portal (estado, cabeceras, cuerpo).
    - CMA: con el aviso «We are improving the eBusiness area» (mantenimiento), el login entra, pero Click & Book no
      carga. `reservar_cma` lo reconoce apenas abre Click & Book (`_cma_en_mantenimiento`), y la fila queda NO ENVIADA
      con `CMA_MANTENIMIENTO`, «el portal de CMA está en mantenimiento», y la captura `cma_f<fila>_mantenimiento`. Hasta
@@ -625,6 +642,10 @@ línea cambian). De arriba hacia abajo:
    - separa los errores de validación (`_JS_COSCO_ERRORES`) del aviso del portal.
 
    Antes de la guarda, COSCO:
+   - Espera que el formulario de New Booking (su marco bkg2) muestre «Origin City», hasta 20 vueltas de 1,5 s; si no,
+     REVISAR («el formulario de COSCO no cargó los campos a tiempo»), con la captura `cosco_f<fila>_1_choose` y sin el
+     HTML (solo con `AQUASHIELD_DESCUBRIR`). Así quedó el 2026-10-02: la página mostraba sus pasos, sin el formulario
+     (`CICLO-msc-recarga-y-corrida-02-10.md`).
    - Con más de un itinerario para la nave, elige la próxima salida (`_cosco_elegir_itinerario`, ver abajo). Si no
      queda uno solo, NO ENVIADA con la lista en la evidencia, y nunca el primero.
    - Su CONTROL lee Size Type por el texto visible del desplegable. Si no puede, dice «no pude leer», nunca «VACÍO».
