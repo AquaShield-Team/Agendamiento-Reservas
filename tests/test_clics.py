@@ -1276,8 +1276,10 @@ def pagina_con_respuestas(respuestas):
 
 class PaginaLoginMsc(soporte.PaginaFalsa):
     """El login de MSC en una página falsa: su estado decide la dirección, el texto a la vista y el campo que se ve. Cada
-    acción del login (el «Next», el botón de entrar, el goto, la pausa) puede traer un estado nuevo, que llega después
-    de tantas esperas (llega). Anota cada goto; no tiene reload: un reintento que recargue revienta."""
+    acción del login (el «Next», el botón de entrar, el goto, la recarga, la pausa) puede traer un estado nuevo, que
+    llega después de tantas esperas (llega). Anota cada goto. No tiene reload propio: login_falso le pone uno que anota
+    cada recarga, como cada acción (encargo 47), porque _msc_recargar atrapa la falla de la recarga y una que no se
+    espera no reventaría."""
     URLS = {"portada": "https://www.mymsc.com/myMSC/",
             "clave": "https://mscciam.b2clogin.com/mscciam.onmicrosoft.com/oauth2/v2.0/authorize",
             "sesión": "https://www.mymsc.com/myMSC/welcome", "ebooking": "https://www.mymsc.com/myMSC/booking/main",
@@ -1500,7 +1502,8 @@ console.log(JSON.stringify(f()));
         # de la página. El login no está en el universo de la foto; sus pasos están en _msc_entrar.
         tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
         funcs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
-        for nombre in ("login_msc", "_msc_abrir", "_msc_entrar", "_msc_esperar", "_msc_tras_el_error"):
+        for nombre in ("login_msc", "_msc_abrir", "_msc_entrar", "_msc_esperar", "_msc_recargar",
+                       "_msc_tras_el_error"):
             self.assertNotIn("_JS_CLICK_BTN", [x.id for x in ast.walk(funcs[nombre]) if isinstance(x, ast.Name)], nombre)
         self.assertEqual([ast.unparse(c) for c in ast.walk(funcs["login_msc"]) if isinstance(c, ast.Call)
                           and ast.unparse(c.func) == "_msc_entrar"], ["_msc_entrar(page, creds, reg, on_pausa)"])
@@ -1566,8 +1569,9 @@ console.log(JSON.stringify(f()));
 
     def login_falso(self, guion, al_abrir="portada"):
         """Corre login_msc sobre PaginaLoginMsc. 'guion' dice qué estado trae cada acción y tras cuántas esperas:
-        {"Next" | "entrar" | "goto" | "pausa": (estado, esperas)}. Devuelve (resultado, lo que hizo, las esperas, los
-        goto, log.txt y las capturas)."""
+        {"Next" | "entrar" | "goto" | "recarga" | "pausa": (estado, esperas)}. Cada recarga queda en lo que hizo,
+        también la que el guion no trae (encargo 47). Devuelve (resultado, lo que hizo, las esperas, los goto, log.txt
+        y las capturas)."""
         self.n_login = getattr(self, "n_login", 0) + 1
         reg, _, log = self.corrida(f"msc_login_{self.n_login}")
         pagina = PaginaLoginMsc(al_abrir)
@@ -1597,6 +1601,13 @@ console.log(JSON.stringify(f()));
             pagina.estado = "nada"
             accion("goto")
         pagina.goto = ir
+
+        def recargar(**k):
+            # La recarga vuelve a pedir la misma dirección (en la cadena del login, identityserver); lo que trae el
+            # guion llega después.
+            pagina.estado = "nada"
+            accion("recarga")
+        pagina.reload = recargar
         with mock.patch.multiple(self.mod, _msc_abrir=lambda page, reg: hechos.append("abrir"), rellenar=rellenar,
                                  click_si_existe=pulsar, _msc_cookies=lambda page, reg: False, esperar=esperar,
                                  pausa_manual=lambda reg, on_pausa, mensaje: accion("pausa")):
@@ -1638,7 +1649,8 @@ console.log(JSON.stringify(f()));
         # Ante el error del portal, una sola navegación a la página desde la que sigue el programa (MSC_EBOOKING), y se
         # comprueba la sesión; si no quedó, no vuelve a iniciar sesión: el portal podría bloquear la cuenta (decisión de
         # Marcelo, encargo 45, CICLO-login-msc-y-maersk.md). Hasta el encargo 45 repetía el login entero hasta 2 veces y
-        # recargaba la página si el 502 salía tras el «Next»: el 2026-10-01 a las 16:02 tardó 214 s.
+        # recargaba la página si el 502 salía tras el «Next»: el 2026-10-01 a las 16:02 tardó 214 s. Desde el
+        # encargo 47, tras el «Next» recarga antes una sola vez (test_tras_el_error_del_next_recarga_una_vez).
         tope, ebooking = self.mod.MSC_SONDEOS, [self.mod.MSC_EBOOKING]
         aviso = "· ⚠ MSC mostró una página de error al iniciar sesión."
         entrar = ["abrir", "escribe el usuario", "Next", "escribe la clave", "entrar"]
@@ -1655,13 +1667,51 @@ console.log(JSON.stringify(f()));
         self.assertEqual((r, hechos, gotos, len(esperas)), (False, entrar + ["goto"], ebooking, 1))
         self.assertIn("· ⚠ Después del error, la sesión de MSC no quedó iniciada; no reintento el inicio de sesión.", log)
         self.assertNotIn("· Sesión iniciada.", log)
-        # El 502 tras el «Next», y en eBooking no llega nada: espera el tope una vez y se rinde.
-        r, hechos, esperas, gotos, _, _ = self.login_falso({"Next": ("error_chrome", 1), "goto": ("nada", 0)})
+        # El 502 tras el «Next», otra vez tras la recarga (encargo 47), y en eBooking no llega nada: espera el tope una
+        # vez y se rinde.
+        r, hechos, esperas, gotos, _, _ = self.login_falso({"Next": ("error_chrome", 1), "recarga": ("error_chrome", 1),
+                                                             "goto": ("nada", 0)})
         self.assertEqual((r, hechos, gotos, len(esperas)),
-                         (False, ["abrir", "escribe el usuario", "Next", "goto"], ebooking, 1 + tope))
+                         (False, ["abrir", "escribe el usuario", "Next", "recarga", "goto"], ebooking, 3 + tope))
         # El error ya al abrir: no escribe nada y va una vez a eBooking.
         r, hechos, _, gotos, _, _ = self.login_falso({"goto": ("error_msc", 0)}, al_abrir="error_msc")
         self.assertEqual((r, hechos, gotos), (False, ["abrir", "goto"], ebooking))
+
+    def test_tras_el_error_del_next_recarga_una_vez(self):
+        # El 502 tras el «Next» (TriggerOidcLogin): espera MSC_PAUSA_RECARGA s, recarga esa página una sola vez y espera
+        # lo primero que llegue (decisión de Marcelo, encargo 47, CICLO-msc-recarga-y-corrida-02-10.md). Así rescataba
+        # la sesión el código de antes del encargo 45: en el historial del perfil, la recarga siguió sola hasta la
+        # página de la clave. No vuelve a escribir el usuario, no reenvía la clave ni hace otro intento de inicio de
+        # sesión. El 2026-10-02, sin la recarga, la ida a eBooking llevó a la portada de myMSC, sin la sesión.
+        sondeo, pausa, ebooking = self.mod.MSC_SONDEO, self.mod.MSC_PAUSA_RECARGA, [self.mod.MSC_EBOOKING]
+        self.assertEqual(pausa, 20)
+        aviso = "· ⚠ MSC mostró una página de error al pulsar «Next». Espero 20 s y recargo esa página una sola vez"
+        antes = ["abrir", "escribe el usuario", "Next", "recarga"]
+        tope = self.mod.MSC_SONDEOS
+        # La recarga lleva a la página de la clave: la escribe por primera vez, y llega la sesión.
+        r, hechos, esperas, gotos, log, caps = self.login_falso(
+            {"Next": ("error_chrome", 1), "recarga": ("clave", 2), "entrar": ("sesión", 1)})
+        self.assertEqual((r, hechos, esperas, gotos),
+                         (True, antes + ["escribe la clave", "entrar"], [sondeo, pausa, sondeo, sondeo, sondeo], []))
+        self.assertIn(aviso, log)
+        self.assertIn("· Sesión iniciada.", log)
+        self.assertEqual(caps, ["msc_error_next.png", "msc_final.png"])
+        # La recarga deja la sesión: no escribe la clave.
+        r, hechos, _, gotos, _, _ = self.login_falso({"Next": ("error_chrome", 1), "recarga": ("sesión", 1)})
+        self.assertEqual((r, hechos, gotos), (True, antes, []))
+        # Vuelve el campo del usuario: no lo escribe ni pulsa «Next» otra vez; espera la clave hasta el tope, una sola
+        # vez, y no da la sesión por iniciada.
+        r, hechos, esperas, gotos, log, caps = self.login_falso({"Next": ("error_chrome", 1),
+                                                                  "recarga": ("portada", 1)})
+        self.assertEqual((r, hechos, esperas, gotos), (False, antes, [sondeo, pausa] + [sondeo] * tope, []))
+        self.assertIn("no vi el campo de contraseña", log)
+        self.assertIn("· No confirmé la sesión.", log)
+        self.assertEqual(caps, ["msc_error_next.png", "msc_paso_email.png", "msc_final.png"])
+        # Sigue el error: una sola recarga, y después la ida única a eBooking del encargo 45.
+        r, hechos, _, gotos, log, caps = self.login_falso(
+            {"Next": ("error_chrome", 1), "recarga": ("error_chrome", 1), "goto": ("portada", 0)})
+        self.assertEqual((r, hechos, gotos), (False, antes + ["goto"], ebooking))
+        self.assertEqual(caps, ["msc_error_next.png", "msc_error.png", "msc_final.png"])
 
     def test_search_schedule_sin_boton_corta(self):
         # «Search Schedule» con _msc_buscar_itinerarios: el botón por su texto (click_si_existe); si no está, corta como

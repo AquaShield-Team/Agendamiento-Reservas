@@ -5943,3 +5943,40 @@ MUTACIONES += [
     dict(id="mk-prefijo-quita-las-tildes", pruebas=[SUG_TILDES], viejo=PREFIJO_MK,
          nuevo='    plano = " ".join(str(ciudad or "").split())\n'),
 ]
+
+# --- Encargo 47: vuelve la recarga de la página de error que sale tras el «Next» del login de MSC, una sola vez, sin
+# reenviar la clave ni otro intento de inicio de sesión (decisión de Marcelo, CICLO-msc-recarga-y-corrida-02-10.md) ---
+MSC_REC = "test_clics.TestMsc.test_tras_el_error_del_next_recarga_una_vez"
+RECARGA = ('        page.reload(wait_until="domcontentloaded")\n    except Exception as e:\n'
+           '        reg.info(f"no pude recargar la página')
+TRAS_EL_NEXT = "    if paso == \"error\":\n        paso = _msc_recargar(page, reg)\n"
+ESPERA = ('    paso = _msc_esperar(page, reg, "la contraseña, la sesión o el error tras la recarga", '
+          'campo="input[type=password]")\n')
+
+MUTACIONES += [
+    # Sin recargar, sin llamarla tras el «Next», dos veces, o también tras el error del botón de entrar.
+    dict(id="msc-recarga-sin-recargar", pruebas=[MSC_REC],
+         viejo=RECARGA, nuevo=RECARGA.replace('page.reload(wait_until="domcontentloaded")', "pass")),
+    dict(id="msc-recarga-no-tras-el-next", pruebas=[MSC_REC], viejo=TRAS_EL_NEXT, nuevo=""),
+    dict(id="msc-recarga-dos-veces", pruebas=[MSC_REC], viejo=TRAS_EL_NEXT, nuevo=TRAS_EL_NEXT + TRAS_EL_NEXT),
+    dict(id="msc-recarga-tras-cualquier-error", pruebas=[MSC_TRAS],
+         viejo=('    return _msc_esperar(page, reg, "la sesión o el error tras el botón de entrar", on_pausa=on_pausa, '
+                'validar=True)\n'),
+         nuevo=('    paso = _msc_esperar(page, reg, "la sesión o el error tras el botón de entrar", on_pausa=on_pausa, '
+                'validar=True)\n    return _msc_recargar(page, reg) if paso == "error" else paso\n')),
+    # La pausa: sin ella, o con otra.
+    dict(id="msc-recarga-sin-la-pausa", pruebas=[MSC_REC], viejo="    esperar(page, MSC_PAUSA_RECARGA)\n", nuevo=""),
+    dict(id="msc-recarga-otra-pausa", pruebas=[MSC_REC], viejo="MSC_PAUSA_RECARGA = 20\n",
+         nuevo="MSC_PAUSA_RECARGA = 3\n"),
+    # Tras la recarga: vuelve a escribir el usuario, o espera también su campo (y en la portada escribe la clave).
+    dict(id="msc-recarga-vuelve-a-escribir-el-usuario", pruebas=[MSC_REC], viejo=ESPERA,
+         nuevo='    rellenar(page, "#UserName, input[type=email]", "u", 12000, reg)\n' + ESPERA),
+    dict(id="msc-recarga-espera-tambien-el-usuario", pruebas=[MSC_REC], viejo=ESPERA,
+         nuevo=ESPERA.replace('campo="input[type=password]"', 'campo="input[type=password], #UserName"')),
+    # Sin decirlo en pantalla, o sin su captura.
+    dict(id="msc-recarga-sin-aviso", pruebas=[MSC_REC],
+         viejo='    reg.paso(f"⚠ MSC mostró una página de error al pulsar «Next».',
+         nuevo='    reg.info(f"⚠ MSC mostró una página de error al pulsar «Next».'),
+    dict(id="msc-recarga-sin-captura", pruebas=[MSC_REC],
+         viejo='    reg.url(page); reg.captura(page, "msc_error_next")\n', nuevo="    reg.url(page)\n"),
+]

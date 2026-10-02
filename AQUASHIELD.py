@@ -1022,6 +1022,15 @@ MSC_VALIDACION = ("captcha", "verify", "verificación", "robot", "code")
 # 10 s en 48 pasadas; sin pasar por b2clogin, de 3 a 5 s en 4; encargo 45).
 MSC_SONDEO = 0.5
 MSC_SONDEOS = 60
+# Cuántos segundos espera el login de MSC, con la página de error que sale tras el «Next» (el 502 de TriggerOidcLogin),
+# antes de recargarla una sola vez (_msc_recargar; decisión de Marcelo, encargo 47,
+# CICLO-msc-recarga-y-corrida-02-10.md).
+# Hipótesis: lo que tardaba la recarga del código de antes del encargo 45, medida en las 9 de logs/ (del 21-09 al
+# 01-10): avisaba 18 o 19 s después del «Next» y recargaba 3 s más tarde. El historial del perfil guarda 8 de esas 9.
+# Las 7 de TriggerOidcLogin siguieron solas, 5 hasta la página de la clave y 2 por identityserver sin pedirla, y 4
+# terminaron en la sesión sin otro intento (3 con la clave escrita por primera vez después de la recarga). La otra, el
+# 01-10, terminó en la página de error de MSC. Ninguna volvió al campo del usuario.
+MSC_PAUSA_RECARGA = 20
 # El motivo de la fila de MSC cuando el login no deja la sesión iniciada: queda NO ENVIADA, sin otro intento de inicio
 # de sesión (decisión de Marcelo, encargo 45: el portal podría bloquear la cuenta).
 MSC_SIN_SESION = ("no quedó iniciada la sesión de MSC: la reserva no se envió, y el inicio de sesión no se reintentó, "
@@ -1112,15 +1121,19 @@ def _msc_abrir(page, reg):
 # encontró su selector las 7 veces, y el de entrar, 6; la vez que no (2026-09-21), el clic genérico tampoco dio la sesión.
 def _msc_entrar(page, creds, reg, on_pausa=None):
     """Escribe el usuario, pulsa «Next» y espera lo primero que llegue: el campo de la contraseña, la sesión (la de
-    identityserver seguía abierta: así pasó el 2026-09-27, el 29 y el 01-10, al volver a entrar) o el error (_msc_esperar).
-    Con el campo, escribe la clave, pulsa el botón de entrar y espera la sesión o el error, con la pausa si MSC pide una
-    validación. Devuelve "sesión", "error" o "" (no llegó ninguna); sin nada tras el «Next», deja msc_paso_email."""
+    identityserver seguía abierta: así pasó el 2026-09-27, el 29 y el 01-10, al volver a entrar) o el error
+    (_msc_esperar). Si tras el «Next» llega el error, recarga esa página una sola vez y vuelve a esperar (_msc_recargar;
+    decisión de Marcelo, encargo 47). Con el campo, escribe la clave, pulsa el botón de entrar y espera la sesión o el
+    error, con la pausa si MSC pide una validación. Devuelve "sesión", "error" o "" (no llegó ninguna); sin nada tras el
+    «Next», deja msc_paso_email."""
     reg.paso("Ingresando credenciales...")
     rellenar(page, "#UserName, input[type=email]", creds["usuario"], 12000, reg)
     if not click_si_existe(page, "button:has-text('Next'), button:has-text('Siguiente')", 5000, reg):
         reg.info("no encontré el botón «Next» ni «Siguiente» del login de MSC; no pulsé nada")
     _msc_cookies(page, reg)
     paso = _msc_esperar(page, reg, "la contraseña, la sesión o el error tras el «Next»", campo="input[type=password]")
+    if paso == "error":
+        paso = _msc_recargar(page, reg)
     if paso != "campo":
         if not paso:
             reg.info("no vi el campo de contraseña"); reg.captura(page, "msc_paso_email")
@@ -1133,11 +1146,36 @@ def _msc_entrar(page, creds, reg, on_pausa=None):
     return _msc_esperar(page, reg, "la sesión o el error tras el botón de entrar", on_pausa=on_pausa, validar=True)
 
 
+def _msc_recargar(page, reg):
+    """El error del portal tras el «Next» del login de MSC (el 502 de TriggerOidcLogin, como el 2026-10-02): espera
+    MSC_PAUSA_RECARGA s, recarga esa página una sola vez, como hasta el encargo 45, y espera lo primero que llegue: el
+    campo de la contraseña, la sesión o el error (_msc_esperar). Decisión de Marcelo, encargo 47
+    (CICLO-msc-recarga-y-corrida-02-10.md): la recarga vuelve, sin reenviar la clave ni otro intento de inicio de
+    sesión. No escribe ni pulsa nada: la clave, si aparece su campo, la escribe _msc_entrar por primera vez; si vuelve
+    el campo del usuario, no lo escribe (sería otro intento), y la espera termina sin nada. Espera solo el campo de la
+    contraseña, como el código de antes del encargo 45: en las 3 recargas de logs/ que dejaron la sesión con la clave,
+    la encontró en 0,1 s o menos al buscarla, y el del usuario no apareció en 12 s. Un selector con los dos miraría
+    solo el primero en la página (.first). Devuelve "campo", "sesión", "error" o ""."""
+    reg.paso(f"⚠ MSC mostró una página de error al pulsar «Next». Espero {MSC_PAUSA_RECARGA} s y recargo esa página "
+             f"una sola vez, como antes del encargo 45, sin volver a escribir el usuario.")
+    reg.url(page); reg.captura(page, "msc_error_next")
+    esperar(page, MSC_PAUSA_RECARGA)
+    try:
+        page.reload(wait_until="domcontentloaded")
+    except Exception as e:
+        reg.info(f"no pude recargar la página: {str(e)[:70]}")
+    paso = _msc_esperar(page, reg, "la contraseña, la sesión o el error tras la recarga", campo="input[type=password]")
+    reg.url(page)
+    return paso
+
+
 def _msc_tras_el_error(page, reg):
     """El error del portal en el login de MSC: lo dice, deja su captura (msc_error), va una sola vez a la página desde
     la que sigue el programa (MSC_EBOOKING) y espera la sesión, el error o el formulario de login (_msc_esperar). Solo
     la sesión cuenta: no vuelve a iniciar sesión, porque el portal podría bloquear la cuenta (decisión de Marcelo,
-    encargo 45). Si ir a eBooking deja la sesión no está medido (CICLO-login-msc-y-maersk.md)."""
+    encargo 45). Si el error salió tras el «Next», antes ya se recargó esa página una vez (_msc_recargar, encargo 47).
+    El 2026-10-02, tras un 502 del «Next», eBooking llevó a la portada de myMSC, sin la sesión
+    (CICLO-msc-recarga-y-corrida-02-10.md)."""
     reg.paso("⚠ MSC mostró una página de error al iniciar sesión. Voy una sola vez a eBooking para ver si la sesión "
              "quedó iniciada; no vuelvo a iniciar sesión, para no arriesgar la cuenta.")
     reg.url(page); reg.captura(page, "msc_error")
@@ -1161,7 +1199,8 @@ def login_msc(page, creds, reg, on_pausa=None):
     comprueba la sesión, sin otro intento de inicio de sesión (_msc_tras_el_error). Decisiones de Marcelo, encargo 45
     (CICLO-login-msc-y-maersk.md). Hasta el encargo 45 repetía el login entero hasta 2 veces tras un 502
     (MSC_REINTENTOS_502, CICLO-cierre-de-frenos.md) y recargaba la página si el 502 salía tras el «Next»: el 2026-10-01
-    a las 16:02 tardó 214 s y dio por iniciada una sesión que no existía."""
+    a las 16:02 tardó 214 s y dio por iniciada una sesión que no existía. Desde el encargo 47 vuelve esa recarga, una
+    sola vez y sin el reintento (_msc_recargar): el 2026-10-02, sin ella, la ida a eBooking no dejó la sesión."""
     reg.paso("Abriendo myMSC...")
     _msc_abrir(page, reg)
     if _msc_sesion(page):
