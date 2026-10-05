@@ -521,6 +521,19 @@ class TestEjecutarReservas(ConPlanilla):
                 self.assertTrue(ws[f"H{f}"].value.endswith(self.mod.MSC_SIN_SESION))
         self.assertEqual(len(list(self.sb.glob(RESPALDOS))), 1)
 
+    def test_login_de_msc_deja_su_motivo(self):
+        # Si el login de MSC dejó su motivo en el Registro (tras el segundo intento: MSC_SIN_SESION_TRAS_DOS,
+        # decisión de Marcelo, encargo 50), es el de cada fila de MSC en la planilla (_motivo_sin_sesion).
+        def login(page, creds, reg, on_pausa=None):
+            reg.sin_sesion = {"msc": self.mod.MSC_SIN_SESION_TRAS_DOS}
+            return False
+        with soporte.Navieras(self.mod, login_ok=False) as n:
+            self.mod.NAVIERAS["msc"] = ("MSC", login)
+            res, _ = self.mod.ejecutar_reservas("op_prueba", "msc", esperar_cierre=lambda: None)
+        self.assertEqual((res.get(5), n.reservas), ("NO ENVIADA", []))
+        self.assertTrue(openpyxl.load_workbook(self.planilla)["MSC"]["H5"].value.endswith(
+            self.mod.MSC_SIN_SESION_TRAS_DOS))
+
     def test_reservador_que_revienta(self):
         def respuesta(nav, rsv, on_pausa):
             raise RuntimeError("falla falsa")

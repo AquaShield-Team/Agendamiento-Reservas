@@ -19,9 +19,10 @@ cada fila y, si se emitió, su N° de reserva.
 **SOLO INICIAR SESIÓN** entra a los portales y los deja abiertos para trabajar a mano. **DETENER** corta la
 corrida en curso.
 
-Si MSC muestra una página de error al iniciar sesión, el programa va una sola vez a su página de reservas para ver si
-la sesión quedó iniciada. Si no quedó, no vuelve a intentarlo, para no arriesgar la cuenta, y las filas de MSC quedan
-NO ENVIADA con el motivo: vuelve a armarlas más tarde.
+Si MSC muestra una página de error después de aceptar el usuario y la clave, el programa hace un solo intento más de
+inicio de sesión, desde el principio, y nunca un tercero. Con otro error no vuelve a intentarlo, para no arriesgar la
+cuenta. Si la sesión no queda iniciada, las filas de MSC quedan NO ENVIADA con el motivo: vuelve a armarlas más tarde.
+Cada error deja en la carpeta de la corrida su captura y lo que respondió el portal.
 
 ## Modo seguro y emisión
 

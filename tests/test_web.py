@@ -654,6 +654,19 @@ class TestPanelCorridas(PanelBase):
                                         "6": ("NO ENVIADA", "la fila no trae una nave para reservar")}))
         self.assertTrue(any(f"✗ fila 5: NO ENVIADA · {self.mod.MSC_SIN_SESION}" in l for l in e["lineas"]))
 
+    def test_login_de_msc_deja_su_motivo(self):
+        # Si el login de MSC dejó su motivo en el Registro (tras el segundo intento: MSC_SIN_SESION_TRAS_DOS,
+        # decisión de Marcelo, encargo 50), es el de cada fila de MSC, en el panel y en log.txt (_motivo_sin_sesion).
+        def login(page, creds, reg, on_pausa=None):
+            reg.sin_sesion = {"msc": self.mod.MSC_SIN_SESION_TRAS_DOS}
+            return False
+        with Navieras(self.mod, login_ok=False) as n:
+            self.mod.NAVIERAS["msc"] = ("MSC", login)
+            e = self.correr("MSC", [5])
+        self.assertEqual((n.reservas, (e["resultados"]["5"]["estado"], e["resultados"]["5"]["detalle"])),
+                         ([], ("NO ENVIADA", self.mod.MSC_SIN_SESION_TRAS_DOS)))
+        self.assertTrue(any(f"✗ fila 5: NO ENVIADA · {self.mod.MSC_SIN_SESION_TRAS_DOS}" in l for l in e["lineas"]))
+
     def test_reservador_que_revienta(self):
         def respuesta(nav, rsv, on_pausa):
             raise RuntimeError("falla falsa del portal")

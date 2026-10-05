@@ -3558,11 +3558,12 @@ MUTACIONES += [
 MSC_ERR = "test_clics.TestMsc.test_error_del_portal"
 MSC_SES = "test_clics.TestMsc.test_sesion_solo_en_su_pagina"
 MSC_ESP = "test_clics.TestMsc.test_login_termina_con_lo_primero_que_llega"
-MSC_TRAS = "test_clics.TestMsc.test_ante_el_error_va_una_vez_a_ebooking_y_no_reintenta"
+# Desde el encargo 50, «ante el error» son dos pruebas: el segundo intento tras el error después de la clave, y los
+# otros errores, que no reintentan (CICLO-msc-segundo-intento.md).
+MSC_DOS = "test_clics.TestMsc.test_tras_el_error_despues_de_la_clave_un_solo_intento_mas"
+MSC_OTROS = "test_clics.TestMsc.test_otros_errores_no_reintentan"
 TEXTOS_ERR = 'MSC_TEXTOS_DE_ERROR = ("502", "no puede procesar", "unable to complete your request")\n'
 SESION = '    return u.netloc.lower() == "www.mymsc.com" and u.path.lower().rstrip("/") in MSC_PAGINAS_CON_SESION\n'
-A_EBOOKING = ('        page.goto(MSC_EBOOKING, wait_until="domcontentloaded")\n    except Exception as e:\n'
-              '        reg.info(f"no pude ir a eBooking')
 
 MUTACIONES += [
     # _msc_error sin la página de error de MSC, sin la de Chrome por su dirección o por uno de sus textos, o que da el
@@ -3607,29 +3608,12 @@ MUTACIONES += [
     dict(id="msc-ya-habia-sin-mirar", pruebas=[MSC_ESP],
          viejo='    if _msc_sesion(page):\n        reg.paso("Ya había una sesión activa.")',
          nuevo='    if False:\n        reg.paso("Ya había una sesión activa.")'),
-    # Ante el error: sin mirar el error en la espera, sin ir a eBooking, yendo dos veces, volviendo a entrar, dándola
-    # por iniciada sin mirar, sin mirar el error al abrir, sin su captura o sin decirlo.
-    dict(id="msc-espera-sin-el-error", pruebas=[MSC_TRAS],
+    # Ante el error: sin mirar el error en la espera. Las demás de este grupo mutaban la ida a eBooking, que salió en el
+    # encargo 50 (msc-error-sin-ir-a-ebooking, msc-error-dos-veces-a-ebooking, msc-error-reintenta-el-login,
+    # msc-error-sin-mirar-la-sesion, msc-error-al-abrir-sin-mirar, msc-error-sin-su-captura y msc-error-sin-aviso): sus
+    # equivalentes de hoy están en el bloque del encargo 50.
+    dict(id="msc-espera-sin-el-error", pruebas=[MSC_DOS],
          viejo='        if _msc_error(page):\n            return "error"\n', nuevo=""),
-    dict(id="msc-error-sin-ir-a-ebooking", pruebas=[MSC_TRAS],
-         viejo=A_EBOOKING, nuevo=A_EBOOKING.replace('page.goto(MSC_EBOOKING, wait_until="domcontentloaded")', "pass")),
-    dict(id="msc-error-dos-veces-a-ebooking", pruebas=[MSC_TRAS],
-         viejo=A_EBOOKING, nuevo='        page.goto(MSC_EBOOKING, wait_until="domcontentloaded")\n' + A_EBOOKING),
-    dict(id="msc-error-reintenta-el-login", pruebas=[MSC_TRAS],
-         viejo='    desenlace = _msc_esperar(page, reg, "la sesión en eBooking",\n',
-         nuevo='    _msc_entrar(page, {"usuario": "u", "clave": "c"}, reg)\n'
-               '    desenlace = _msc_esperar(page, reg, "la sesión en eBooking",\n'),
-    dict(id="msc-error-sin-mirar-la-sesion", pruebas=[MSC_TRAS],
-         viejo='    ok = desenlace == "sesión"\n    reg.paso("Sesión iniciada." if ok else "⚠ Después',
-         nuevo='    ok = True\n    reg.paso("Sesión iniciada." if ok else "⚠ Después'),
-    dict(id="msc-error-al-abrir-sin-mirar", pruebas=[MSC_TRAS],
-         viejo='    desenlace = "error" if _msc_error(page) else _msc_entrar(page, creds, reg, on_pausa)\n',
-         nuevo="    desenlace = _msc_entrar(page, creds, reg, on_pausa)\n"),
-    dict(id="msc-error-sin-su-captura", pruebas=[MSC_TRAS],
-         viejo='    reg.url(page); reg.captura(page, "msc_error")\n', nuevo="    reg.url(page)\n"),
-    dict(id="msc-error-sin-aviso", pruebas=[MSC_TRAS],
-         viejo='    reg.paso("⚠ MSC mostró una página de error al iniciar sesión.',
-         nuevo='    reg.info("⚠ MSC mostró una página de error al iniciar sesión.'),
     # Sin la sesión de MSC, la fila queda sin estado, como antes, en el panel o en la consola; o NO ENVIADA con
     # cualquier naviera.
     dict(id="msc-sin-sesion-panel-sin-estado", pruebas=[CO + "test_login_fallido_de_msc_queda_no_enviada"],
@@ -5515,8 +5499,8 @@ MUTACIONES += [
 ] + [
     # COSCO, en quien llama a su ayudante (que sirve también al contrato y corta solo con el texto vacío).
     dict(id="cosco-origen-sin-pedir-una-palabra", pruebas=[SIN_PALABRA],
-         viejo="    puerto = _puerto_de_carga(celda)\n",
-         nuevo="    puerto = _cosco_puerto_de_la_celda(celda)\n"),
+         viejo='    celda = (reserva.get("pol") or "").strip()\n    puerto = _puerto_de_carga(celda)\n',
+         nuevo='    celda = (reserva.get("pol") or "").strip()\n    puerto = _cosco_puerto_de_la_celda(celda)\n'),
     dict(id="cosco-destino-sin-pedir-una-palabra", pruebas=[SIN_PALABRA],
          viejo='    dest_ciudad = _ciudad_de(reserva.get("destino_final") or reserva.get("destino_orig"))\n',
          nuevo='    dest_ciudad = (reserva.get("destino_final") or reserva.get("destino_orig") or "")'
@@ -5571,8 +5555,9 @@ MUTACIONES += [
          nuevo=REGLA_PUERTO.replace("_puerto_de_carga(pol)",
                                     "_ciudad_de(pol) or not _cosco_puerto_de_la_celda(pol)")),
     dict(id="cosco-origen-palabra-antes-del-pais", pruebas=[SIN_PALABRA],
-         viejo="    puerto = _puerto_de_carga(celda)\n",
-         nuevo="    puerto = _cosco_puerto_de_la_celda(_ciudad_de(celda))\n"),
+         viejo='    celda = (reserva.get("pol") or "").strip()\n    puerto = _puerto_de_carga(celda)\n',
+         nuevo=('    celda = (reserva.get("pol") or "").strip()\n'
+                '    puerto = _cosco_puerto_de_la_celda(_ciudad_de(celda))\n')),
     # CMA en el modo ramp, siguiendo antes de cortar con un JavaScript o con un localizador por su texto.
     dict(id="sin-sugerencia-cma-ramp-sigue-con-javascript", pruebas=[TSN], viejo=AVISO_RAMP,
          nuevo='                page.evaluate("window.scrollTo(0, 0)")\n' + AVISO_RAMP),
@@ -5951,7 +5936,9 @@ MUTACIONES += [
 MSC_REC = "test_clics.TestMsc.test_tras_el_error_del_next_recarga_una_vez"
 RECARGA = ('        page.reload(wait_until="domcontentloaded")\n    except Exception as e:\n'
            '        reg.info(f"no pude recargar la página')
-TRAS_EL_NEXT = "    if paso == \"error\":\n        paso = _msc_recargar(page, reg)\n"
+TRAS_EL_NEXT = "    if paso == \"error\":\n        paso = _msc_recargar(page, reg, escucha, intento, creds)\n"
+TRAS_LA_CLAVE = ('    paso = _msc_esperar(page, reg, "la sesión o el error tras el botón de entrar", '
+                 'on_pausa=on_pausa, validar=True,\n                        sufijo=suf)\n')
 ESPERA = ('    paso = _msc_esperar(page, reg, "la contraseña, la sesión o el error tras la recarga", '
           'campo="input[type=password]")\n')
 
@@ -5961,11 +5948,8 @@ MUTACIONES += [
          viejo=RECARGA, nuevo=RECARGA.replace('page.reload(wait_until="domcontentloaded")', "pass")),
     dict(id="msc-recarga-no-tras-el-next", pruebas=[MSC_REC], viejo=TRAS_EL_NEXT, nuevo=""),
     dict(id="msc-recarga-dos-veces", pruebas=[MSC_REC], viejo=TRAS_EL_NEXT, nuevo=TRAS_EL_NEXT + TRAS_EL_NEXT),
-    dict(id="msc-recarga-tras-cualquier-error", pruebas=[MSC_TRAS],
-         viejo=('    return _msc_esperar(page, reg, "la sesión o el error tras el botón de entrar", on_pausa=on_pausa, '
-                'validar=True)\n'),
-         nuevo=('    paso = _msc_esperar(page, reg, "la sesión o el error tras el botón de entrar", on_pausa=on_pausa, '
-                'validar=True)\n    return _msc_recargar(page, reg) if paso == "error" else paso\n')),
+    dict(id="msc-recarga-tras-cualquier-error", pruebas=[MSC_DOS], viejo=TRAS_LA_CLAVE,
+         nuevo=TRAS_LA_CLAVE + TRAS_EL_NEXT),
     # La pausa: sin ella, o con otra.
     dict(id="msc-recarga-sin-la-pausa", pruebas=[MSC_REC], viejo="    esperar(page, MSC_PAUSA_RECARGA)\n", nuevo=""),
     dict(id="msc-recarga-otra-pausa", pruebas=[MSC_REC], viejo="MSC_PAUSA_RECARGA = 20\n",
@@ -5980,7 +5964,7 @@ MUTACIONES += [
          viejo='    reg.paso(f"⚠ MSC mostró una página de error al pulsar «Next».',
          nuevo='    reg.info(f"⚠ MSC mostró una página de error al pulsar «Next».'),
     dict(id="msc-recarga-sin-captura", pruebas=[MSC_REC],
-         viejo='    reg.url(page); reg.captura(page, "msc_error_next")\n', nuevo="    reg.url(page)\n"),
+         viejo='    _msc_evidencia_del_error(page, reg, escucha, f"msc_error_next{suf}", creds)\n', nuevo=""),
 ]
 
 # --- Encargo 48: MAERSK toma el mes y el año del calendario de su cabecera; COSCO sin formulario, NO ENVIADA con
@@ -6065,4 +6049,189 @@ MUTACIONES += [
          nuevo=SIN_MARCO.replace("desde)", "time.monotonic())")),
     dict(id="cosco-sin-campos-sin-desde", pruebas=[COSCO_SIN_FORM], viejo=SIN_CAMPOS,
          nuevo=SIN_CAMPOS.replace("desde)", "time.monotonic())")),
+]
+
+# --- Encargo 50: el login de MSC hace un solo intento más tras el error después de la clave, nunca un tercero, y sin la
+# ida a eBooking; cada error deja en log.txt la respuesta que lo trajo, sin valores de sesión, y su captura y su HTML
+# sin el usuario ni la clave; las filas de MSC llevan el motivo que dejó el login; y COSCO dice cuándo
+# MAPA_PUERTOS_COSCO traduce el puerto de carga (decisiones de Marcelo, CICLO-msc-segundo-intento.md) ---
+MSC_EVID = "test_clics.TestMsc.test_el_error_deja_su_respuesta_y_su_evidencia"
+MSC_RESP = "test_clics.TestMsc.test_respuesta_del_error_sin_valores_de_sesion"
+MSC_HTML = "test_clics.TestMsc.test_html_sin_el_usuario_ni_la_clave"
+COSCO_TRAD = "test_clics.TestCosco.test_puerto_traducido_lo_dicen_el_log_y_el_motivo"
+CO_MOTIVO = CO + "test_login_de_msc_deja_su_motivo"
+ER_MOTIVO = ER + "test_login_de_msc_deja_su_motivo"
+INTENTOS = "MSC_INTENTOS = 2\n"
+CLAVE_FIN = ('    _msc_evidencia_del_error(page, reg, escucha, f"msc_error_clave{suf}", creds)\n'
+             '    return MSC_ERROR_TRAS_LA_CLAVE\n')
+FINAL = '    _msc_url(page, reg); reg.captura(page, "msc_final")\n    if desenlace == "sesión":\n'
+HTML_EVID = ('    guardados, total, _ = _guardar_html_completo(page, reg, nombre, "con el error del login de MSC",\n'
+             '                                                 sin=_textos_de_la_cuenta(creds))\n')
+VALORES = ("    valores = [f\"{k}: {' '.join(str(cab[k]).split())[:80]}\" for k in nombres if k in "
+           "MSC_CABECERAS_CON_VALOR]\n")
+SIN_CONSULTA = "        return f\"{s.scheme}://{s.hostname or ''}{f':{s.port}' if s.port else ''}{s.path}\"\n"
+URL_LINEA = "    reg.info(f\"URL: {_msc_sin_consulta(u)}{' (sin su consulta)' if urlsplit(u).query else ''}\")\n"
+CON_VALOR = 'MSC_CABECERAS_CON_VALOR = ("server", "via",'
+DEL_MARCO = '            return peticion.resource_type == "document" and peticion.frame == page.main_frame\n'
+GUARDA_HTML = "            if sin and any(str(t).casefold() in texto.casefold() for t in sin):\n"
+TRADUCCION = ('    return otro if otro and not set(_cosco_puerto_de_la_celda(otro).split()) <= set(puerto.split()) '
+              'else ""\n')
+DECORADORES = ('@_con_el_puerto_de_cosco\n@_con_la_nave_de_la_fila\n@_con_la_ruta_de_la_fila\n'
+               '@_sin_clic_a_ciegas("cosco")\n')
+DECORADO = "test_clics.TestSinClicACiegas.test_cada_reservador_que_corta_esta_decorado"
+MOTIVO = '    return (getattr(reg, "sin_sesion", None) or {}).get(nav) or SIN_SESION[nav]\n'
+
+MUTACIONES += [
+    # El segundo intento: con un tercero, sin él, tras cualquier error, sin reconocer el error tras la clave, volviendo
+    # a eBooking al final, dándola por iniciada sin mirar, o sin su aviso.
+    dict(id="e50-msc-tercer-intento", pruebas=[MSC_DOS], viejo=INTENTOS, nuevo="MSC_INTENTOS = 3\n"),
+    dict(id="e50-msc-sin-segundo-intento", pruebas=[MSC_DOS], viejo=INTENTOS, nuevo="MSC_INTENTOS = 1\n"),
+    dict(id="e50-msc-reintenta-tras-cualquier-error", pruebas=[MSC_OTROS],
+         viejo="        while desenlace == MSC_ERROR_TRAS_LA_CLAVE and intento < MSC_INTENTOS:\n",
+         nuevo='        while desenlace != "sesión" and intento < MSC_INTENTOS:\n'),
+    dict(id="e50-msc-error-tras-la-clave-como-cualquiera", pruebas=[MSC_DOS], viejo=CLAVE_FIN,
+         nuevo=CLAVE_FIN.replace("return MSC_ERROR_TRAS_LA_CLAVE", 'return "error"')),
+    dict(id="e50-msc-vuelve-a-ebooking", pruebas=[MSC_DOS, MSC_OTROS], viejo=FINAL,
+         nuevo=('    if desenlace != "sesión":\n        page.goto(MSC_EBOOKING, wait_until="domcontentloaded")\n'
+                + FINAL)),
+    dict(id="e50-msc-sin-mirar-la-sesion", pruebas=[MSC_DOS],
+         viejo='    if desenlace == "sesión":\n        reg.paso("Sesión iniciada.")\n',
+         nuevo='    if True:\n        reg.paso("Sesión iniciada.")\n'),
+    dict(id="e50-msc-segundo-sin-aviso", pruebas=[MSC_DOS],
+         viejo='            reg.paso("⚠ El usuario y la clave pasaron, y MSC dio el error al volver a myMSC.',
+         nuevo='            reg.info("⚠ El usuario y la clave pasaron, y MSC dio el error al volver a myMSC.'),
+    # Cómo termina: sin el motivo del segundo intento, con el motivo de un login anterior, sin decir que el segundo
+    # falló, o sin decir que el error fue antes de la clave.
+    dict(id="e50-msc-segundo-sin-el-motivo", pruebas=[MSC_DOS],
+         viejo='        reg.sin_sesion["msc"] = MSC_SIN_SESION_TRAS_DOS\n', nuevo="        pass\n"),
+    dict(id="e50-msc-motivo-viejo-queda", pruebas=[MSC_DOS],
+         viejo='    vars(reg).setdefault("sin_sesion", {}).pop("msc", None)\n',
+         nuevo='    vars(reg).setdefault("sin_sesion", {})\n'),
+    dict(id="e50-msc-segundo-fallido-sin-aviso", pruebas=[MSC_DOS],
+         viejo='        reg.paso("⚠ El segundo intento de inicio de sesión de MSC tampoco dejó la sesión;',
+         nuevo='        reg.info("⚠ El segundo intento de inicio de sesión de MSC tampoco dejó la sesión;'),
+    dict(id="e50-msc-antes-de-la-clave-sin-aviso", pruebas=[MSC_OTROS],
+         viejo='        reg.paso("⚠ MSC mostró una página de error antes de la clave;',
+         nuevo='        reg.info("⚠ MSC mostró una página de error antes de la clave;'),
+    # Las capturas del segundo intento con los nombres del primero, que las pisan.
+    dict(id="e50-msc-sufijo-igual", pruebas=[MSC_DOS],
+         viejo='    return "" if intento == 1 else f"_{intento}"\n', nuevo='    return ""\n'),
+    # La portada con el error: sin mirarlo (escribe el usuario en la página de error) o sin su evidencia.
+    dict(id="e50-msc-portada-sin-mirar-el-error", pruebas=[MSC_OTROS],
+         viejo='    if _msc_error(page):\n        reg.paso("⚠ MSC mostró una página de error al abrir su portada;',
+         nuevo='    if False:\n        reg.paso("⚠ MSC mostró una página de error al abrir su portada;'),
+    dict(id="e50-msc-portada-sin-evidencia", pruebas=[MSC_OTROS],
+         viejo=('        _msc_evidencia_del_error(page, reg, escucha, f"msc_error_portada{_msc_sufijo(intento)}", '
+                'creds)\n'), nuevo=""),
+    # La evidencia de cada error: sin la de después de la clave, sin la de después de la recarga; sin la línea de la
+    # respuesta, sin la dirección, sin la captura, sin el HTML, o con el HTML que trae el usuario.
+    dict(id="e50-msc-clave-sin-evidencia", pruebas=[MSC_DOS, MSC_EVID], viejo=CLAVE_FIN,
+         nuevo="    return MSC_ERROR_TRAS_LA_CLAVE\n"),
+    dict(id="e50-msc-recarga-sin-evidencia-tras-recargar", pruebas=[MSC_OTROS, MSC_REC],
+         viejo='        _msc_evidencia_del_error(page, reg, escucha, f"msc_error_recarga{suf}", creds)\n', nuevo=""),
+    dict(id="e50-msc-evidencia-sin-respuesta", pruebas=[MSC_EVID],
+         viejo="    reg.info(_msc_respuesta_del_error(escucha))\n", nuevo=""),
+    dict(id="e50-msc-evidencia-sin-url", pruebas=[MSC_EVID],
+         viejo="    reg.info(_msc_respuesta_del_error(escucha))\n    _msc_url(page, reg)\n",
+         nuevo="    reg.info(_msc_respuesta_del_error(escucha))\n"),
+    dict(id="e50-msc-evidencia-sin-captura", pruebas=[MSC_EVID],
+         viejo="    png = reg.captura(page, nombre)\n", nuevo="    png = False\n"),
+    dict(id="e50-msc-evidencia-sin-html", pruebas=[MSC_EVID], viejo=HTML_EVID, nuevo="    guardados, total = 0, 1\n"),
+    dict(id="e50-msc-evidencia-con-el-usuario", pruebas=[MSC_EVID], viejo=HTML_EVID,
+         nuevo=HTML_EVID.replace("sin=_textos_de_la_cuenta(creds))", "sin=())")),
+    # La escucha: sin dejar de escuchar al terminar, sin quitar a sus oyentes, con cualquier marco o tipo de petición,
+    # sin las fallas de red, o guardando solo una.
+    dict(id="e50-msc-escucha-sin-quitar", pruebas=[MSC_EVID], viejo='        escucha["quitar"]()\n',
+         nuevo="        pass\n"),
+    dict(id="e50-msc-quitar-no-quita", pruebas=[MSC_RESP, MSC_EVID],
+         viejo="                page.remove_listener(evento, oyente)\n", nuevo="                pass\n"),
+    dict(id="e50-msc-escucha-cualquier-marco", pruebas=[MSC_RESP], viejo=DEL_MARCO,
+         nuevo='            return peticion.resource_type == "document"\n'),
+    dict(id="e50-msc-escucha-cualquier-tipo", pruebas=[MSC_RESP], viejo=DEL_MARCO,
+         nuevo="            return peticion.frame == page.main_frame\n"),
+    dict(id="e50-msc-escucha-sin-fallas", pruebas=[MSC_RESP, MSC_EVID],
+         viejo='    oyentes = (("response", al_responder), ("requestfailed", al_fallar))\n',
+         nuevo='    oyentes = (("response", al_responder),)\n'),
+    dict(id="e50-msc-escucha-de-a-una", pruebas=[MSC_RESP], viejo="MSC_ESCUCHA = 20\n", nuevo="MSC_ESCUCHA = 1\n"),
+    # La línea de la respuesta: la primera que falló, sin su falla de red, repitiendo lo ya dicho, o tomando cualquier
+    # respuesta como fallida.
+    dict(id="e50-msc-respuesta-la-primera", pruebas=[MSC_RESP],
+         viejo="        r = (fallidas or respuestas)[-1]\n", nuevo="        r = (fallidas or respuestas)[0]\n"),
+    dict(id="e50-msc-respuesta-sin-la-falla", pruebas=[MSC_RESP, MSC_EVID],
+         viejo='        red = [q["falla"] for q in fallas if q["url"] == r["url"]][-1:]\n', nuevo="        red = []\n"),
+    dict(id="e50-msc-respuesta-repite", pruebas=[MSC_RESP], viejo='    escucha["nuevas"] = 0\n', nuevo=""),
+    dict(id="e50-msc-respuesta-sin-escucha", pruebas=[MSC_RESP],
+         viejo="    escucha = {} if escucha is None else escucha\n", nuevo=""),
+    dict(id="e50-msc-respuesta-toda-fallida", pruebas=[MSC_RESP],
+         viejo='    fallidas = [v for v in respuestas if (v.get("estado") or 0) >= 400]\n',
+         nuevo="    fallidas = list(respuestas)\n"),
+    # Las cabeceras: el valor de todas, sin recortarlo, sin las de cookies en los nombres, o con el valor de una cookie
+    # o de un identificador.
+    dict(id="e50-msc-cabeceras-todos-los-valores", pruebas=[MSC_RESP, MSC_EVID], viejo=VALORES,
+         nuevo=VALORES.replace(" if k in MSC_CABECERAS_CON_VALOR]", "]")),
+    dict(id="e50-msc-cabeceras-sin-recortar", pruebas=[MSC_RESP], viejo=VALORES,
+         nuevo=VALORES.replace("[:80]", "[:800]")),
+    dict(id="e50-msc-cabeceras-sin-set-cookie", pruebas=[MSC_RESP, MSC_EVID],
+         viejo='        cab, aviso = dict(respuesta.all_headers()), ""\n',
+         nuevo='        cab, aviso = dict(respuesta.headers), ""\n'),
+    dict(id="e50-msc-cabeceras-con-cookie", pruebas=[MSC_RESP, MSC_EVID], viejo=CON_VALOR,
+         nuevo=CON_VALOR.replace('("server",', '("set-cookie", "server",')),
+    dict(id="e50-msc-cabeceras-con-id", pruebas=[MSC_RESP], viejo=CON_VALOR,
+         nuevo=CON_VALOR.replace('("server",', '("x-request-id", "server",')),
+    # Las direcciones: enteras, con el usuario y la clave de la dirección, o sin decir que se quitó la consulta.
+    dict(id="e50-msc-sin-consulta-entera", pruebas=[MSC_RESP, MSC_EVID], viejo=SIN_CONSULTA,
+         nuevo="        return str(url)\n"),
+    dict(id="e50-msc-sin-consulta-con-usuario", pruebas=[MSC_RESP], viejo=SIN_CONSULTA,
+         nuevo='        return f"{s.scheme}://{s.netloc}{s.path}"\n'),
+    dict(id="e50-msc-url-sin-decirlo", pruebas=[MSC_RESP], viejo=URL_LINEA,
+         nuevo='    reg.info(f"URL: {_msc_sin_consulta(u)}")\n'),
+    # El HTML sin el usuario ni la clave: sin la guarda, distinguiendo mayúsculas, sin avisarlo; y los textos de la
+    # cuenta sin su forma codificada, con los cortos, o sin la clave.
+    dict(id="e50-html-sin-guarda", pruebas=[MSC_HTML, MSC_EVID], viejo=GUARDA_HTML, nuevo="            if False:\n"),
+    dict(id="e50-html-guarda-con-mayusculas", pruebas=[MSC_HTML], viejo=GUARDA_HTML,
+         nuevo="            if sin and any(str(t) in texto for t in sin):\n"),
+    dict(id="e50-html-guarda-sin-aviso", pruebas=[MSC_HTML],
+         viejo="                reg.paso(f\"⚠ No guardé el HTML {'de la página'",
+         nuevo="                reg.info(f\"⚠ No guardé el HTML {'de la página'"),
+    dict(id="e50-textos-sin-codificar", pruebas=[MSC_HTML, MSC_EVID],
+         viejo='            textos |= {valor, quote(valor, safe=""), quote(valor)}\n',
+         nuevo="            textos |= {valor}\n"),
+    dict(id="e50-textos-cortos", pruebas=[MSC_HTML], viejo="        if len(valor) >= 3:\n",
+         nuevo="        if valor:\n"),
+    dict(id="e50-textos-sin-la-clave", pruebas=[MSC_HTML], viejo='    for clave in ("usuario", "clave"):\n',
+         nuevo='    for clave in ("usuario",):\n'),
+    # El motivo de las filas sin la sesión: siempre el de SIN_SESION, en _motivo_sin_sesion, en el panel o en la
+    # consola.
+    dict(id="e50-motivo-sin-sesion-fijo", pruebas=[CO_MOTIVO, ER_MOTIVO, MSC_DOS], viejo=MOTIVO,
+         nuevo="    return SIN_SESION[nav]\n"),
+    dict(id="e50-panel-motivo-fijo", pruebas=[CO_MOTIVO],
+         viejo='"estado": NO_ENVIADA, "detalle": _motivo_sin_sesion(reg, nav), "booking": "",\n',
+         nuevo='"estado": NO_ENVIADA, "detalle": SIN_SESION[nav], "booking": "",\n'),
+    dict(id="e50-panel-linea-motivo-fijo", pruebas=[CO_MOTIVO],
+         viejo="reg.paso(f\"✗ fila {rsv['fila']}: {NO_ENVIADA} · {_motivo_sin_sesion(reg, nav)}\")\n",
+         nuevo="reg.paso(f\"✗ fila {rsv['fila']}: {NO_ENVIADA} · {SIN_SESION[nav]}\")\n"),
+    dict(id="e50-consola-motivo-fijo", pruebas=[ER_MOTIVO],
+         viejo="                anotar(i, rsv, NO_ENVIADA, _motivo_sin_sesion(reg, naviera_clave))\n",
+         nuevo="                anotar(i, rsv, NO_ENVIADA, SIN_SESION[naviera_clave])\n"),
+    # COSCO: la traducción siempre, nunca, o por el texto y no por las palabras; sin el aviso, sin la nota, sin sumarla
+    # al motivo, sin borrar la de otra reserva, o con el decorador por dentro de los cortes o sin él.
+    dict(id="e50-cosco-traduccion-siempre", pruebas=[COSCO_TRAD], viejo=TRADUCCION, nuevo="    return otro\n"),
+    dict(id="e50-cosco-traduccion-nunca", pruebas=[COSCO_TRAD], viejo=TRADUCCION, nuevo='    return ""\n'),
+    dict(id="e50-cosco-traduccion-por-el-texto", pruebas=[COSCO_TRAD], viejo=TRADUCCION,
+         nuevo='    return otro if otro and _cosco_puerto_de_la_celda(otro) != puerto else ""\n'),
+    dict(id="e50-cosco-sin-aviso", pruebas=[COSCO_TRAD],
+         viejo='        reg.paso(f"⚠ COSCO: el puerto de carga de la fila,',
+         nuevo='        reg.info(f"⚠ COSCO: el puerto de carga de la fila,'),
+    dict(id="e50-cosco-sin-nota", pruebas=[COSCO_TRAD],
+         viejo='        reg.cosco_puerto = (f"puerto de carga:', nuevo='        _nota = (f"puerto de carga:'),
+    dict(id="e50-cosco-decorador-no-suma", pruebas=[COSCO_TRAD],
+         viejo='        return (estado, " · ".join(x for x in (detalle, nota) if x)) if nota else (estado, detalle)\n',
+         nuevo="        return (estado, detalle)\n"),
+    dict(id="e50-cosco-decorador-no-borra-antes", pruebas=[COSCO_TRAD],
+         viejo='        vars(reg).pop("cosco_puerto", None)\n        try:\n', nuevo="        try:\n"),
+    dict(id="e50-cosco-decorador-por-dentro", pruebas=[COSCO_TRAD, DECORADO], viejo=DECORADORES,
+         nuevo=('@_con_la_nave_de_la_fila\n@_con_la_ruta_de_la_fila\n@_sin_clic_a_ciegas("cosco")\n'
+                '@_con_el_puerto_de_cosco\n')),
+    dict(id="e50-cosco-sin-decorador", pruebas=[COSCO_TRAD, DECORADO], viejo=DECORADORES,
+         nuevo='@_con_la_nave_de_la_fila\n@_con_la_ruta_de_la_fila\n@_sin_clic_a_ciegas("cosco")\n'),
 ]
