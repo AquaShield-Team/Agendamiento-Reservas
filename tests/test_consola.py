@@ -526,15 +526,16 @@ class TestEjecutarReservas(ConPlanilla):
     def test_login_de_msc_deja_su_motivo(self):
         # Si el login de MSC dejó su motivo en el Registro (tras el segundo intento: MSC_SIN_SESION_TRAS_DOS,
         # decisión de Marcelo, encargo 50), es el de cada fila de MSC en la planilla (_motivo_sin_sesion).
+        motivo = self.mod._msc_motivo_tras_dos(self.mod.MSC_ERROR_TRAS_LA_CLAVE, "")
+
         def login(page, creds, reg, on_pausa=None):
-            reg.sin_sesion = {"msc": self.mod.MSC_SIN_SESION_TRAS_DOS}
+            reg.sin_sesion = {"msc": motivo}
             return False
         with soporte.Navieras(self.mod, login_ok=False) as n:
             self.mod.NAVIERAS["msc"] = ("MSC", login)
             res, _ = self.mod.ejecutar_reservas("op_prueba", "msc", esperar_cierre=lambda: None)
         self.assertEqual((res.get(5), n.reservas), ("NO ENVIADA", []))
-        self.assertTrue(openpyxl.load_workbook(self.planilla)["MSC"]["H5"].value.endswith(
-            self.mod.MSC_SIN_SESION_TRAS_DOS))
+        self.assertTrue(openpyxl.load_workbook(self.planilla)["MSC"]["H5"].value.endswith(motivo))
 
     def test_reservador_que_revienta(self):
         def respuesta(nav, rsv, on_pausa):
@@ -672,6 +673,7 @@ class TestUtilitarios(soporte.CasoAQ):
             ("https://www.ejemplo.test/Ruta/Sin/Nada", "https://www.ejemplo.test/Ruta/Sin/Nada"),
             ("about:blank", "about:blank"),
             ("chrome-error://chromewebdata/", "chrome-error://chromewebdata/"),
+            ("http://[::1]:8443/x?y=1", "http://[::1]:8443/x (sin su consulta)"),       # IPv6, con sus corchetes
         ]
 
         class SinDireccion:
@@ -691,6 +693,69 @@ class TestUtilitarios(soporte.CasoAQ):
                         "CLAVEDEPRUEBA", "usuario:"):
             self.assertNotIn(secreto, texto)
         self.assertEqual(self.mod._sin_consulta("https://x.ejemplo.test:puerto/"), "(no pude leer la dirección)")
+        # El avance de MAERSK, igual: la línea «avance detectado por URL:» va sin la consulta.
+        reg = self.mod.Registro(self.sb / "url_mk" / "log.txt")
+        try:
+            pagina = soporte.PaginaFalsa(url="https://www.maersk.ejemplo.test/book/sailings?token=TOKENDEPRUEBA")
+            with mock.patch.object(self.mod, "esperar", lambda *a, **k: None):
+                self.assertIs(self.mod._mk_esperar_avance(pagina, "", 5, reg), True)
+        finally:
+            reg.cerrar()
+        avance = (self.sb / "url_mk" / "log.txt").read_text(encoding="utf-8")
+        self.assertIn("avance detectado por URL: https://www.maersk.ejemplo.test/book/sailings (sin su consulta) (",
+                      avance)
+        self.assertNotIn("tokendeprueba", avance.lower())
+
+    def test_one_paso_de_la_url(self):
+        # Lo que escribe ONE de su dirección en log.txt y en el motivo (_one_paso_de_la_url): el valor de «step=», hasta
+        # el «&» siguiente, o la dirección sin su consulta si no lo trae; nunca otro parámetro (revisión del encargo 51:
+        # reservar_one escribía la dirección entera si no traía «step=»). Direcciones inventadas.
+        f = self.mod._one_paso_de_la_url
+        casos = {"https://www.one.ejemplo.test/ecom/booking?step=booking-parties": "booking-parties",
+                 "https://www.one.ejemplo.test/ecom/booking?step=review-booking&code=CODIGODEPRUEBA": "review-booking",
+                 "https://www.one.ejemplo.test/ecom/?code=CODIGODEPRUEBA&state=ESTADODEPRUEBA":
+                     "https://www.one.ejemplo.test/ecom/",
+                 "https://www.one.ejemplo.test/ecom/booking?step=" + "x" * 40: "x" * 30, "": "", None: ""}
+        for url, esperado in casos.items():
+            with self.subTest(url=url):
+                self.assertEqual(f(url), esperado)
+
+    def test_ninguna_direccion_con_su_consulta_a_un_mensaje(self):
+        # Ninguna dirección de una página llega con su consulta a un mensaje: ni a una línea de log.txt (reg.paso,
+        # reg.info, _emit) ni al motivo que devuelve una reserva (revisión del encargo 51: reservar_one escribía la
+        # dirección entera). Por función: los nombres que toman algo de una dirección (.url), salvo un sí o un no, y
+        # salvo que pase por _sin_consulta o _one_paso_de_la_url; ni ellos ni una dirección leída ahí mismo pueden
+        # llegar a un mensaje sin pasar por esas dos. Control positivo: una función inventada que lo hace, cae.
+        limpiadores = ("_sin_consulta(", "_one_paso_de_la_url(")
+
+        def sucias(arbol):
+            out = []
+            for f in ast.walk(arbol):
+                if not isinstance(f, ast.FunctionDef):
+                    continue
+                nombres = set()
+                for n in ast.walk(f):
+                    if isinstance(n, ast.Assign):
+                        v = ast.unparse(n.value)
+                        booleano = isinstance(n.value, (ast.Compare, ast.BoolOp, ast.UnaryOp)) or (
+                            isinstance(n.value, ast.Call) and ast.unparse(n.value.func) in ("any", "all", "bool"))
+                        if ".url" in v and not booleano and not any(x in v for x in limpiadores):
+                            nombres |= {t.id for t in n.targets if isinstance(t, ast.Name)}
+                for n in ast.walk(f):
+                    es_log = (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                              and n.func.attr in ("paso", "info", "_emit"))
+                    es_motivo = isinstance(n, ast.Return) and isinstance(n.value, ast.Tuple)
+                    if not (es_log or es_motivo):
+                        continue
+                    texto = ast.unparse(n)
+                    usa = ({x.id for x in ast.walk(n) if isinstance(x, ast.Name)} & nombres) or ".url" in texto
+                    if usa and not any(x in texto for x in limpiadores):
+                        out.append(f"{f.name}: {texto[:90]}")
+            return out
+        control = ast.parse("def f(page, reg):\n    a = page.url.split('x')[0]\n    reg.paso(f'quedó en {a}')\n"
+                            "    return ('REVISAR', f'en {page.url}')\n")
+        self.assertEqual(len(sucias(control)), 2)
+        self.assertEqual(sucias(ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))), [])
 
     def test_toda_linea_url_va_sin_consulta(self):
         # Ninguna línea con «URL:» escribe una dirección sin pasar por _sin_consulta (encargo 51). Hoy son dos:

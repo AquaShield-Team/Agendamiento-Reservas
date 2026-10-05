@@ -85,20 +85,38 @@ class TestModoDeCadaCorrida(soporte.CasoAQ):
         self.assertEqual(casos, len(ENTORNO) * len(ARGUMENTOS) * len(CONFIG))
 
     def test_sin_todas_se_detiene_en_la_primera(self):
-        # El candado se detiene en la primera llave abierta, como siempre: con la variable abierta, config.json no se
-        # lee ni avisa de su valor inválido. Con todas (al empezar cada corrida), lo lee, y avisa una vez.
+        # El candado se detiene en la primera llave abierta, como siempre: con la variable o con un argumento abiertos,
+        # no lee config.json ni avisa de su valor inválido. Con todas (al empezar cada corrida), lee config.json, pero
+        # de su valor inválido avisa solo si ninguna otra llave abrió el candado, como el candado: su aviso dice que
+        # el candado quedó cerrado (revisión del encargo 51: el log decía «no se emite ninguna reserva» y, debajo,
+        # «modo EMISIÓN»).
+        real, lecturas = self.mod.cargar_config, []
+
+        def contar():
+            lecturas.append(1)
+            return real()
+        for entorno, args in (("1", ()), (None, ("--emitir",))):
+            with self.subTest(entorno=entorno, args=args):
+                antes, salida = len(self.mod._WEB["log"]), io.StringIO()
+                with self.llaves(entorno, args, "true"), contextlib.redirect_stdout(salida), \
+                        mock.patch.object(self.mod, "cargar_config", contar):
+                    lecturas.clear()
+                    self.assertIs(self.mod.es_modo_emision(), True)
+                    self.assertEqual(self.mod._llaves_abiertas(), self.esperadas(entorno, args, False))
+                    sin_todas = len(lecturas)
+                    todas = self.mod._llaves_abiertas(todas=True)
+                    con_todas = len(lecturas) - sin_todas
+                self.assertEqual((sin_todas, con_todas), (0, 1))
+                self.assertEqual(todas, self.esperadas(entorno, args, False))
+                self.assertEqual((self.mod._WEB["log"][antes:], salida.getvalue()), ([], ""))
+        # Sin otra llave abierta, el valor inválido avisa con o sin todas: una vez por llamada.
         antes = len(self.mod._WEB["log"])
-        salida = io.StringIO()
-        with self.llaves("1", (), "true"), contextlib.redirect_stdout(salida):
-            self.assertIs(self.mod.es_modo_emision(), True)
-            self.assertEqual(self.mod._llaves_abiertas(), self.esperadas("1", (), False))
-            sin_aviso = (len(self.mod._WEB["log"]) - antes, salida.getvalue())
-            todas = self.mod._llaves_abiertas(todas=True)
-        self.assertEqual(sin_aviso, (0, ""))
-        self.assertEqual(todas, self.esperadas("1", (), False))
+        with self.llaves(None, (), "true"), contextlib.redirect_stdout(io.StringIO()):
+            self.assertIs(self.mod.es_modo_emision(), False)
+            self.assertEqual(self.mod._llaves_abiertas(todas=True), [])
         nuevas = self.mod._WEB["log"][antes:]
-        self.assertEqual(len(nuevas), 1)
-        self.assertIn('«emitir_reservas» vale "true" y solo se abre con true', nuevas[0])
+        self.assertEqual(len(nuevas), 2)
+        self.assertTrue(all('«emitir_reservas» vale "true" y solo se abre con true' in ln for ln in nuevas), nuevas)
 
     def test_la_linea_de_cada_modo(self):
         # Lo que dice cada corrida al empezar (_anotar_candado): modo prueba, sin llaves; o modo EMISIÓN, y por

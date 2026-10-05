@@ -1718,6 +1718,8 @@ console.log(JSON.stringify(f()));
                 paso = guion[nombre]
                 if isinstance(paso, list):
                     paso = paso[min(veces[nombre], len(paso)) - 1]
+                if paso == "revienta":                       # la acción se corta, como con «Detener» (encargo 51)
+                    raise RuntimeError("se cerró el navegador de prueba")
                 pagina.llega(*paso, causa=nombre)
 
         def abrir(page, reg):
@@ -1907,6 +1909,17 @@ console.log(JSON.stringify(f()));
         r, hechos, _, _, log, _ = self.login_falso({})
         self.assertEqual((r, hechos), (False, ["abrir", "escribe el usuario", "Next"]))
         self.assertNotIn("Hago un solo intento más", log)
+
+    def test_segundo_intento_cortado_deja_su_motivo(self):
+        # Si el segundo intento se corta (con «Detener», que cierra el navegador, por ejemplo), el motivo de las filas
+        # dice que lo hubo y que se cortó, y no «no se reintentó» (revisión del encargo 51). La escucha se quita igual.
+        with self.assertRaises(RuntimeError):
+            self.login_falso({"Next": [("clave", 0), "revienta"], "entrar": ("error_chrome", 1)})
+        self.assertEqual(self.mod._motivo_sin_sesion(self.reg_login, "msc"),
+                         "no quedó iniciada la sesión de MSC: el portal dio un error después de la clave, al pulsar el "
+                         "botón de entrar, y el único intento más, desde el principio, tampoco dejó la sesión (se "
+                         "cortó antes de terminar). La reserva no se envió (el detalle, en log.txt)")
+        self.assertEqual({k: v for k, v in self.pagina_login.oyentes.items() if v}, {})
 
     # Cómo puede terminar cada intento del login de MSC: dónde deja la página la apertura, lo que trae cada acción (en
     # el orden en que pasan), cómo termina («sesión», «error» o «nada»), cuántas veces escribe la clave y, si termina

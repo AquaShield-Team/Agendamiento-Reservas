@@ -69,10 +69,10 @@ MUTACIONES = [
          viejo='        if valor is True:\n            abiertas.append(',
          nuevo='        if valor:\n            abiertas.append('),
     dict(id="config-sin-aviso", pruebas=[LLAVE_OTRA, LLAVE_LOG, LLAVE_WEB],
-         viejo='        elif valor is not False:\n            _avisar_llave_config(valor)',
+         viejo='        elif valor is not False and not abiertas:\n            _avisar_llave_config(valor)',
          nuevo='        elif False:\n            _avisar_llave_config(valor)'),
     dict(id="config-avisa-tambien-con-false", pruebas=[CAND + "test_llave_config_abre_solo_con_true"],
-         viejo='        elif valor is not False:\n            _avisar_llave_config(valor)',
+         viejo='        elif valor is not False and not abiertas:\n            _avisar_llave_config(valor)',
          nuevo='        elif True:\n            _avisar_llave_config(valor)'),
     dict(id="aviso-otro-texto", pruebas=[LLAVE_OTRA, LLAVE_WEB],
          viejo='y solo se abre con true (sin comillas). "', nuevo='y solo abre con true. "'),
@@ -481,12 +481,12 @@ MUTACIONES += [
     dict(id="puerto-mata-sin-forzar", pruebas=[AR + "test_cierra_a_la_fuerza_al_que_ocupa_el_puerto"],
          viejo='subprocess.call(f"taskkill /F /PID {pid}", shell=True)', nuevo='subprocess.call(f"taskkill /PID {pid}", shell=True)'),
     dict(id="puerto-no-busca-al-ocupante", pruebas=[AR + "test_cierra_a_la_fuerza_al_que_ocupa_el_puerto"],
-         viejo='            if intento == 0:\n                _liberar_puerto(p)', nuevo='            if intento == 99:\n                _liberar_puerto(p)'),
+         viejo='                _liberar_puerto(p)\n', nuevo='                pass\n'),
     dict(id="previa-ociosa-no-se-apaga", pruebas=[AR + "test_instancia_previa_ociosa_se_apaga"],
          viejo='req = urllib.request.Request(f"http://127.0.0.1:{puerto}/api/apagar", data=b"{}", method="POST")',
          nuevo='req = urllib.request.Request(f"http://127.0.0.1:{puerto}/api/estado", data=b"{}", method="POST")'),
     dict(id="previa-ocupada-se-toca", pruebas=[AR + "test_instancia_previa_ocupada_no_se_toca"],
-         viejo='        if estado.get("corriendo"):\n', nuevo='        if estado.get("corriendo") and False:\n'),
+         viejo='    if estado.get("corriendo"):\n', nuevo='    if estado.get("corriendo") and False:\n'),
 ]
 
 # --- Consola y utilitarios ---
@@ -6077,7 +6077,7 @@ HTML_EVID = ('    guardados, total, _ = _guardar_html_completo(page, reg, nombre
              '                                                 sin=_textos_de_la_cuenta(creds))\n')
 VALORES = ("    valores = [f\"{k}: {' '.join(str(cab[k]).split())[:80]}\" for k in nombres if k in "
            "MSC_CABECERAS_CON_VALOR]\n")
-SIN_CONSULTA = ("        limpia = (f\"{s.scheme}://{s.hostname or ''}{f':{s.port}' if s.port else ''}{s.path}\" if "
+SIN_CONSULTA = ("        limpia = (f\"{s.scheme}://{servidor}{f':{s.port}' if s.port else ''}{s.path}\" if "
                 "s.netloc\n                  else f\"{s.scheme}:{s.path}\" if s.scheme else s.path)\n")
 URL_LINEA = "    return limpia + (f\" (sin {' ni '.join(quitado)})\" if decirlo and quitado else \"\")\n"
 CON_VALOR = 'MSC_CABECERAS_CON_VALOR = ("server", "via",'
@@ -6263,12 +6263,13 @@ PREVIAS = [ARR + "test_instancia_previa_ociosa_se_apaga", ARR + "test_instancia_
 URL_TODAS = "test_consola.TestUtilitarios.test_toda_linea_url_va_sin_consulta"
 SALE = "    return bool(_llaves_abiertas())\n"
 CON_TODAS = "    llaves = _llaves_abiertas(todas=True)\n"
-OTRO = "        if modo is not propio:\n"
-AVISA = "            _avisar_al_lanzar(_otro_modo(puerto, estado, modo, propio))\n"
+OTRO = "    if modo is not propio:\n"
+AVISA = "        _avisar_al_lanzar(_otro_modo(puerto, estado, modo, propio))\n"
+PROPIO = "    propio = es_modo_emision()          # el modo de este lanzador\n"
 TRAS_NEXT = '        return MSC_ERROR_TRAS_EL_NEXT if tras_el_error and paso != "sesión" else paso\n'
 ERRORES = "MSC_ERRORES = (MSC_ERROR_EN_LA_PORTADA, MSC_ERROR_TRAS_EL_NEXT, MSC_ERROR_TRAS_LA_CLAVE)\n"
-SEGUNDO = ('        segundo=f"otro error {segundo}" if segundo in MSC_ERRORES else "no llegó ni la sesión ni otro '
-           'error")\n')
+SEGUNDO = ('        como = f"otro error {segundo}" if segundo in MSC_ERRORES else "no llegó ni la sesión ni otro '
+           'error"\n')
 MOTIVO_DOS = '        reg.sin_sesion["msc"] = _msc_motivo_tras_dos(*desenlaces[:2])\n'
 QUITADO = '    quitado = [que for que, hay in (("su consulta", s.query), ("su fragmento", s.fragment)) if hay]\n'
 
@@ -6313,18 +6314,18 @@ MUTACIONES += [
          nuevo="navieras={','.join(navieras)}\")\n"),
     # El lanzador: sin mirar el modo, siguiendo sin saberlo, con su modo fijo, rechazando el mismo modo de emisión,
     # avisando y siguiendo, o sin avisar.
-    dict(id="e51-lanzador-no-mira-el-modo", pruebas=[OTRO_MODO, SIN_MODO], viejo=OTRO, nuevo="        if False:\n"),
+    dict(id="e51-lanzador-no-mira-el-modo", pruebas=[OTRO_MODO, SIN_MODO], viejo=OTRO, nuevo="    if False:\n"),
     dict(id="e51-lanzador-sigue-sin-saber-el-modo", pruebas=[SIN_MODO], viejo=OTRO,
-         nuevo="        if modo is not None and modo is not propio:\n"),
+         nuevo="    if modo is not None and modo is not propio:\n"),
     dict(id="e51-lanzador-rechaza-el-mismo-de-emision", pruebas=[MISMO_MODO], viejo=OTRO,
-         nuevo="        if modo or modo is not propio:\n"),
+         nuevo="    if modo or modo is not propio:\n"),
     dict(id="e51-lanzador-siempre-de-prueba", pruebas=[OTRO_MODO, MISMO_MODO],
-         viejo="        propio = es_modo_emision()\n", nuevo="        propio = False\n"),
+         viejo=PROPIO, nuevo="    propio = False\n"),
     dict(id="e51-lanzador-siempre-de-emision", pruebas=[OTRO_MODO] + PREVIAS,
-         viejo="        propio = es_modo_emision()\n", nuevo="        propio = True\n"),
-    dict(id="e51-lanzador-avisa-y-sigue", pruebas=[OTRO_MODO, SIN_MODO], viejo=AVISA + "            return\n",
+         viejo=PROPIO, nuevo="    propio = True\n"),
+    dict(id="e51-lanzador-avisa-y-sigue", pruebas=[OTRO_MODO, SIN_MODO], viejo=AVISA + "        return True\n",
          nuevo=AVISA),
-    dict(id="e51-lanzador-no-avisa", pruebas=[OTRO_MODO, SIN_MODO], viejo=AVISA, nuevo="            pass\n"),
+    dict(id="e51-lanzador-no-avisa", pruebas=[OTRO_MODO, SIN_MODO], viejo=AVISA, nuevo="        pass\n"),
     # El modo del panel abierto: sin preguntarlo, o aceptando lo que diga aunque no sea true ni false.
     dict(id="e51-panel-sin-preguntar-el-modo", pruebas=[OTRO_MODO, MISMO_MODO] + PREVIAS,
          viejo='            modo = _json.loads(resp.read().decode("utf-8")).get("modo_emision")\n',
@@ -6369,9 +6370,9 @@ MUTACIONES += [
     dict(id="e51-msc-aviso-sin-el-error", pruebas=[MSC_DOS, MSC_OTROS],
          viejo='reg.paso(f"⚠ MSC dio un error {desenlaces[-1]}. Hago', nuevo='reg.paso(f"⚠ MSC dio un error. Hago'),
     dict(id="e51-msc-motivo-segundo-sin-error", pruebas=[MSC_DOS, MSC_OTROS, MSC_CLAVE], viejo=SEGUNDO,
-         nuevo='        segundo="no llegó ni la sesión ni otro error")\n'),
-    dict(id="e51-msc-motivo-primero-fijo", pruebas=[MSC_OTROS, MSC_CLAVE], viejo="        primero=primero,\n",
-         nuevo="        primero=MSC_ERROR_TRAS_LA_CLAVE,\n"),
+         nuevo='        como = "no llegó ni la sesión ni otro error"\n'),
+    dict(id="e51-msc-motivo-primero-fijo", pruebas=[MSC_OTROS, MSC_CLAVE],
+         viejo="format(primero=primero, segundo=como)", nuevo="format(primero=MSC_ERROR_TRAS_LA_CLAVE, segundo=como)"),
     dict(id="e51-msc-motivo-al-reves", pruebas=[MSC_DOS, MSC_CLAVE], viejo=MOTIVO_DOS,
          nuevo='        reg.sin_sesion["msc"] = _msc_motivo_tras_dos(*desenlaces[1::-1])\n'),
     dict(id="e51-msc-motivo-otro-texto", pruebas=[MSC_DOS, MSC_OTROS],
@@ -6382,7 +6383,7 @@ MUTACIONES += [
     dict(id="e51-url-registro-entera", pruebas=[URL_REG, URL_TODAS, MSC_RESP],
          viejo='        try: self._emit("    URL: " + _sin_consulta(page.url, decirlo=True))\n',
          nuevo='        try: self._emit("    URL: " + page.url)\n'),
-    dict(id="e51-url-maersk-entera", pruebas=[URL_TODAS],
+    dict(id="e51-url-maersk-entera", pruebas=[URL_TODAS, URL_REG],
          viejo='reg.info(f"avance detectado por URL: {_sin_consulta(u, decirlo=True)} (',
          nuevo='reg.info(f"avance detectado por URL: {u} ('),
     dict(id="e51-sin-consulta-con-fragmento", pruebas=[URL_REG], viejo=URL_LINEA,
@@ -6395,4 +6396,57 @@ MUTACIONES += [
          nuevo='    quitado = [que for que, hay in (("su consulta", s.query),) if hay]\n'),
     dict(id="e51-sin-consulta-entera-si-no-la-lee", pruebas=[URL_REG],
          viejo='        return "(no pude leer la dirección)"\n', nuevo="        return str(url)\n"),
+]
+
+# --- Encargo 51, lo que encontró la revisión del subagente (en un clon, sobre cb3f1c3): el lanzador vuelve a preguntar,
+# con más paciencia, antes de cerrar a quien no deja libre el puerto; el aviso de config.json, solo sin otra llave
+# abierta; ninguna dirección con su consulta a un mensaje (el paso de ONE); el motivo de MSC si el segundo intento se
+# corta; y las direcciones IPv6 ---
+LENTO = ARR + "test_panel_lento_del_otro_modo_no_se_cierra"
+ONE_PASO = "test_consola.TestUtilitarios.test_one_paso_de_la_url"
+SIN_CONSULTA_EN_MENSAJES = "test_consola.TestUtilitarios.test_ninguna_direccion_con_su_consulta_a_un_mensaje"
+MSC_CORTADO = "test_clics.TestMsc.test_segundo_intento_cortado_deja_su_motivo"
+PASO_ONE = '    return u.split("step=")[-1].split("&")[0][:30] if "step=" in u else _sin_consulta(u)\n'
+
+MUTACIONES += [
+    # La segunda pregunta del lanzador: sin ella, tan corta como la primera, o con la primera de plazo fijo.
+    dict(id="e51-lanzador-sin-segunda-pregunta", pruebas=[LENTO],
+         viejo="                tarde = _panel_en(p, espera=PANEL_ESPERA_LARGA) if previo is None else None\n",
+         nuevo="                tarde = None\n"),
+    dict(id="e51-lanzador-segunda-pregunta-corta", pruebas=[LENTO], viejo="PANEL_ESPERA_LARGA = 5.0\n",
+         nuevo="PANEL_ESPERA_LARGA = 1.0\n"),
+    dict(id="e51-panel-espera-fija", pruebas=[LENTO],
+         viejo='/api/estado", timeout=espera) as resp:\n', nuevo='/api/estado", timeout=1.0) as resp:\n'),
+    dict(id="e51-aviso-corrida-en-curso-otro-texto", pruebas=[OTRO_MODO, LENTO],
+         viejo='f"Ese panel tiene una corrida en curso: espera', nuevo='f"Ese panel está armando reservas: espera'),
+    # Las llaves: avisar de config.json con otra llave abierta, o leerlo sin detenerse en la variable o el argumento.
+    dict(id="e51-llaves-avisa-con-otra-llave", pruebas=[MODO_PRIMERA],
+         viejo="        elif valor is not False and not abiertas:\n", nuevo="        elif valor is not False:\n"),
+    dict(id="e51-llaves-entorno-no-se-detiene", pruebas=[MODO_PRIMERA],
+         viejo='AQUASHIELD_EMISION.py)")\n        if not todas:\n',
+         nuevo='AQUASHIELD_EMISION.py)")\n        if False:\n'),
+    dict(id="e51-llaves-argumento-no-se-detiene", pruebas=[MODO_PRIMERA],
+         viejo='del programa")\n        if not todas:\n', nuevo='del programa")\n        if False:\n'),
+    # ONE: el paso con la dirección entera o con otro parámetro; y la dirección entera en reservar_one o en
+    # _one_esperar_paso.
+    dict(id="e51-one-paso-con-la-consulta", pruebas=[ONE_PASO], viejo=PASO_ONE,
+         nuevo='    return u.split("step=")[-1].split("&")[0][:30] if "step=" in u else u\n'),
+    dict(id="e51-one-paso-con-otro-parametro", pruebas=[ONE_PASO], viejo=PASO_ONE,
+         nuevo='    return u.split("step=")[-1][:30] if "step=" in u else _sin_consulta(u)\n'),
+    dict(id="e51-one-revisar-direccion-entera", pruebas=[SIN_CONSULTA_EN_MENSAJES],
+         viejo='        actual = _one_paso_de_la_url(page.url)\n        reg.paso(f"NO se completó el flujo',
+         nuevo='        actual = page.url\n        reg.paso(f"NO se completó el flujo'),
+    dict(id="e51-one-esperar-direccion-entera", pruebas=[SIN_CONSULTA_EN_MENSAJES],
+         viejo='        actual = _one_paso_de_la_url(page.url)\n    except Exception:\n',
+         nuevo='        actual = page.url\n    except Exception:\n'),
+    # IPv6 sin sus corchetes.
+    dict(id="e51-sin-consulta-ipv6-sin-corchetes", pruebas=[URL_REG], viejo='            servidor = f"[{servidor}]"\n',
+         nuevo="            pass\n"),
+    # MSC: sin el motivo antes del segundo intento, o con el segundo cortado dicho como si no llegara nada.
+    dict(id="e51-msc-cortado-sin-motivo", pruebas=[MSC_CORTADO],
+         viejo='            reg.sin_sesion["msc"] = _msc_motivo_tras_dos(desenlaces[0], None)\n',
+         nuevo="            pass\n"),
+    dict(id="e51-msc-cortado-como-sin-nada", pruebas=[MSC_CORTADO],
+         viejo='    if segundo is None:\n        como = "se cortó antes de terminar"\n',
+         nuevo='    if False:\n        como = "se cortó antes de terminar"\n'),
 ]

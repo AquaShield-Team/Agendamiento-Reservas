@@ -78,7 +78,9 @@ def _llaves_abiertas(todas=False):
     config.json → opciones → emitir_reservas, que abre solo con el booleano true (con otro valor que no sea false,
     avisa: _avisar_llave_config). Sin 'todas', se detiene en la primera abierta, como lo hizo siempre es_modo_emision:
     con otra llave abierta, config.json no se lee ni avisa. Con 'todas', mira las tres: lo que anota cada corrida al
-    empezar (_anotar_candado; decisión de Marcelo, encargo 51)."""
+    empezar (_anotar_candado; decisión de Marcelo, encargo 51). Del valor inválido de config.json avisa solo si ninguna
+    otra llave abrió el candado, como el candado: su aviso dice que el candado quedó cerrado, y con otra llave abierta
+    la corrida emite (revisión del encargo 51: el log decía «no se emite ninguna reserva» y, debajo, «modo EMISIÓN»)."""
     abiertas = []
     entorno = os.environ.get("AQUASHIELD_EMITIR", "")
     if entorno.strip().lower() in ("1", "true", "si", "yes"):
@@ -96,7 +98,7 @@ def _llaves_abiertas(todas=False):
         valor = cfg.get("opciones", {}).get("emitir_reservas", False)
         if valor is True:
             abiertas.append("config.json → opciones → emitir_reservas: true")
-        elif valor is not False:
+        elif valor is not False and not abiertas:
             _avisar_llave_config(valor)
     except Exception:
         pass
@@ -760,7 +762,10 @@ def _sin_consulta(url, decirlo=False):
     _msc_sin_consulta, solo del login de MSC (encargo 50)."""
     try:
         s = urlsplit(str(url))
-        limpia = (f"{s.scheme}://{s.hostname or ''}{f':{s.port}' if s.port else ''}{s.path}" if s.netloc
+        servidor = s.hostname or ""
+        if ":" in servidor:                      # IPv6: entre corchetes, como en la dirección (revisión del encargo 51)
+            servidor = f"[{servidor}]"
+        limpia = (f"{s.scheme}://{servidor}{f':{s.port}' if s.port else ''}{s.path}" if s.netloc
                   else f"{s.scheme}:{s.path}" if s.scheme else s.path)
     except Exception:
         return "(no pude leer la dirección)"
@@ -1466,6 +1471,9 @@ def login_msc(page, creds, reg, on_pausa=None):
             intento += 1
             reg.paso(f"⚠ MSC dio un error {desenlaces[-1]}. Hago un solo intento más de inicio de sesión, desde el "
                      f"principio; si también falla, no hay un tercero.")
+            # Si el segundo intento se corta (con «Detener», por ejemplo), el motivo de las filas ya dice que lo hubo
+            # (revisión del encargo 51: decía «no se reintentó»). Si termina, el motivo de abajo lo reemplaza.
+            reg.sin_sesion["msc"] = _msc_motivo_tras_dos(desenlaces[0], None)
             desenlaces.append(_msc_intento(page, creds, reg, on_pausa, escucha, intento))
     finally:
         escucha["quitar"]()
@@ -1483,11 +1491,13 @@ def login_msc(page, creds, reg, on_pausa=None):
 
 def _msc_motivo_tras_dos(primero, segundo):
     """El motivo de las filas de MSC cuando los dos intentos del login terminaron sin la sesión
-    (MSC_SIN_SESION_TRAS_DOS): el error con que terminó el primero (uno de MSC_ERRORES) y cómo terminó el segundo, con
-    otro error o sin que llegara nada (encargo 51)."""
-    return MSC_SIN_SESION_TRAS_DOS.format(
-        primero=primero,
-        segundo=f"otro error {segundo}" if segundo in MSC_ERRORES else "no llegó ni la sesión ni otro error")
+    (MSC_SIN_SESION_TRAS_DOS): el error con que terminó el primero (uno de MSC_ERRORES) y cómo terminó el segundo: con
+    otro error, sin que llegara nada, o cortado antes de terminar (None; encargo 51)."""
+    if segundo is None:
+        como = "se cortó antes de terminar"
+    else:
+        como = f"otro error {segundo}" if segundo in MSC_ERRORES else "no llegó ni la sesión ni otro error"
+    return MSC_SIN_SESION_TRAS_DOS.format(primero=primero, segundo=como)
 
 
 def _motivo_sin_sesion(reg, nav):
@@ -3716,6 +3726,14 @@ def _one_esperar_sin_spinner(page, reg, seg=15):
     return False
 
 
+def _one_paso_de_la_url(url):
+    """El paso del asistente de ONE que dice su dirección, para log.txt y el motivo: el valor de «step=», hasta el «&»
+    siguiente y de 30 caracteres a lo más, o, si no trae «step=», la dirección sin su consulta (_sin_consulta). Nunca
+    otro parámetro de la consulta (revisión del encargo 51: reservar_one escribía la dirección entera)."""
+    u = str(url or "")
+    return u.split("step=")[-1].split("&")[0][:30] if "step=" in u else _sin_consulta(u)
+
+
 def _one_esperar_paso(page, paso, seg, reg, minimo=0.4):
     """Espera que el asistente de ONE llegue a 'paso', comprobando URL y DOM,
     y asegurando que los spinners hayan desaparecido."""
@@ -3732,7 +3750,7 @@ def _one_esperar_paso(page, paso, seg, reg, minimo=0.4):
         esperar(page, 0.6)
     actual = ""
     try:
-        actual = page.url.split("step=")[-1][:30]
+        actual = _one_paso_de_la_url(page.url)
     except Exception:
         pass
     reg.info(f"NO llegué a '{paso}' en {seg:.0f}s (URL dice '{actual}')")
@@ -4175,7 +4193,7 @@ def reservar_one(page, reserva, creds, reg, on_pausa=None):
         return _resultado_envio(page, reg, "one", "ONE", f"one_f{f}_11_confirmado", "Submit", pulsado, error)
     else:
         _one_detenida(page, reg, f)
-        actual = page.url.split("step=")[-1][:30] if "step=" in (page.url or "") else page.url
+        actual = _one_paso_de_la_url(page.url)
         reg.paso(f"NO se completó el flujo: el asistente quedó en '{actual}' en lugar de review-booking.")
         return ("REVISAR", f"asistente ONE no llegó a review-booking (quedó en: {actual})")
 
@@ -12956,21 +12974,28 @@ def _escribir_config(cfg, ruta):
     return _reemplazar(tmp, ruta)          # Windows lo niega a veces un instante (antivirus)
 
 
-def _panel_en(puerto):
+# Cuántos segundos espera el lanzador la segunda pregunta a quien no dejó libre su puerto, antes de cerrarlo a la
+# fuerza: un panel de AQUASHIELD ocupado, con la máquina cargada, puede tardar más de 1 s en contestar (revisión del
+# encargo 51). Hipótesis: no está medido cuánto tarda un panel así.
+PANEL_ESPERA_LARGA = 5.0
+
+
+def _panel_en(puerto, espera=1.0):
     """El panel de AQUASHIELD que escucha en 'puerto' de esta máquina, como lo ve el lanzador al arrancar: None si nadie
-    responde ahí como AQUASHIELD (su /api/estado, en 1 s, con «corriendo»); si no, (su estado, su modo). Su modo es el
-    «modo_emision» de su /api/config (en 2 s), el mismo con que pinta su aviso de modo al cargar: True o False, o None
-    si no lo dice (encargo 51). Solo pregunta: a ese panel no le cambia nada más que su último latido."""
+    responde ahí como AQUASHIELD (su /api/estado, en 'espera' s, con «corriendo»); si no, (su estado, su modo). Su modo
+    es el «modo_emision» de su /api/config (en 2 s, o 'espera' si es más), el mismo con que pinta su aviso de modo al
+    cargar: True o False, o None si no lo dice (encargo 51). Solo pregunta: a ese panel no le cambia nada más que su
+    último latido."""
     import urllib.request
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/api/estado", timeout=1.0) as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/api/estado", timeout=espera) as resp:
             estado = _json.loads(resp.read().decode("utf-8"))
     except Exception:
         return None
     if not isinstance(estado, dict) or "corriendo" not in estado:
         return None
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/api/config", timeout=2.0) as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/api/config", timeout=max(2.0, espera)) as resp:
             modo = _json.loads(resp.read().decode("utf-8")).get("modo_emision")
     except Exception:
         modo = None
@@ -12981,17 +13006,48 @@ def _otro_modo(puerto, estado, modo, propio):
     """El aviso del lanzador que encuentra en su puerto un panel de AQUASHIELD en el otro modo, o que no dice en cuál:
     no se conecta a él, no lo cierra y no abre otro (decisión de Marcelo, encargo 51). Dice cómo cerrarlo: el botón de
     apagar del panel (/api/apagar) o su pestaña cerrada, que el vigilante de inactividad apaga en unos dos minutos; si
-    está armando reservas, que primero termine (el vigilante no lo apaga mientras corre, y el botón cortaría la
-    corrida)."""
+    tiene una corrida en curso, de reservas o de solo login, que primero termine (el vigilante no lo apaga mientras
+    corre, y el botón cortaría la corrida)."""
     nombre = {True: "EMISIÓN (reservas reales)", False: "prueba (sin emitir)"}
     cual = f"en modo {nombre[modo]}" if modo is not None else "y no pude saber en qué modo está"
     cerrar = ("ciérralo con su botón rojo de apagar, arriba a la derecha, o cerrando su pestaña y esperando unos dos "
               "minutos")
-    como = (f"Ese panel está armando reservas: espera a que termine, después {cerrar}, y vuelve a abrir este lanzador."
+    como = (f"Ese panel tiene una corrida en curso: espera a que termine, después {cerrar}, y vuelve a abrir este "
+            f"lanzador."
             if estado.get("corriendo") else f"{cerrar[0].upper()}{cerrar[1:]}, y vuelve a abrir este lanzador.")
     return (f"Ya hay un panel de AQUASHIELD abierto {cual}, en http://127.0.0.1:{puerto}/, y este lanzador lo abriría "
             f"en modo {nombre[propio]}. Para no mezclar los modos, no me conecto a ese panel, no lo cierro y no abro "
             f"otro. {como}")
+
+
+def _ceder_al_previo(puerto, previo, propio, abrir):
+    """Lo que hace el lanzador con el panel de AQUASHIELD que encontró en su puerto ('previo', de _panel_en), con su
+    propio modo ('propio'): si el panel está en el otro modo, o no dice en cuál, avisa y no corre (_otro_modo; decisión
+    de Marcelo, encargo 51); en el mismo modo, como antes: al ocupado lo abre en el navegador, y al ocioso le pide que
+    se apague para renovarlo. Devuelve True si el lanzador no tiene que seguir. Lo usan las dos preguntas de lanzar_web:
+    la de al arrancar y la de antes de cerrar a quien no dejó libre el puerto (revisión del encargo 51)."""
+    import urllib.request
+    import webbrowser
+    estado, modo = previo
+    if modo is not propio:
+        _avisar_al_lanzar(_otro_modo(puerto, estado, modo, propio))
+        return True
+    if estado.get("corriendo"):
+        # Ya hay una reserva en ejecución, en el mismo modo: simplemente abrimos el navegador
+        url = f"http://127.0.0.1:{puerto}/"
+        if abrir:
+            try: webbrowser.open(url)
+            except Exception: pass
+        print(f"AQUASHIELD ya está activo ejecutando tareas en {url}")
+        return True
+    # Instancia ociosa anterior, en el mismo modo: pedirle que se apague para renovar
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{puerto}/api/apagar", data=b"{}", method="POST")
+        urllib.request.urlopen(req, timeout=1.0)
+        time.sleep(0.6)
+    except Exception:
+        pass
+    return False
 
 
 def _avisar_al_lanzar(texto):
@@ -13245,29 +13301,10 @@ def lanzar_web(puerto=8765, abrir=True):
     #    CICLO-modo-y-lanzadores.md). Hasta ahí, una ocupada se abría en el navegador en el modo que tuviera, y a una
     #    ociosa se le pedía que se apagara: su pestaña, si seguía abierta, quedaba hablando con el panel nuevo, del otro
     #    modo, con el aviso de modo de antes.
+    propio = es_modo_emision()          # el modo de este lanzador
     previo = _panel_en(puerto)
-    if previo is not None:
-        estado, modo = previo
-        propio = es_modo_emision()
-        if modo is not propio:
-            _avisar_al_lanzar(_otro_modo(puerto, estado, modo, propio))
-            return
-        if estado.get("corriendo"):
-            # Ya hay una reserva en ejecución, en el mismo modo: simplemente abrimos el navegador
-            url = f"http://127.0.0.1:{puerto}/"
-            if abrir:
-                try: webbrowser.open(url)
-                except Exception: pass
-            print(f"AQUASHIELD ya está activo ejecutando tareas en {url}")
-            return
-        # Instancia ociosa anterior, en el mismo modo: pedirle que se apague para renovar
-        try:
-            import urllib.request
-            req = urllib.request.Request(f"http://127.0.0.1:{puerto}/api/apagar", data=b"{}", method="POST")
-            urllib.request.urlopen(req, timeout=1.0)
-            time.sleep(0.6)
-        except Exception:
-            pass
+    if previo is not None and _ceder_al_previo(puerto, previo, propio, abrir):
+        return
 
     def _liberar_puerto(p):
         try:
@@ -13298,6 +13335,12 @@ def lanzar_web(puerto=8765, abrir=True):
             break
         except OSError:
             if intento == 0:
+                # El puerto sigue ocupado. Si al arrancar nadie contestó como AQUASHIELD, antes de cerrar a la fuerza a
+                # quien lo tiene se le vuelve a preguntar, con más paciencia: un panel del otro modo que tardó más de
+                # 1 s no se cierra (revisión del encargo 51). Si contesta, decide _ceder_al_previo, como al arrancar.
+                tarde = _panel_en(p, espera=PANEL_ESPERA_LARGA) if previo is None else None
+                if tarde is not None and _ceder_al_previo(p, tarde, propio, abrir):
+                    return
                 _liberar_puerto(p)
                 try:
                     srv = _Srv(("127.0.0.1", p), H)

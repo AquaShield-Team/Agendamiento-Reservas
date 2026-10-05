@@ -677,15 +677,17 @@ class TestPanelCorridas(PanelBase):
     def test_login_de_msc_deja_su_motivo(self):
         # Si el login de MSC dejó su motivo en el Registro (tras el segundo intento: MSC_SIN_SESION_TRAS_DOS,
         # decisión de Marcelo, encargo 50), es el de cada fila de MSC, en el panel y en log.txt (_motivo_sin_sesion).
+        motivo = self.mod._msc_motivo_tras_dos(self.mod.MSC_ERROR_TRAS_LA_CLAVE, "")
+
         def login(page, creds, reg, on_pausa=None):
-            reg.sin_sesion = {"msc": self.mod.MSC_SIN_SESION_TRAS_DOS}
+            reg.sin_sesion = {"msc": motivo}
             return False
         with Navieras(self.mod, login_ok=False) as n:
             self.mod.NAVIERAS["msc"] = ("MSC", login)
             e = self.correr("MSC", [5])
         self.assertEqual((n.reservas, (e["resultados"]["5"]["estado"], e["resultados"]["5"]["detalle"])),
-                         ([], ("NO ENVIADA", self.mod.MSC_SIN_SESION_TRAS_DOS)))
-        self.assertTrue(any(f"✗ fila 5: NO ENVIADA · {self.mod.MSC_SIN_SESION_TRAS_DOS}" in l for l in e["lineas"]))
+                         ([], ("NO ENVIADA", motivo)))
+        self.assertTrue(any(f"✗ fila 5: NO ENVIADA · {motivo}" in l for l in e["lineas"]))
 
     def test_reservador_que_revienta(self):
         def respuesta(nav, rsv, on_pausa):
@@ -810,6 +812,17 @@ class TestArranqueDelPanel(unittest.TestCase):
         return soporte._POPEN([sys.executable, "-c", codigo], cwd=str(sb), stdout=subprocess.DEVNULL,
                               stderr=subprocess.DEVNULL, env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8"})
 
+    def _cerrar_hijo(self, hijo, puerto):
+        """Apaga el panel hijo por su /api/apagar, para que su proceso termine solo y borre su sandbox; si no termina
+        en 10 s, lo mata. Un hijo matado deja su sandbox en el temporal (encargo 41); desde el 51, se apaga antes."""
+        if hijo.poll() is None:
+            with contextlib.suppress(Exception):
+                soporte.Servidor(None, puerto).post("/api/apagar")
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                hijo.wait(timeout=10)
+        if hijo.poll() is None:
+            hijo.kill()
+
     def _esperar(self, srv, segundos=20):
         fin = time.time() + segundos
         while time.time() < fin:
@@ -844,8 +857,7 @@ class TestArranqueDelPanel(unittest.TestCase):
             srv.hilo = hilo
             srv.apagar()
         finally:
-            if hijo.poll() is None:
-                hijo.kill()
+            self._cerrar_hijo(hijo, p)
 
     def test_instancia_previa_ocupada_no_se_toca(self):
         self._falsos("")
@@ -867,8 +879,7 @@ class TestArranqueDelPanel(unittest.TestCase):
             self.assertIsNone(mod._SRV_ACTUAL)
             self.assertEqual(self.llamadas, [])
         finally:
-            if hijo.poll() is None:
-                hijo.kill()
+            self._cerrar_hijo(hijo, p)
 
     MODO = {True: "EMISIÓN (reservas reales)", False: "prueba (sin emitir)"}
 
@@ -876,8 +887,8 @@ class TestArranqueDelPanel(unittest.TestCase):
         """El aviso del lanzador ante un panel en el otro modo (o que no dice el suyo, con 'modo' None)."""
         cual = f"en modo {self.MODO[modo]}" if modo is not None else "y no pude saber en qué modo está"
         cerrar = "con su botón rojo de apagar, arriba a la derecha, o cerrando su pestaña y esperando unos dos minutos"
-        como = (f"Ese panel está armando reservas: espera a que termine, después ciérralo {cerrar}, y vuelve a abrir "
-                f"este lanzador." if ocupado else f"Ciérralo {cerrar}, y vuelve a abrir este lanzador.")
+        como = (f"Ese panel tiene una corrida en curso: espera a que termine, después ciérralo {cerrar}, y vuelve a "
+                f"abrir este lanzador." if ocupado else f"Ciérralo {cerrar}, y vuelve a abrir este lanzador.")
         return (f"Ya hay un panel de AQUASHIELD abierto {cual}, en http://127.0.0.1:{puerto}/, y este lanzador lo "
                 f"abriría en modo {self.MODO[propio]}. Para no mezclar los modos, no me conecto a ese panel, no lo "
                 f"cierro y no abro otro. {como}")
@@ -923,8 +934,7 @@ class TestArranqueDelPanel(unittest.TestCase):
                                           previa.json("/api/config")[1]["modo_emision"]), (ocupado, emision))
                         self.assertEqual(self.llamadas, [])
                     finally:
-                        if hijo.poll() is None:
-                            hijo.kill()
+                        self._cerrar_hijo(hijo, p)
 
     def test_panel_que_no_dice_su_modo_avisa_y_no_corre(self):
         # Si el panel abierto responde como AQUASHIELD pero no dice su modo (su /api/config falla, o no trae
@@ -981,8 +991,50 @@ class TestArranqueDelPanel(unittest.TestCase):
             vivo, avisos, mod = self.lanzar(p, True, abrir=False)
             self.assertEqual((vivo, avisos, mod._SRV_ACTUAL, hijo.poll(), self.llamadas), (False, [], None, None, []))
         finally:
-            if hijo.poll() is None:
-                hijo.kill()
+            self._cerrar_hijo(hijo, p)
+
+    def test_panel_lento_del_otro_modo_no_se_cierra(self):
+        # Un panel del otro modo que tarda más de 1 s en contestar (con la máquina cargada) no se cierra a la fuerza: si
+        # el puerto sigue ocupado, el lanzador le vuelve a preguntar, hasta PANEL_ESPERA_LARGA s, antes de cerrar a
+        # quien lo tiene, y avisa. Revisión del encargo 51: a 1 s lo daba por ajeno y le pedía a taskkill que lo
+        # cerrara (aquí, netstat diría que el puerto es de un pid inventado; taskkill no corre).
+        pedidos = []
+
+        class Lento(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                pedidos.append(self.path)
+                if self.path.startswith("/api/estado"):
+                    time.sleep(1.6)
+                    cuerpo = json.dumps({"corriendo": True}).encode()
+                else:
+                    cuerpo = json.dumps({"modo_emision": True}).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(cuerpo)))
+                self.end_headers()
+                self.wfile.write(cuerpo)
+
+        class Servidor(http.server.ThreadingHTTPServer):
+            daemon_threads = True
+
+            def handle_error(self, request, client_address):
+                pass                                # la primera pregunta se va a 1 s, y su respuesta no tiene a quién
+        srv = Servidor(("127.0.0.1", 0), Lento)
+        hilo = threading.Thread(target=srv.serve_forever, daemon=True)
+        hilo.start()
+        try:
+            p = srv.server_address[1]
+            self._falsos(f"  TCP    127.0.0.1:{p}     0.0.0.0:0      LISTENING       424242\n")
+            vivo, avisos, mod = self.lanzar(p, False)
+            self.assertEqual(mod.PANEL_ESPERA_LARGA, 5.0)
+            self.assertEqual((vivo, mod._SRV_ACTUAL, self.llamadas), (False, None, []))
+            self.assertEqual(avisos, [self.texto_otro_modo(p, True, False, True)])
+            self.assertEqual(pedidos, ["/api/estado", "/api/estado", "/api/config"])
+        finally:
+            srv.shutdown()
+            srv.server_close()
 
     def test_el_aviso_va_a_una_ventana(self):
         # Los .bat lanzan con pythonw, sin consola: el aviso del lanzador va por la consola y a una ventana, como el de
