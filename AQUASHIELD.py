@@ -65,21 +65,42 @@ def es_modo_emision():
     """Retorna True si el sistema debe emitir las reservas de forma real.
     Por defecto retorna False (Modo Seguro / Pruebas sin emitir).
     La llave de config.json abre SOLO con el booleano true: cualquier otro valor
-    (texto, número, "true" entre comillas, null) deja el candado cerrado y se avisa."""
-    if os.environ.get("AQUASHIELD_EMITIR", "").strip().lower() in ("1", "true", "si", "yes"):
-        return True
-    if any(a.lower() in ("emitir", "--emitir", "produccion", "--produccion") for a in sys.argv):
-        return True
+    (texto, número, "true" entre comillas, null) deja el candado cerrado y se avisa.
+    Las tres llaves las mira _llaves_abiertas, en el orden de siempre y hasta la primera abierta: es la misma regla con
+    que cada corrida dice al empezar con qué candado corre (_anotar_candado; encargo 51)."""
+    return bool(_llaves_abiertas())
+
+
+def _llaves_abiertas(todas=False):
+    """Las llaves abiertas del candado de emisión, cada una dicha para log.txt, en el orden en que las mira
+    es_modo_emision: la variable AQUASHIELD_EMITIR (1, true, si o yes, sin distinguir mayúsculas ni los espacios de los
+    lados), un argumento del programa (emitir, --emitir, produccion o --produccion, sin distinguir mayúsculas) y
+    config.json → opciones → emitir_reservas, que abre solo con el booleano true (con otro valor que no sea false,
+    avisa: _avisar_llave_config). Sin 'todas', se detiene en la primera abierta, como lo hizo siempre es_modo_emision:
+    con otra llave abierta, config.json no se lee ni avisa. Con 'todas', mira las tres: lo que anota cada corrida al
+    empezar (_anotar_candado; decisión de Marcelo, encargo 51)."""
+    abiertas = []
+    entorno = os.environ.get("AQUASHIELD_EMITIR", "")
+    if entorno.strip().lower() in ("1", "true", "si", "yes"):
+        abiertas.append(f"la variable AQUASHIELD_EMITIR={entorno.strip()} (la que pone el lanzador de emisión, "
+                        f"AQUASHIELD_EMISION.py)")
+        if not todas:
+            return abiertas
+    argumentos = [a for a in sys.argv if a.lower() in ("emitir", "--emitir", "produccion", "--produccion")]
+    if argumentos:
+        abiertas.append(f"el argumento «{argumentos[0]}» del programa")
+        if not todas:
+            return abiertas
     try:
         cfg = cargar_config()
         valor = cfg.get("opciones", {}).get("emitir_reservas", False)
         if valor is True:
-            return True
-        if valor is not False:
+            abiertas.append("config.json → opciones → emitir_reservas: true")
+        elif valor is not False:
             _avisar_llave_config(valor)
     except Exception:
         pass
-    return False
+    return abiertas
 
 
 def _avisar_llave_config(valor):
@@ -117,6 +138,22 @@ def _avisar_en_pantalla_y_log(texto, una_vez=None):
         _wlog(texto)
     except Exception:
         pass
+
+
+def _anotar_candado(reg):
+    """Al empezar cada corrida (de reservas, en el panel web o en la consola, y de solo login), su log.txt y su pantalla
+    dicen con qué candado corre: modo prueba, o modo EMISIÓN y por cuál llave (_llaves_abiertas, que las mira todas).
+    Decisión de Marcelo, encargo 51: la corrida de CMA-CGM del 2026-10-02 a las 18:52, que se tomó por la primera
+    emisión real, no lo decía, y el panel lo pinta solo al cargar la página. Solo lo dice: cada reservador consulta el
+    candado en su guarda, con la misma regla (es_modo_emision)."""
+    llaves = _llaves_abiertas(todas=True)
+    if llaves:
+        reg.paso(f"🔴 Candado de emisión abierto: modo EMISIÓN, por {' y '.join(llaves)}. Cada reserva que llegue al "
+                 f"botón final se envía a la naviera.")
+    else:
+        reg.paso("🛡️ Candado de emisión cerrado: modo prueba, sin ninguna de sus tres llaves abierta (la variable "
+                 "AQUASHIELD_EMITIR, un argumento emitir o produccion, y emitir_reservas en config.json). Cada reserva "
+                 "se detiene antes del botón final, sin emitir.")
 
 
 # Forma del número en la pantalla de confirmación, medida en las capturas de logs/
@@ -713,6 +750,24 @@ Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3,4,5]});
 _REGISTROS_ABIERTOS = weakref.WeakSet()
 
 
+def _sin_consulta(url, decirlo=False):
+    """La dirección para log.txt: su esquema, su servidor (con su puerto, si trae uno) y su ruta, sin su consulta (lo
+    que va desde «?») ni su fragmento (desde «#»), y sin un usuario o una clave antes del servidor (decisión de Marcelo,
+    encargo 51). Con 'decirlo', agrega qué quitó. Medido en los log.txt de logs/ (encargos 50 y 51): la consulta trae el
+    usuario de COSCO (login_hint) y el estado y el código del inicio de sesión de ONE (state, code, code_challenge), y
+    en el historial del perfil, el usuario de MSC (usernameLoginHint); ninguna dirección traía fragmento. Una dirección
+    sin servidor (about:blank) queda con su esquema y su ruta. Si no la puede leer, lo dice. Hasta el encargo 51 era
+    _msc_sin_consulta, solo del login de MSC (encargo 50)."""
+    try:
+        s = urlsplit(str(url))
+        limpia = (f"{s.scheme}://{s.hostname or ''}{f':{s.port}' if s.port else ''}{s.path}" if s.netloc
+                  else f"{s.scheme}:{s.path}" if s.scheme else s.path)
+    except Exception:
+        return "(no pude leer la dirección)"
+    quitado = [que for que, hay in (("su consulta", s.query), ("su fragmento", s.fragment)) if hay]
+    return limpia + (f" (sin {' ni '.join(quitado)})" if decirlo and quitado else "")
+
+
 class Registro:
     def __init__(self, ruta_log, on_log=None):
         self.ruta = Path(ruta_log)
@@ -745,7 +800,10 @@ class Registro:
     def info(self, msg): self._emit("    " + msg)
 
     def url(self, page):
-        try: self._emit("    URL: " + page.url)
+        """La dirección de la página, en log.txt y en la pantalla, sin su consulta ni su fragmento, y lo dice si los
+        quitó (_sin_consulta; decisión de Marcelo, encargo 51, en las seis navieras). Hasta ahí iba entera: en logs/,
+        40 líneas traían el usuario de COSCO, y 18, el estado o el código del inicio de sesión de ONE."""
+        try: self._emit("    URL: " + _sin_consulta(page.url, decirlo=True))
         except Exception: pass
 
     def captura(self, page, nombre, full=False, pagina_entera=False):
@@ -1052,28 +1110,37 @@ MSC_SONDEOS = 60
 # 01-10, terminó en la página de error de MSC. Ninguna volvió al campo del usuario.
 MSC_PAUSA_RECARGA = 20
 # El motivo de la fila de MSC cuando el login no deja la sesión iniciada y no hubo otro intento: queda NO ENVIADA
-# (decisión de Marcelo, encargo 45: el portal podría bloquear la cuenta). Desde el encargo 50, el login hace un segundo
-# intento solo tras el error del portal después de la clave (MSC_INTENTOS), y su motivo es MSC_SIN_SESION_TRAS_DOS.
+# (decisión de Marcelo, encargo 45: el portal podría bloquear la cuenta). Desde el encargo 51, solo si el primer intento
+# terminó sin la sesión y sin un error del portal (no llegó nada: con la clave equivocada, por ejemplo) o si el login
+# falló de otro modo; ante un error del portal, el login hace un solo intento más (MSC_INTENTOS), y el motivo es
+# MSC_SIN_SESION_TRAS_DOS.
 MSC_SIN_SESION = ("no quedó iniciada la sesión de MSC: la reserva no se envió, y el inicio de sesión no se reintentó, "
                   "para no arriesgar la cuenta (el detalle, en log.txt)")
-# El motivo de la fila de MSC cuando el portal dio el error después de aceptar el usuario y la clave, al volver a myMSC,
-# y el único intento más, desde el principio, tampoco dejó la sesión (decisión de Marcelo, encargo 50,
-# CICLO-msc-segundo-intento.md).
-MSC_SIN_SESION_TRAS_DOS = ("no quedó iniciada la sesión de MSC: el portal dio un error al volver a myMSC después de "
-                           "aceptar el usuario y la clave, y el único intento más, desde el principio, tampoco dejó la "
-                           "sesión. La reserva no se envió (el detalle, en log.txt)")
+# El motivo de la fila de MSC cuando el portal dio un error al iniciar sesión y el único intento más, desde el
+# principio, tampoco dejó la sesión (decisiones de Marcelo, encargos 50 y 51, CICLO-msc-segundo-intento.md y
+# CICLO-modo-y-lanzadores.md): {primero} y {segundo} dicen cómo terminó cada intento (_msc_motivo_tras_dos).
+MSC_SIN_SESION_TRAS_DOS = ("no quedó iniciada la sesión de MSC: el portal dio un error {primero}, y el único intento "
+                           "más, desde el principio, tampoco dejó la sesión ({segundo}). La reserva no se envió (el "
+                           "detalle, en log.txt)")
 # Las navieras cuyas filas quedan NO ENVIADA, con su motivo, si su login no deja la sesión iniciada: solo MSC (decisión
 # de Marcelo, encargo 45). Con las otras, la fila queda sin estado, como antes. El motivo lo da _motivo_sin_sesion.
 SIN_SESION = {"msc": MSC_SIN_SESION}
 # Cuántos inicios de sesión completos hace el login de MSC, a lo más: el segundo, desde el principio, solo si el
-# primero terminó con el error del portal después de la clave (MSC_ERROR_TRAS_LA_CLAVE); nunca un tercero. Así la
-# clave se escribe a lo más dos veces, una por intento (decisión de Marcelo, encargo 50, CICLO-msc-segundo-intento.md:
-# el 502 llega después de que b2clogin e identityserver aceptaron el usuario y la clave, la ida a eBooking del encargo
-# 45 no rescató la sesión en ninguno de los 4 casos medidos, y lo único medido que la recupera es otro inicio de
-# sesión). Hasta el encargo 50, ante ese error iba una sola vez a eBooking y no reintentaba.
+# primero terminó con un error del portal que no se resolvió (MSC_ERRORES); nunca un tercero. Así la clave se escribe a
+# lo más dos veces, una por intento. Decisiones de Marcelo: en el encargo 50 (CICLO-msc-segundo-intento.md), tras el
+# error después de la clave (el 502 llega después de que b2clogin e identityserver aceptaron el usuario y la clave, la
+# ida a eBooking del encargo 45 no rescató la sesión en ninguno de los 4 casos medidos, y lo único medido que la
+# recupera es otro inicio de sesión); y desde el encargo 51 (CICLO-modo-y-lanzadores.md), un solo camino de rescate
+# para cualquier error: también al abrir la portada y tras el «Next», si su recarga no lo arregla. Hasta el encargo
+# 50, ante cualquier error iba una sola vez a eBooking y no reintentaba; en el 50, reintentaba solo tras la clave.
 MSC_INTENTOS = 2
-# Lo que devuelve _msc_entrar cuando el error del portal llega después del botón de entrar, con la clave ya escrita.
-MSC_ERROR_TRAS_LA_CLAVE = "error tras la clave"
+# Cómo termina un intento del login de MSC (_msc_intento) con un error del portal que no se resolvió, dicho para
+# log.txt y para el motivo: al abrir su portada; tras el «Next», si su recarga (_msc_recargar) no trajo el campo de la
+# clave ni la sesión; o después de la clave, al pulsar el botón de entrar (encargo 51).
+MSC_ERROR_EN_LA_PORTADA = "al abrir su portada"
+MSC_ERROR_TRAS_EL_NEXT = "al pulsar «Next», y su recarga no lo arregló"
+MSC_ERROR_TRAS_LA_CLAVE = "después de la clave, al pulsar el botón de entrar"
+MSC_ERRORES = (MSC_ERROR_EN_LA_PORTADA, MSC_ERROR_TRAS_EL_NEXT, MSC_ERROR_TRAS_LA_CLAVE)
 # Las cabeceras de la respuesta que trajo la página de error del login de MSC cuyo valor va a log.txt: las que nombran
 # el servidor o una protección contra robots (decisión de Marcelo, encargo 50). De las demás va solo el nombre: nunca
 # cookies, tokens ni valores de sesión. Las cookies del perfil en .mymsc.com son de Akamai y de Citrix NetScaler
@@ -1153,7 +1220,7 @@ def _msc_abrir(page, reg):
     except Exception:
         pass
     esperar_hasta(page, "input[type='email'], input[name*='ser'], input[type='text']", 6, reg, "carga myMSC", asentar=0.6)
-    _msc_url(page, reg)
+    reg.url(page)
     _msc_cookies(page, reg)
 
 
@@ -1161,27 +1228,6 @@ def _msc_sufijo(intento):
     """Lo que llevan al final las capturas y los HTML del login de MSC en el intento 'intento': nada en el primero (los
     nombres de siempre) y «_2» en el segundo, para no pisar los del primero (encargo 50)."""
     return "" if intento == 1 else f"_{intento}"
-
-
-def _msc_sin_consulta(url):
-    """La dirección con su servidor y su ruta, sin usuario ni clave, consulta ni fragmento: la del login de MSC puede
-    traer el usuario (usernameLoginHint en TriggerOidcLogin, login_hint en identityserver y b2clogin; medido en el
-    historial del perfil del programa, encargo 50)."""
-    try:
-        s = urlsplit(str(url))
-        return f"{s.scheme}://{s.hostname or ''}{f':{s.port}' if s.port else ''}{s.path}"
-    except Exception:
-        return "(no pude leer la dirección)"
-
-
-def _msc_url(page, reg):
-    """La dirección de la página en log.txt, como reg.url, pero sin su consulta (_msc_sin_consulta): lo dice si la
-    quitó. La usa el login de MSC desde el encargo 50, que anota direcciones en cada intento y en cada error."""
-    try:
-        u = str(page.url)
-    except Exception:
-        return
-    reg.info(f"URL: {_msc_sin_consulta(u)}{' (sin su consulta)' if urlsplit(u).query else ''}")
 
 
 def _msc_escuchar(page):
@@ -1259,7 +1305,7 @@ def _msc_respuesta_del_error(escucha):
     """La línea de log.txt sobre la respuesta que trajo la página de error del login de MSC, de lo que la escucha vio
     desde la línea anterior (_msc_escuchar): la última respuesta con un código HTTP de 400 o más, con la falla de red de
     su misma dirección, si la hubo; si ninguna trae uno, la última falla de red; y si no hay ninguna de las dos, la
-    última respuesta, diciendo que ninguna falló. De cada una: el método, la dirección sin consulta (_msc_sin_consulta),
+    última respuesta, diciendo que ninguna falló. De cada una: el método, la dirección sin consulta (_sin_consulta),
     el código HTTP y sus cabeceras (_msc_cabeceras). Sin escucha (None), lo dice. Decisión de Marcelo, encargo 50."""
     escucha = {} if escucha is None else escucha
     nuevas = escucha["vistas"][-escucha["nuevas"]:] if escucha.get("nuevas") else []
@@ -1273,11 +1319,11 @@ def _msc_respuesta_del_error(escucha):
         r = (fallidas or respuestas)[-1]
         red = [q["falla"] for q in fallas if q["url"] == r["url"]][-1:]
         return (f"{'respuesta que trajo la página de error' if fallidas else 'ninguna respuesta falló; la última'}: "
-                f"{r['metodo']} {_msc_sin_consulta(r['url'])} · HTTP {r['estado']}"
+                f"{r['metodo']} {_sin_consulta(r['url'])} · HTTP {r['estado']}"
                 + "".join(f" · falla de red: {x}" for x in red) + f" · {_msc_cabeceras(r['respuesta'])}")
     if fallas:
         q = fallas[-1]
-        return (f"petición que falló, sin respuesta HTTP: {q['metodo']} {_msc_sin_consulta(q['url'])} · falla de red: "
+        return (f"petición que falló, sin respuesta HTTP: {q['metodo']} {_sin_consulta(q['url'])} · falla de red: "
                 f"{q['falla']}")
     return "no vi ninguna respuesta nueva de la página: no sé cuál trajo la página de error"
 
@@ -1285,12 +1331,12 @@ def _msc_respuesta_del_error(escucha):
 def _msc_evidencia_del_error(page, reg, escucha, nombre, creds):
     """El error del portal en el login de MSC, para entender por qué pasa (decisión de Marcelo, encargo 50): log.txt
     anota la respuesta que trajo la página de error (_msc_respuesta_del_error) y la dirección de la página sin su
-    consulta (_msc_url), y se guardan la captura de la ventana y el HTML de la página y de cada marco, salvo el que
+    consulta (reg.url), y se guardan la captura de la ventana y el HTML de la página y de cada marco, salvo el que
     traiga el usuario o la clave de la cuenta (_textos_de_la_cuenta): medido sin red, en Chrome y con datos inventados,
     la página de error de Chrome tras un GET repite la dirección entera, y la de TriggerOidcLogin trae el usuario en
     usernameLoginHint; tras el POST de la vuelta a myMSC, no la trae. Solo lee: ni clics, ni navegación, ni esperas."""
     reg.info(_msc_respuesta_del_error(escucha))
-    _msc_url(page, reg)
+    reg.url(page)
     png = reg.captura(page, nombre)
     guardados, total, _ = _guardar_html_completo(page, reg, nombre, "con el error del login de MSC",
                                                  sin=_textos_de_la_cuenta(creds))
@@ -1310,10 +1356,12 @@ def _msc_entrar(page, creds, reg, on_pausa=None, escucha=None, intento=1):
     identityserver seguía abierta: así pasó el 2026-09-27, el 29 y el 01-10, al volver a entrar) o el error
     (_msc_esperar). Si tras el «Next» llega el error, recarga esa página una sola vez y vuelve a esperar (_msc_recargar;
     decisión de Marcelo, encargo 47). Con el campo, escribe la clave, una sola vez, pulsa el botón de entrar y espera la
-    sesión o el error, con la pausa si MSC pide una validación. Devuelve "sesión", "error" (antes de la clave),
-    MSC_ERROR_TRAS_LA_CLAVE (después del botón de entrar, con su evidencia: _msc_evidencia_del_error, encargo 50) o ""
-    (no llegó ninguna); sin nada tras el «Next», deja msc_paso_email. En el segundo intento ('intento' 2), las
-    capturas y los HTML llevan «_2» (_msc_sufijo)."""
+    sesión o el error, con la pausa si MSC pide una validación. Devuelve "sesión"; MSC_ERROR_TRAS_EL_NEXT, si después
+    del error del «Next» la recarga no trajo el campo de la clave ni la sesión (encargo 51); MSC_ERROR_TRAS_LA_CLAVE,
+    si el error llegó después del botón de entrar, con su evidencia (_msc_evidencia_del_error, encargo 50); o "" (no
+    llegó ninguna, sin un error). Sin el campo de la clave tras el «Next» (o tras su recarga) y sin la sesión ni el
+    error, deja msc_paso_email. En el segundo intento ('intento' 2), las capturas y los HTML llevan «_2»
+    (_msc_sufijo)."""
     suf = _msc_sufijo(intento)
     reg.paso("Ingresando credenciales..." if intento == 1 else "Ingresando credenciales (segundo intento)...")
     rellenar(page, "#UserName, input[type=email]", creds["usuario"], 12000, reg)
@@ -1321,12 +1369,13 @@ def _msc_entrar(page, creds, reg, on_pausa=None, escucha=None, intento=1):
         reg.info("no encontré el botón «Next» ni «Siguiente» del login de MSC; no pulsé nada")
     _msc_cookies(page, reg)
     paso = _msc_esperar(page, reg, "la contraseña, la sesión o el error tras el «Next»", campo="input[type=password]")
-    if paso == "error":
+    tras_el_error = paso == "error"
+    if tras_el_error:
         paso = _msc_recargar(page, reg, escucha, intento, creds)
     if paso != "campo":
         if not paso:
             reg.info("no vi el campo de contraseña"); reg.captura(page, f"msc_paso_email{suf}")
-        return paso
+        return MSC_ERROR_TRAS_EL_NEXT if tras_el_error and paso != "sesión" else paso
     rellenar(page, "input[type=password]", creds["clave"], 12000, reg)
     if not click_si_existe(page,
             "button:has-text('Login'), button:has-text('Sign In'), button:has-text('Next'), "
@@ -1348,7 +1397,8 @@ def _msc_recargar(page, reg, escucha=None, intento=1, creds=None):
     (_msc_esperar); si sigue el error, deja también msc_error_recarga. Decisión de Marcelo, encargo 47
     (CICLO-msc-recarga-y-corrida-02-10.md): la recarga vuelve, sin reenviar la clave ni otro intento de inicio de
     sesión. No escribe ni pulsa nada: la clave, si aparece su campo, la escribe _msc_entrar por primera vez; si vuelve
-    el campo del usuario, no lo escribe (sería otro intento), y la espera termina sin nada. Espera solo el campo de la
+    el campo del usuario, no lo escribe, y la espera termina sin nada; desde el encargo 51, si la recarga no trae el
+    campo de la clave ni la sesión, el login hace su único intento más, desde el principio. Espera solo el campo de la
     contraseña, como el código de antes del encargo 45: en las 3 recargas de logs/ que dejaron la sesión con la clave,
     la encontró en 0,1 s o menos al buscarla, y el del usuario no apareció en 12 s. Un selector con los dos miraría
     solo el primero en la página (.first). Devuelve "campo", "sesión", "error" o ""."""
@@ -1362,7 +1412,7 @@ def _msc_recargar(page, reg, escucha=None, intento=1, creds=None):
     except Exception as e:
         reg.info(f"no pude recargar la página: {str(e)[:70]}")
     paso = _msc_esperar(page, reg, "la contraseña, la sesión o el error tras la recarga", campo="input[type=password]")
-    _msc_url(page, reg)
+    reg.url(page)
     if paso == "error":
         reg.paso("⚠ Después de la recarga, MSC sigue mostrando la página de error.")
         _msc_evidencia_del_error(page, reg, escucha, f"msc_error_recarga{suf}", creds)
@@ -1372,8 +1422,9 @@ def _msc_recargar(page, reg, escucha=None, intento=1, creds=None):
 def _msc_intento(page, creds, reg, on_pausa, escucha, intento):
     """Un inicio de sesión completo de MSC, desde su página (_msc_abrir, www.mymsc.com), nunca desde una dirección
     guardada: si ya hay sesión, no escribe nada; si la portada ya muestra el error, deja su evidencia
-    (msc_error_portada) y no escribe nada; si no, _msc_entrar. Devuelve "sesión", MSC_ERROR_TRAS_LA_CLAVE, "error" o
-    "" (no llegó nada)."""
+    (msc_error_portada) y no escribe nada; si no, _msc_entrar. Devuelve "sesión", uno de MSC_ERRORES (el error del
+    portal que no se resolvió: MSC_ERROR_EN_LA_PORTADA, MSC_ERROR_TRAS_EL_NEXT o MSC_ERROR_TRAS_LA_CLAVE) o "" (no
+    llegó nada, sin un error)."""
     reg.paso("Abriendo myMSC..." if intento == 1 else "Abriendo myMSC otra vez, desde el principio...")
     _msc_abrir(page, reg)
     if _msc_sesion(page):
@@ -1382,25 +1433,27 @@ def _msc_intento(page, creds, reg, on_pausa, escucha, intento):
     if _msc_error(page):
         reg.paso("⚠ MSC mostró una página de error al abrir su portada; no escribo el usuario ni la clave.")
         _msc_evidencia_del_error(page, reg, escucha, f"msc_error_portada{_msc_sufijo(intento)}", creds)
-        return "error"
+        return MSC_ERROR_EN_LA_PORTADA
     return _msc_entrar(page, creds, reg, on_pausa, escucha, intento)
 
 
 def login_msc(page, creds, reg, on_pausa=None):
     """Inicia sesión en myMSC desde su página, con el «Next» y el botón de entrar por su texto (_msc_intento,
     _msc_entrar); cada espera termina con lo primero que llegue, la sesión o el error del portal (_msc_esperar).
-    Decisiones de Marcelo, encargo 45 (CICLO-login-msc-y-maersk.md), y desde el encargo 50
-    (CICLO-msc-segundo-intento.md):
-    - Si el error del portal llega después de la clave (MSC_ERROR_TRAS_LA_CLAVE: b2clogin e identityserver ya aceptaron
-      el usuario y la clave, y falla la vuelta a myMSC), hace un solo intento más, completo y desde el principio; nunca
-      un tercero (MSC_INTENTOS). Si también falla, las filas de MSC quedan NO ENVIADA con MSC_SIN_SESION_TRAS_DOS, que
-      deja en el Registro (_motivo_sin_sesion).
-    - Con cualquier otro error (en la portada, o tras el «Next» aunque la recarga del encargo 47 no lo arregle) no
-      reintenta, y las filas quedan NO ENVIADA con MSC_SIN_SESION.
+    Decisiones de Marcelo, encargo 45 (CICLO-login-msc-y-maersk.md), encargo 50 (CICLO-msc-segundo-intento.md) y
+    encargo 51 (CICLO-modo-y-lanzadores.md):
+    - Un solo camino de rescate: ante cualquier error del portal que no se resuelva (MSC_ERRORES: al abrir la portada;
+      tras el «Next», si la recarga del encargo 47 no trae el campo de la clave ni la sesión; o después de la clave),
+      hace un solo intento más, completo y desde el principio; nunca un tercero (MSC_INTENTOS). La clave se escribe a lo
+      más dos veces, una por intento. Si también falla, las filas de MSC quedan NO ENVIADA con MSC_SIN_SESION_TRAS_DOS,
+      que dice cómo terminó cada intento y que deja en el Registro (_motivo_sin_sesion).
+    - Si el primer intento termina sin la sesión y sin un error (no llegó nada: con la clave equivocada, por ejemplo),
+      no reintenta, y las filas quedan NO ENVIADA con MSC_SIN_SESION.
     - Escucha la red de la página mientras dura (_msc_escuchar), y cada error deja en log.txt la respuesta que lo trajo,
       con su captura y su HTML (_msc_evidencia_del_error). Sin clics nuevos.
-    Hasta el encargo 50, ante cualquier error iba una sola vez a eBooking (MSC_EBOOKING) y comprobaba la sesión, sin
-    otro intento: en los 4 casos medidos, del 2026-10-02, llevó a la portada sin la sesión. Hasta el encargo 45
+    En el encargo 50 reintentaba solo tras el error después de la clave. Hasta el encargo 50, ante cualquier error iba
+    una sola vez a eBooking (MSC_EBOOKING) y comprobaba la sesión, sin otro intento: en los 4 casos medidos, del
+    2026-10-02, llevó a la portada sin la sesión. Hasta el encargo 45
     repetía el login entero hasta 2 veces tras un 502 (MSC_REINTENTOS_502, CICLO-cierre-de-frenos.md) y recargaba la
     página si el 502 salía tras el «Next»: el 2026-10-01 a las 16:02 tardó 214 s y dio por iniciada una sesión que no
     existía."""
@@ -1408,33 +1461,39 @@ def login_msc(page, creds, reg, on_pausa=None):
     escucha = _msc_escuchar(page)
     intento = 1
     try:
-        desenlace = _msc_intento(page, creds, reg, on_pausa, escucha, intento)
-        while desenlace == MSC_ERROR_TRAS_LA_CLAVE and intento < MSC_INTENTOS:
+        desenlaces = [_msc_intento(page, creds, reg, on_pausa, escucha, intento)]
+        while desenlaces[-1] in MSC_ERRORES and intento < MSC_INTENTOS:
             intento += 1
-            reg.paso("⚠ El usuario y la clave pasaron, y MSC dio el error al volver a myMSC. Hago un solo intento "
-                     "más de inicio de sesión, desde el principio; si también falla, no hay un tercero.")
-            desenlace = _msc_intento(page, creds, reg, on_pausa, escucha, intento)
+            reg.paso(f"⚠ MSC dio un error {desenlaces[-1]}. Hago un solo intento más de inicio de sesión, desde el "
+                     f"principio; si también falla, no hay un tercero.")
+            desenlaces.append(_msc_intento(page, creds, reg, on_pausa, escucha, intento))
     finally:
         escucha["quitar"]()
-    _msc_url(page, reg); reg.captura(page, "msc_final")
-    if desenlace == "sesión":
+    reg.url(page); reg.captura(page, "msc_final")
+    if desenlaces[-1] == "sesión":
         reg.paso("Sesión iniciada.")
         return True
     if intento > 1:
-        reg.sin_sesion["msc"] = MSC_SIN_SESION_TRAS_DOS
+        reg.sin_sesion["msc"] = _msc_motivo_tras_dos(*desenlaces[:2])
         reg.paso("⚠ El segundo intento de inicio de sesión de MSC tampoco dejó la sesión; no hay un tercero.")
-    elif desenlace == "error":
-        reg.paso("⚠ MSC mostró una página de error antes de la clave; no reintento el inicio de sesión, para no "
-                 "arriesgar la cuenta.")
     else:
         reg.paso("No confirmé la sesión.")
     return False
 
 
+def _msc_motivo_tras_dos(primero, segundo):
+    """El motivo de las filas de MSC cuando los dos intentos del login terminaron sin la sesión
+    (MSC_SIN_SESION_TRAS_DOS): el error con que terminó el primero (uno de MSC_ERRORES) y cómo terminó el segundo, con
+    otro error o sin que llegara nada (encargo 51)."""
+    return MSC_SIN_SESION_TRAS_DOS.format(
+        primero=primero,
+        segundo=f"otro error {segundo}" if segundo in MSC_ERRORES else "no llegó ni la sesión ni otro error")
+
+
 def _motivo_sin_sesion(reg, nav):
     """El motivo de las filas de 'nav' (una naviera de SIN_SESION) cuando su login no dejó la sesión iniciada: el que el
-    login dejó en el Registro, si dejó uno (MSC, tras su segundo intento: MSC_SIN_SESION_TRAS_DOS, encargo 50), o el de
-    SIN_SESION."""
+    login dejó en el Registro, si dejó uno (MSC, tras su segundo intento: MSC_SIN_SESION_TRAS_DOS, encargos 50 y
+    51), o el de SIN_SESION."""
     return (getattr(reg, "sin_sesion", None) or {}).get(nav) or SIN_SESION[nav]
 
 
@@ -8302,7 +8361,7 @@ def _mk_esperar_avance(page, desde, seg, reg, minimo=1.2):
     while _t.time() - t0 < seg:
         u = page.url.lower()
         if "/sailings" in u or "/additional" in u or "/review" in u:
-            reg.info(f"avance detectado por URL: {u} ({_t.time() - t0:.1f}s)")
+            reg.info(f"avance detectado por URL: {_sin_consulta(u, decirlo=True)} ({_t.time() - t0:.1f}s)")
             return True
         ahora = _mk_paso_actual(page)
         if ahora and ahora != desde:
@@ -11545,6 +11604,7 @@ def ejecutar_login(usuario, navieras, cfg=None, on_log=None, on_pausa=None,
     perfil_dir.mkdir(parents=True, exist_ok=True)
 
     reg.paso(f"INICIO · usuario={usuario} · navieras={','.join(navieras)}")
+    _anotar_candado(reg)
     reg.info(f"perfil: {perfil_dir}")
     reg.info(f"headless={headless} · navegador={canal} · modo sigiloso ON")
 
@@ -11639,6 +11699,7 @@ def ejecutar_reservas(usuario, naviera_clave, cfg=None, on_log=None, on_pausa=No
     perfil_dir.mkdir(parents=True, exist_ok=True)
 
     reg.paso(f"INICIO RESERVAS · {nombre} · usuario={usuario}")
+    _anotar_candado(reg)
     _podar_html_viejo(reg)
 
     # Leer la planilla ANTES de abrir el navegador
@@ -12663,6 +12724,7 @@ def _web_worker(hoja, usuario, filas_pedidas):
         todas = _filas_de_hoja(_WEB["ruta"], hoja)
         elegidas = [f for f in todas if f["fila"] in set(filas_pedidas)]
         reg.paso(f"INICIO · {hoja} · operador {usuario} · {len(elegidas)} reserva(s)")
+        _anotar_candado(reg)
         _podar_html_viejo(reg)
         if not elegidas:
             # Hasta 42247d4, con una sola naviera, abría el navegador y entraba al portal igual
@@ -12749,8 +12811,8 @@ def _web_worker(hoja, usuario, filas_pedidas):
                 if not logueado:
                     reg.paso(f"No se pudo iniciar sesión en {nombre}; no proceso sus reservas.")
                     # Sin la sesión de MSC, cada fila queda NO ENVIADA con su motivo (decisión de Marcelo, encargo 45,
-                    # CICLO-login-msc-y-maersk.md), el que dejó su login: desde el encargo 50, tras el error después
-                    # de la clave, con un solo intento más (_motivo_sin_sesion). Con las otras navieras, como antes:
+                    # CICLO-login-msc-y-maersk.md), el que dejó su login: desde el encargo 50, tras su único intento
+                    # más (_motivo_sin_sesion; desde el 51, ante cualquier error). Con las otras navieras, como antes:
                     # la fila queda sin estado.
                     for rsv in (sub_elegidas if nav in SIN_SESION else ()):
                         reg.paso(f"✗ fila {rsv['fila']}: {NO_ENVIADA} · {_motivo_sin_sesion(reg, nav)}")
@@ -12892,6 +12954,58 @@ def _escribir_config(cfg, ruta):
     with open(tmp, "w", encoding="utf-8") as f:
         _json.dump(cfg, f, ensure_ascii=False, indent=2)
     return _reemplazar(tmp, ruta)          # Windows lo niega a veces un instante (antivirus)
+
+
+def _panel_en(puerto):
+    """El panel de AQUASHIELD que escucha en 'puerto' de esta máquina, como lo ve el lanzador al arrancar: None si nadie
+    responde ahí como AQUASHIELD (su /api/estado, en 1 s, con «corriendo»); si no, (su estado, su modo). Su modo es el
+    «modo_emision» de su /api/config (en 2 s), el mismo con que pinta su aviso de modo al cargar: True o False, o None
+    si no lo dice (encargo 51). Solo pregunta: a ese panel no le cambia nada más que su último latido."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/api/estado", timeout=1.0) as resp:
+            estado = _json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
+    if not isinstance(estado, dict) or "corriendo" not in estado:
+        return None
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/api/config", timeout=2.0) as resp:
+            modo = _json.loads(resp.read().decode("utf-8")).get("modo_emision")
+    except Exception:
+        modo = None
+    return estado, (modo if isinstance(modo, bool) else None)
+
+
+def _otro_modo(puerto, estado, modo, propio):
+    """El aviso del lanzador que encuentra en su puerto un panel de AQUASHIELD en el otro modo, o que no dice en cuál:
+    no se conecta a él, no lo cierra y no abre otro (decisión de Marcelo, encargo 51). Dice cómo cerrarlo: el botón de
+    apagar del panel (/api/apagar) o su pestaña cerrada, que el vigilante de inactividad apaga en unos dos minutos; si
+    está armando reservas, que primero termine (el vigilante no lo apaga mientras corre, y el botón cortaría la
+    corrida)."""
+    nombre = {True: "EMISIÓN (reservas reales)", False: "prueba (sin emitir)"}
+    cual = f"en modo {nombre[modo]}" if modo is not None else "y no pude saber en qué modo está"
+    cerrar = ("ciérralo con su botón rojo de apagar, arriba a la derecha, o cerrando su pestaña y esperando unos dos "
+              "minutos")
+    como = (f"Ese panel está armando reservas: espera a que termine, después {cerrar}, y vuelve a abrir este lanzador."
+            if estado.get("corriendo") else f"{cerrar[0].upper()}{cerrar[1:]}, y vuelve a abrir este lanzador.")
+    return (f"Ya hay un panel de AQUASHIELD abierto {cual}, en http://127.0.0.1:{puerto}/, y este lanzador lo abriría "
+            f"en modo {nombre[propio]}. Para no mezclar los modos, no me conecto a ese panel, no lo cierro y no abro "
+            f"otro. {como}")
+
+
+def _avisar_al_lanzar(texto):
+    """Un aviso del lanzador que el operador tiene que ver, antes de que haya un panel: por la consola y en una ventana,
+    como el de main() cuando el panel web no abre (los .bat lanzan con pythonw, sin consola; encargo 51)."""
+    try:
+        print(texto, flush=True)
+    except Exception:
+        pass
+    try:
+        import tkinter.messagebox as mb
+        mb.showwarning("AQUASHIELD", texto)
+    except Exception:
+        pass
 
 
 def lanzar_web(puerto=8765, abrir=True):
@@ -13126,30 +13240,34 @@ def lanzar_web(puerto=8765, abrir=True):
 
     global _SRV_ACTUAL
 
-    # 1. Comprobar si ya hay una instancia de AQUASHIELD en el puerto base (8765)
-    try:
-        import urllib.request
-        with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/api/estado", timeout=1.0) as resp:
-            d = _json.loads(resp.read().decode("utf-8"))
-            if "corriendo" in d:
-                if d.get("corriendo"):
-                    # Ya hay una reserva en ejecución: simplemente abrimos el navegador
-                    url = f"http://127.0.0.1:{puerto}/"
-                    if abrir:
-                        try: webbrowser.open(url)
-                        except Exception: pass
-                    print(f"AQUASHIELD ya está activo ejecutando tareas en {url}")
-                    return
-                else:
-                    # Instancia ociosa anterior: pedirle que se apague para renovar
-                    try:
-                        req = urllib.request.Request(f"http://127.0.0.1:{puerto}/api/apagar", data=b"{}", method="POST")
-                        urllib.request.urlopen(req, timeout=1.0)
-                        time.sleep(0.6)
-                    except Exception:
-                        pass
-    except Exception:
-        pass
+    # 1. Comprobar si ya hay una instancia de AQUASHIELD en el puerto base (8765). Si está en el otro modo, o no dice en
+    #    cuál, avisa y no corre: no se conecta a ella, no la cierra y no abre otra (decisión de Marcelo, encargo 51,
+    #    CICLO-modo-y-lanzadores.md). Hasta ahí, una ocupada se abría en el navegador en el modo que tuviera, y a una
+    #    ociosa se le pedía que se apagara: su pestaña, si seguía abierta, quedaba hablando con el panel nuevo, del otro
+    #    modo, con el aviso de modo de antes.
+    previo = _panel_en(puerto)
+    if previo is not None:
+        estado, modo = previo
+        propio = es_modo_emision()
+        if modo is not propio:
+            _avisar_al_lanzar(_otro_modo(puerto, estado, modo, propio))
+            return
+        if estado.get("corriendo"):
+            # Ya hay una reserva en ejecución, en el mismo modo: simplemente abrimos el navegador
+            url = f"http://127.0.0.1:{puerto}/"
+            if abrir:
+                try: webbrowser.open(url)
+                except Exception: pass
+            print(f"AQUASHIELD ya está activo ejecutando tareas en {url}")
+            return
+        # Instancia ociosa anterior, en el mismo modo: pedirle que se apague para renovar
+        try:
+            import urllib.request
+            req = urllib.request.Request(f"http://127.0.0.1:{puerto}/api/apagar", data=b"{}", method="POST")
+            urllib.request.urlopen(req, timeout=1.0)
+            time.sleep(0.6)
+        except Exception:
+            pass
 
     def _liberar_puerto(p):
         try:

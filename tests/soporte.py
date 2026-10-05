@@ -7,7 +7,9 @@ Lo que hace cumplir, en cada prueba:
   dentro de ella. El AQUASHIELD.py original nunca se importa desde su carpeta.
 - Trampas: abrir el navegador, lanzar un proceso, conectarse fuera de 127.0.0.1
   o usar Playwright de verdad levanta EfectoReal y queda en DISPAROS. Cada
-  prueba termina exigiendo DISPAROS vacío.
+  prueba termina exigiendo DISPAROS vacío. Desde el encargo 51, también abrir una
+  ventana de aviso (tkinter.messagebox): el lanzador avisa así, y una ventana de
+  verdad dejaría la prueba esperando un clic.
 - Las tres llaves del candado de emisión (AQUASHIELD_EMITIR, el argumento
   emitir/--emitir/produccion/--produccion y opciones.emitir_reservas) se apagan
   al empezar y se exige que sigan apagadas al terminar cada prueba.
@@ -104,6 +106,9 @@ subprocess.Popen = _PopenTrampa
 os.system = _trampa("os.system")
 if hasattr(os, "startfile"):
     os.startfile = _trampa("os.startfile")
+import tkinter.messagebox  # noqa: E402
+for _n in ("showwarning", "showinfo", "showerror"):
+    setattr(tkinter.messagebox, _n, _trampa(f"tkinter.messagebox.{_n}"))
 
 
 # --- Medición opcional: qué funciones del programa se ejecutan (apagada por defecto) ---

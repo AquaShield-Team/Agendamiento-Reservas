@@ -7,6 +7,7 @@ Rareza fotografiada: ejecutar_login abre el navegador aunque ninguna naviera
 pedida tenga credenciales. (Hasta d86fbca, ejecutar_reservas escribía «SIN EMITIR»
 aunque la reserva volviera EMITIDA; ahora solo con OK-EJEMPLO.)
 """
+import ast
 import contextlib
 import io
 import os
@@ -18,6 +19,7 @@ import tkinter.messagebox
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import openpyxl
 
@@ -543,6 +545,21 @@ class TestEjecutarReservas(ConPlanilla):
         self.assertEqual(n.pw.contextos[0].pages[0].capturas, [("error_fila_5.png", False), ("error_fila_6.png", False)])
         self.assertIn("· ERROR · ", openpyxl.load_workbook(self.planilla)["MAERSK"]["H5"].value)
 
+    def test_dice_su_candado_al_empezar(self):
+        # Cada corrida de reservas por consola dice al empezar, en log.txt, con qué candado corre y por cuál llave
+        # (_anotar_candado; decisión de Marcelo, encargo 51). Con llaves, aquí dichas por _llaves_abiertas solo para la
+        # línea: el candado de la guarda sigue cerrado.
+        with soporte.Navieras(self.mod):
+            _, carpeta = self.mod.ejecutar_reservas("op_prueba", "cma", esperar_cierre=lambda: None)
+        lineas = (Path(carpeta) / "log.txt").read_text(encoding="utf-8").splitlines()
+        self.assertIn("· INICIO RESERVAS · CMA-CGM · usuario=op_prueba", lineas[0])
+        self.assertIn("· 🛡️ Candado de emisión cerrado: modo prueba", lineas[1])
+        llaves = (lambda todas=False: ["la llave de prueba"] if todas else [])
+        with soporte.Navieras(self.mod), mock.patch.object(self.mod, "_llaves_abiertas", llaves):
+            _, carpeta = self.mod.ejecutar_reservas("op_prueba", "cma", esperar_cierre=lambda: None)
+        lineas = (Path(carpeta) / "log.txt").read_text(encoding="utf-8").splitlines()
+        self.assertIn("· 🔴 Candado de emisión abierto: modo EMISIÓN, por la llave de prueba.", lineas[1])
+
     def test_rechazos(self):
         with self.assertRaises(ValueError) as e:
             self.mod.ejecutar_reservas("nadie", "one", esperar_cierre=lambda: None)
@@ -580,6 +597,16 @@ class TestEjecutarLogin(ConPlanilla):
     def test_operador_desconocido(self):
         with self.assertRaises(ValueError):
             self.mod.ejecutar_login("nadie", ["one"], esperar_cierre=lambda: None)
+
+    def test_dice_su_candado_al_empezar(self):
+        # También la corrida de solo login dice al empezar con qué candado corre (encargo 51): no emite, pero es el
+        # mismo programa, en el mismo modo, que arma las reservas. Con el operador sin credenciales: su carpeta no
+        # choca en el mismo segundo con la de test_login_por_consola, que pide el nombre sin «_2».
+        with soporte.Navieras(self.mod):
+            _, carpeta = self.mod.ejecutar_login("op_vacio", ["one"], esperar_cierre=lambda: None)
+        lineas = (Path(carpeta) / "log.txt").read_text(encoding="utf-8").splitlines()
+        self.assertIn("· INICIO · usuario=op_vacio · navieras=one", lineas[0])
+        self.assertIn("· 🛡️ Candado de emisión cerrado: modo prueba", lineas[1])
 
 
 class TestCarpetaCorrida(ConPlanilla):
@@ -626,6 +653,58 @@ class TestUtilitarios(soporte.CasoAQ):
         self.assertEqual(lineas, vistas)
         self.assertRegex(lineas[0], r"^\[\d\d:\d\d:\d\d \+\s+\d+\.\ds\] · hola$")
         self.assertRegex(lineas[1], r"^\[\d\d:\d\d:\d\d \+\s+\d+\.\ds\]     dato$")
+
+    def test_url_sin_consulta(self):
+        # La línea «URL:» de log.txt va sin la consulta (lo que va desde «?») ni el fragmento (desde «#»), y sin un
+        # usuario o una clave antes del servidor, en las seis navieras, y dice qué quitó (Registro.url con
+        # _sin_consulta; decisión de Marcelo, encargo 51). Medido en logs/: 40 líneas traían el usuario de COSCO
+        # (login_hint) y 18, el estado o el código del inicio de sesión de ONE. Direcciones y datos inventados.
+        casos = [
+            ("https://iam.ejemplo.test/auth/realms/r/protocol/openid-connect/auth?client_id=c&login_hint="
+             "usuario%40ejemplo.test&ui_locales=es",
+             "https://iam.ejemplo.test/auth/realms/r/protocol/openid-connect/auth (sin su consulta)"),
+            ("https://www.ejemplo.test/ecom/booking?code=CODIGODEPRUEBA&state=ESTADODEPRUEBA",
+             "https://www.ejemplo.test/ecom/booking (sin su consulta)"),
+            ("https://app.ejemplo.test/inicio#access_token=TOKENDEPRUEBA",
+             "https://app.ejemplo.test/inicio (sin su fragmento)"),
+            ("https://usuario:CLAVEDEPRUEBA@portal.ejemplo.test:8443/a/b?x=1#y",
+             "https://portal.ejemplo.test:8443/a/b (sin su consulta ni su fragmento)"),
+            ("https://www.ejemplo.test/Ruta/Sin/Nada", "https://www.ejemplo.test/Ruta/Sin/Nada"),
+            ("about:blank", "about:blank"),
+            ("chrome-error://chromewebdata/", "chrome-error://chromewebdata/"),
+        ]
+
+        class SinDireccion:
+            @property
+            def url(self):
+                raise RuntimeError("página cerrada")
+        reg = self.mod.Registro(self.sb / "url" / "log.txt")
+        try:
+            for url, _ in casos:
+                reg.url(soporte.PaginaFalsa(url=url))
+            reg.url(SinDireccion())
+        finally:
+            reg.cerrar()
+        texto = (self.sb / "url" / "log.txt").read_text(encoding="utf-8")
+        self.assertEqual(re.findall(r"\]     URL: (.*)", texto), [e for _, e in casos])
+        for secreto in ("usuario%40", "login_hint", "CODIGODEPRUEBA", "ESTADODEPRUEBA", "TOKENDEPRUEBA",
+                        "CLAVEDEPRUEBA", "usuario:"):
+            self.assertNotIn(secreto, texto)
+        self.assertEqual(self.mod._sin_consulta("https://x.ejemplo.test:puerto/"), "(no pude leer la dirección)")
+
+    def test_toda_linea_url_va_sin_consulta(self):
+        # Ninguna línea con «URL:» escribe una dirección sin pasar por _sin_consulta (encargo 51). Hoy son dos:
+        # Registro.url, que usan las seis navieras, y el avance de MAERSK. Una nueva que escriba page.url entera, cae.
+        tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
+        lineas = {}
+        for f in ast.walk(tree):
+            if isinstance(f, ast.FunctionDef):
+                for c in ast.walk(f):
+                    if (isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)
+                            and c.func.attr in ("paso", "info", "_emit") and "URL:" in ast.unparse(c)):
+                        lineas[f.name] = ast.unparse(c)
+        self.assertEqual(sorted(lineas), ["_mk_esperar_avance", "url"])
+        self.assertEqual({f: "_sin_consulta(" in c for f, c in lineas.items()}, {f: True for f in lineas})
 
     def test_capturas(self):
         reg = self.mod.Registro(self.sb / "cap" / "log.txt")

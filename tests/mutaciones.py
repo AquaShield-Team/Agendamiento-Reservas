@@ -9,8 +9,10 @@ un 'cmd /c rem')."""
 ARNES = "test_arnes.TestArnes."
 CAND = "test_candado.TestCandado."
 LANZ = "test_candado.TestLanzadores."
-FIN_CANDADO = ('            _avisar_llave_config(valor)\n    except Exception:\n        pass\n    return False\n\n\n'
-               'def _avisar_llave_config')
+# Desde el encargo 51, las llaves las mira _llaves_abiertas, y es_modo_emision dice si encontró una: las mutaciones del
+# candado, sobre ese código, con las mismas pruebas de test_candado, que no cambia.
+FIN_CANDADO = ('            _avisar_llave_config(valor)\n    except Exception:\n        pass\n'
+               '    return abiertas\n\n\ndef _avisar_llave_config')
 AVISO_PANEL = '    try:\n        _wlog(texto)\n    except Exception:\n        pass'
 AVISO_CONSOLA = '    try:\n        print(texto, flush=True)\n    except Exception:\n        pass\n    try:\n        _wlog(texto)'
 LLAVE_OTRA = CAND + "test_llave_config_con_otro_valor_no_abre_y_avisa"
@@ -44,17 +46,18 @@ MUTACIONES = [
     # --- Candado ---
     dict(id="candado-abierto-por-defecto",
          pruebas=[ARNES + "test_candado_cerrado_al_cargar", CAND + "test_tres_apagadas_nunca_emite"],
-         viejo=FIN_CANDADO, nuevo=FIN_CANDADO.replace("    return False\n", "    return True\n")),
+         viejo=FIN_CANDADO,
+         nuevo=FIN_CANDADO.replace("    return abiertas\n", "    return abiertas or ['una llave']\n")),
     dict(id="candado-abre-si-falla-config", pruebas=[ARNES + "test_candado_cerrado_sin_config"],
-         viejo=FIN_CANDADO, nuevo=FIN_CANDADO.replace("        pass\n", "        return True\n")),
+         viejo=FIN_CANDADO, nuevo=FIN_CANDADO.replace("        pass\n", "        return ['una llave']\n")),
     dict(id="entorno-acepta-no", pruebas=[CAND + "test_tres_apagadas_nunca_emite"],
          viejo='("1", "true", "si", "yes")', nuevo='("1", "true", "si", "yes", "no")'),
     dict(id="entorno-sin-yes", pruebas=[CAND + "test_llave_entorno_sola_abre"],
          viejo='("1", "true", "si", "yes")', nuevo='("1", "true", "si")'),
     dict(id="entorno-no-abre",
          pruebas=[CAND + "test_basta_una_llave_de_tres", CAND + "test_llave_entorno_sola_abre"],
-         viejo='in ("1", "true", "si", "yes"):\n        return True',
-         nuevo='in ("1", "true", "si", "yes"):\n        pass'),
+         viejo='in ("1", "true", "si", "yes"):\n        abiertas.append(',
+         nuevo='in ("1", "true", "si", "yes") and False:\n        abiertas.append('),
     dict(id="argumento-sin-guiones", pruebas=[CAND + "test_llave_argumento_sola_abre"],
          viejo='("emitir", "--emitir", "produccion", "--produccion")',
          nuevo='("emitir", "produccion", "--produccion")'),
@@ -63,13 +66,14 @@ MUTACIONES = [
          viejo='.get("emitir_reservas", False)', nuevo='.get("emitir_reserva", False)'),
     # --- La llave de config abre solo con el booleano true, y lo demás avisa ---
     dict(id="config-abre-con-cualquier-verdadero", pruebas=[LLAVE_OTRA],
-         viejo='        if valor is True:\n            return True', nuevo='        if valor:\n            return True'),
+         viejo='        if valor is True:\n            abiertas.append(',
+         nuevo='        if valor:\n            abiertas.append('),
     dict(id="config-sin-aviso", pruebas=[LLAVE_OTRA, LLAVE_LOG, LLAVE_WEB],
-         viejo='        if valor is not False:\n            _avisar_llave_config(valor)',
-         nuevo='        if False:\n            _avisar_llave_config(valor)'),
+         viejo='        elif valor is not False:\n            _avisar_llave_config(valor)',
+         nuevo='        elif False:\n            _avisar_llave_config(valor)'),
     dict(id="config-avisa-tambien-con-false", pruebas=[CAND + "test_llave_config_abre_solo_con_true"],
-         viejo='        if valor is not False:\n            _avisar_llave_config(valor)',
-         nuevo='        if True:\n            _avisar_llave_config(valor)'),
+         viejo='        elif valor is not False:\n            _avisar_llave_config(valor)',
+         nuevo='        elif True:\n            _avisar_llave_config(valor)'),
     dict(id="aviso-otro-texto", pruebas=[LLAVE_OTRA, LLAVE_WEB],
          viejo='y solo se abre con true (sin comillas). "', nuevo='y solo abre con true. "'),
     dict(id="aviso-sin-consola", pruebas=[LLAVE_OTRA],
@@ -482,7 +486,7 @@ MUTACIONES += [
          viejo='req = urllib.request.Request(f"http://127.0.0.1:{puerto}/api/apagar", data=b"{}", method="POST")',
          nuevo='req = urllib.request.Request(f"http://127.0.0.1:{puerto}/api/estado", data=b"{}", method="POST")'),
     dict(id="previa-ocupada-se-toca", pruebas=[AR + "test_instancia_previa_ocupada_no_se_toca"],
-         viejo='                if d.get("corriendo"):', nuevo='                if d.get("corriendo") and False:'),
+         viejo='        if estado.get("corriendo"):\n', nuevo='        if estado.get("corriendo") and False:\n'),
 ]
 
 # --- Consola y utilitarios ---
@@ -1409,11 +1413,10 @@ MUTACIONES += [
     dict(id="poda-corrida-error-callado", pruebas=[PO + "test_al_empezar_la_corrida_avisa_y_nunca_la_detiene"],
          viejo='        reg.paso(f"⚠ No pude borrar el HTML antiguo {error}; bórralo a mano si sobra.")\n', nuevo="        pass\n"),
     dict(id="poda-no-corre-en-la-consola", pruebas=[PO + "test_corre_al_empezar_cada_corrida_de_reservas"],
-         viejo='    reg.paso(f"INICIO RESERVAS · {nombre} · usuario={usuario}")\n    _podar_html_viejo(reg)\n',
-         nuevo='    reg.paso(f"INICIO RESERVAS · {nombre} · usuario={usuario}")\n'),
+         viejo='    _anotar_candado(reg)\n    _podar_html_viejo(reg)\n', nuevo='    _anotar_candado(reg)\n'),
     dict(id="poda-no-corre-en-la-web", pruebas=[PO + "test_corre_al_empezar_cada_corrida_de_reservas"],
-         viejo='        reg.paso(f"INICIO · {hoja} · operador {usuario} · {len(elegidas)} reserva(s)")\n        _podar_html_viejo(reg)\n',
-         nuevo='        reg.paso(f"INICIO · {hoja} · operador {usuario} · {len(elegidas)} reserva(s)")\n'),
+         viejo='        _anotar_candado(reg)\n        _podar_html_viejo(reg)\n',
+         nuevo='        _anotar_candado(reg)\n'),
 ]
 
 # --- CMA: la evidencia dentro del panel Reefer (CICLO-cma-reefer-y-fecha-maersk.md) ---
@@ -3559,9 +3562,10 @@ MSC_ERR = "test_clics.TestMsc.test_error_del_portal"
 MSC_SES = "test_clics.TestMsc.test_sesion_solo_en_su_pagina"
 MSC_ESP = "test_clics.TestMsc.test_login_termina_con_lo_primero_que_llega"
 # Desde el encargo 50, «ante el error» son dos pruebas: el segundo intento tras el error después de la clave, y los
-# otros errores, que no reintentan (CICLO-msc-segundo-intento.md).
+# otros errores (CICLO-msc-segundo-intento.md); desde el 51, que también reintentan, una sola vez
+# (CICLO-modo-y-lanzadores.md): test_otros_errores_no_reintentan pasó a test_cualquier_error_un_solo_intento_mas.
 MSC_DOS = "test_clics.TestMsc.test_tras_el_error_despues_de_la_clave_un_solo_intento_mas"
-MSC_OTROS = "test_clics.TestMsc.test_otros_errores_no_reintentan"
+MSC_OTROS = "test_clics.TestMsc.test_cualquier_error_un_solo_intento_mas"
 TEXTOS_ERR = 'MSC_TEXTOS_DE_ERROR = ("502", "no puede procesar", "unable to complete your request")\n'
 SESION = '    return u.netloc.lower() == "www.mymsc.com" and u.path.lower().rstrip("/") in MSC_PAGINAS_CON_SESION\n'
 
@@ -5936,7 +5940,7 @@ MUTACIONES += [
 MSC_REC = "test_clics.TestMsc.test_tras_el_error_del_next_recarga_una_vez"
 RECARGA = ('        page.reload(wait_until="domcontentloaded")\n    except Exception as e:\n'
            '        reg.info(f"no pude recargar la página')
-TRAS_EL_NEXT = "    if paso == \"error\":\n        paso = _msc_recargar(page, reg, escucha, intento, creds)\n"
+TRAS_EL_NEXT = "    if tras_el_error:\n        paso = _msc_recargar(page, reg, escucha, intento, creds)\n"
 TRAS_LA_CLAVE = ('    paso = _msc_esperar(page, reg, "la sesión o el error tras el botón de entrar", '
                  'on_pausa=on_pausa, validar=True,\n                        sufijo=suf)\n')
 ESPERA = ('    paso = _msc_esperar(page, reg, "la contraseña, la sesión o el error tras la recarga", '
@@ -5949,7 +5953,8 @@ MUTACIONES += [
     dict(id="msc-recarga-no-tras-el-next", pruebas=[MSC_REC], viejo=TRAS_EL_NEXT, nuevo=""),
     dict(id="msc-recarga-dos-veces", pruebas=[MSC_REC], viejo=TRAS_EL_NEXT, nuevo=TRAS_EL_NEXT + TRAS_EL_NEXT),
     dict(id="msc-recarga-tras-cualquier-error", pruebas=[MSC_DOS], viejo=TRAS_LA_CLAVE,
-         nuevo=TRAS_LA_CLAVE + TRAS_EL_NEXT),
+         nuevo=(TRAS_LA_CLAVE + '    if paso == "error":\n'
+                '        paso = _msc_recargar(page, reg, escucha, intento, creds)\n')),
     # La pausa: sin ella, o con otra.
     dict(id="msc-recarga-sin-la-pausa", pruebas=[MSC_REC], viejo="    esperar(page, MSC_PAUSA_RECARGA)\n", nuevo=""),
     dict(id="msc-recarga-otra-pausa", pruebas=[MSC_REC], viejo="MSC_PAUSA_RECARGA = 20\n",
@@ -6051,6 +6056,9 @@ MUTACIONES += [
          nuevo=SIN_CAMPOS.replace("desde)", "time.monotonic())")),
 ]
 
+MSC_CLAVE = "test_clics.TestMsc.test_la_clave_a_lo_mas_dos_veces"
+URL_REG = "test_consola.TestUtilitarios.test_url_sin_consulta"
+
 # --- Encargo 50: el login de MSC hace un solo intento más tras el error después de la clave, nunca un tercero, y sin la
 # ida a eBooking; cada error deja en log.txt la respuesta que lo trajo, sin valores de sesión, y su captura y su HTML
 # sin el usuario ni la clave; las filas de MSC llevan el motivo que dejó el login; y COSCO dice cuándo
@@ -6064,13 +6072,14 @@ ER_MOTIVO = ER + "test_login_de_msc_deja_su_motivo"
 INTENTOS = "MSC_INTENTOS = 2\n"
 CLAVE_FIN = ('    _msc_evidencia_del_error(page, reg, escucha, f"msc_error_clave{suf}", creds)\n'
              '    return MSC_ERROR_TRAS_LA_CLAVE\n')
-FINAL = '    _msc_url(page, reg); reg.captura(page, "msc_final")\n    if desenlace == "sesión":\n'
+FINAL = '    reg.url(page); reg.captura(page, "msc_final")\n    if desenlaces[-1] == "sesión":\n'
 HTML_EVID = ('    guardados, total, _ = _guardar_html_completo(page, reg, nombre, "con el error del login de MSC",\n'
              '                                                 sin=_textos_de_la_cuenta(creds))\n')
 VALORES = ("    valores = [f\"{k}: {' '.join(str(cab[k]).split())[:80]}\" for k in nombres if k in "
            "MSC_CABECERAS_CON_VALOR]\n")
-SIN_CONSULTA = "        return f\"{s.scheme}://{s.hostname or ''}{f':{s.port}' if s.port else ''}{s.path}\"\n"
-URL_LINEA = "    reg.info(f\"URL: {_msc_sin_consulta(u)}{' (sin su consulta)' if urlsplit(u).query else ''}\")\n"
+SIN_CONSULTA = ("        limpia = (f\"{s.scheme}://{s.hostname or ''}{f':{s.port}' if s.port else ''}{s.path}\" if "
+                "s.netloc\n                  else f\"{s.scheme}:{s.path}\" if s.scheme else s.path)\n")
+URL_LINEA = "    return limpia + (f\" (sin {' ni '.join(quitado)})\" if decirlo and quitado else \"\")\n"
 CON_VALOR = 'MSC_CABECERAS_CON_VALOR = ("server", "via",'
 DEL_MARCO = '            return peticion.resource_type == "document" and peticion.frame == page.main_frame\n'
 GUARDA_HTML = "            if sin and any(str(t).casefold() in texto.casefold() for t in sin):\n"
@@ -6082,37 +6091,34 @@ DECORADO = "test_clics.TestSinClicACiegas.test_cada_reservador_que_corta_esta_de
 MOTIVO = '    return (getattr(reg, "sin_sesion", None) or {}).get(nav) or SIN_SESION[nav]\n'
 
 MUTACIONES += [
-    # El segundo intento: con un tercero, sin él, tras cualquier error, sin reconocer el error tras la clave, volviendo
-    # a eBooking al final, dándola por iniciada sin mirar, o sin su aviso.
-    dict(id="e50-msc-tercer-intento", pruebas=[MSC_DOS], viejo=INTENTOS, nuevo="MSC_INTENTOS = 3\n"),
+    # El segundo intento: con un tercero, sin él, también sin un error (desde el encargo 51, ante cualquier error), sin
+    # reconocer el error tras la clave, volviendo a eBooking al final, dándola por iniciada sin mirar, o sin su aviso.
+    dict(id="e50-msc-tercer-intento", pruebas=[MSC_DOS, MSC_CLAVE], viejo=INTENTOS, nuevo="MSC_INTENTOS = 3\n"),
     dict(id="e50-msc-sin-segundo-intento", pruebas=[MSC_DOS], viejo=INTENTOS, nuevo="MSC_INTENTOS = 1\n"),
-    dict(id="e50-msc-reintenta-tras-cualquier-error", pruebas=[MSC_OTROS],
-         viejo="        while desenlace == MSC_ERROR_TRAS_LA_CLAVE and intento < MSC_INTENTOS:\n",
-         nuevo='        while desenlace != "sesión" and intento < MSC_INTENTOS:\n'),
+    dict(id="e50-msc-reintenta-tras-cualquier-error", pruebas=[MSC_OTROS, MSC_CLAVE],
+         viejo="        while desenlaces[-1] in MSC_ERRORES and intento < MSC_INTENTOS:\n",
+         nuevo='        while desenlaces[-1] != "sesión" and intento < MSC_INTENTOS:\n'),
     dict(id="e50-msc-error-tras-la-clave-como-cualquiera", pruebas=[MSC_DOS], viejo=CLAVE_FIN,
          nuevo=CLAVE_FIN.replace("return MSC_ERROR_TRAS_LA_CLAVE", 'return "error"')),
     dict(id="e50-msc-vuelve-a-ebooking", pruebas=[MSC_DOS, MSC_OTROS], viejo=FINAL,
-         nuevo=('    if desenlace != "sesión":\n        page.goto(MSC_EBOOKING, wait_until="domcontentloaded")\n'
+         nuevo=('    if desenlaces[-1] != "sesión":\n        page.goto(MSC_EBOOKING, wait_until="domcontentloaded")\n'
                 + FINAL)),
     dict(id="e50-msc-sin-mirar-la-sesion", pruebas=[MSC_DOS],
-         viejo='    if desenlace == "sesión":\n        reg.paso("Sesión iniciada.")\n',
+         viejo='    if desenlaces[-1] == "sesión":\n        reg.paso("Sesión iniciada.")\n',
          nuevo='    if True:\n        reg.paso("Sesión iniciada.")\n'),
     dict(id="e50-msc-segundo-sin-aviso", pruebas=[MSC_DOS],
-         viejo='            reg.paso("⚠ El usuario y la clave pasaron, y MSC dio el error al volver a myMSC.',
-         nuevo='            reg.info("⚠ El usuario y la clave pasaron, y MSC dio el error al volver a myMSC.'),
-    # Cómo termina: sin el motivo del segundo intento, con el motivo de un login anterior, sin decir que el segundo
-    # falló, o sin decir que el error fue antes de la clave.
+         viejo='            reg.paso(f"⚠ MSC dio un error {desenlaces[-1]}. Hago un solo intento más',
+         nuevo='            reg.info(f"⚠ MSC dio un error {desenlaces[-1]}. Hago un solo intento más'),
+    # Cómo termina: sin el motivo del segundo intento, con el motivo de un login anterior, o sin decir que el segundo
+    # falló (el aviso del error antes de la clave, sin reintento, salió en el encargo 51).
     dict(id="e50-msc-segundo-sin-el-motivo", pruebas=[MSC_DOS],
-         viejo='        reg.sin_sesion["msc"] = MSC_SIN_SESION_TRAS_DOS\n', nuevo="        pass\n"),
+         viejo='        reg.sin_sesion["msc"] = _msc_motivo_tras_dos(*desenlaces[:2])\n', nuevo="        pass\n"),
     dict(id="e50-msc-motivo-viejo-queda", pruebas=[MSC_DOS],
          viejo='    vars(reg).setdefault("sin_sesion", {}).pop("msc", None)\n',
          nuevo='    vars(reg).setdefault("sin_sesion", {})\n'),
     dict(id="e50-msc-segundo-fallido-sin-aviso", pruebas=[MSC_DOS],
          viejo='        reg.paso("⚠ El segundo intento de inicio de sesión de MSC tampoco dejó la sesión;',
          nuevo='        reg.info("⚠ El segundo intento de inicio de sesión de MSC tampoco dejó la sesión;'),
-    dict(id="e50-msc-antes-de-la-clave-sin-aviso", pruebas=[MSC_OTROS],
-         viejo='        reg.paso("⚠ MSC mostró una página de error antes de la clave;',
-         nuevo='        reg.info("⚠ MSC mostró una página de error antes de la clave;'),
     # Las capturas del segundo intento con los nombres del primero, que las pisan.
     dict(id="e50-msc-sufijo-igual", pruebas=[MSC_DOS],
          viejo='    return "" if intento == 1 else f"_{intento}"\n', nuevo='    return ""\n'),
@@ -6132,7 +6138,7 @@ MUTACIONES += [
     dict(id="e50-msc-evidencia-sin-respuesta", pruebas=[MSC_EVID],
          viejo="    reg.info(_msc_respuesta_del_error(escucha))\n", nuevo=""),
     dict(id="e50-msc-evidencia-sin-url", pruebas=[MSC_EVID],
-         viejo="    reg.info(_msc_respuesta_del_error(escucha))\n    _msc_url(page, reg)\n",
+         viejo="    reg.info(_msc_respuesta_del_error(escucha))\n    reg.url(page)\n",
          nuevo="    reg.info(_msc_respuesta_del_error(escucha))\n"),
     dict(id="e50-msc-evidencia-sin-captura", pruebas=[MSC_EVID],
          viejo="    png = reg.captura(page, nombre)\n", nuevo="    png = False\n"),
@@ -6180,11 +6186,11 @@ MUTACIONES += [
          nuevo=CON_VALOR.replace('("server",', '("x-request-id", "server",')),
     # Las direcciones: enteras, con el usuario y la clave de la dirección, o sin decir que se quitó la consulta.
     dict(id="e50-msc-sin-consulta-entera", pruebas=[MSC_RESP, MSC_EVID], viejo=SIN_CONSULTA,
-         nuevo="        return str(url)\n"),
-    dict(id="e50-msc-sin-consulta-con-usuario", pruebas=[MSC_RESP], viejo=SIN_CONSULTA,
-         nuevo='        return f"{s.scheme}://{s.netloc}{s.path}"\n'),
-    dict(id="e50-msc-url-sin-decirlo", pruebas=[MSC_RESP], viejo=URL_LINEA,
-         nuevo='    reg.info(f"URL: {_msc_sin_consulta(u)}")\n'),
+         nuevo="        limpia = str(url)\n"),
+    dict(id="e50-msc-sin-consulta-con-usuario", pruebas=[MSC_RESP, URL_REG], viejo=SIN_CONSULTA,
+         nuevo=('        limpia = (f"{s.scheme}://{s.netloc}{s.path}" if s.netloc\n'
+                '                  else f"{s.scheme}:{s.path}" if s.scheme else s.path)\n')),
+    dict(id="e50-msc-url-sin-decirlo", pruebas=[MSC_RESP, URL_REG], viejo=URL_LINEA, nuevo="    return limpia\n"),
     # El HTML sin el usuario ni la clave: sin la guarda, distinguiendo mayúsculas, sin avisarlo; y los textos de la
     # cuenta sin su forma codificada, con los cortos, o sin la clave.
     dict(id="e50-html-sin-guarda", pruebas=[MSC_HTML, MSC_EVID], viejo=GUARDA_HTML, nuevo="            if False:\n"),
@@ -6234,4 +6240,159 @@ MUTACIONES += [
                 '@_con_el_puerto_de_cosco\n')),
     dict(id="e50-cosco-sin-decorador", pruebas=[COSCO_TRAD, DECORADO], viejo=DECORADORES,
          nuevo='@_con_la_nave_de_la_fila\n@_con_la_ruta_de_la_fila\n@_sin_clic_a_ciegas("cosco")\n'),
+]
+
+# --- Encargo 51: cada corrida dice al empezar con qué candado corre y por cuál llave, y es_modo_emision sale de esas
+# mismas llaves; un lanzador nunca se conecta a un panel abierto en otro modo: avisa y no corre; el login de MSC hace
+# un solo intento más ante cualquier error que no se resuelva; y la línea «URL:» va sin su consulta en las seis
+# navieras (decisiones de Marcelo, CICLO-modo-y-lanzadores.md) ---
+MODO = "test_modo.TestModoDeCadaCorrida."
+MODO_SALE = MODO + "test_el_candado_sale_de_las_llaves"
+MODO_LLAVES = MODO + "test_cada_llave_dicha_y_el_mismo_candado"
+MODO_PRIMERA = MODO + "test_sin_todas_se_detiene_en_la_primera"
+MODO_LINEA = MODO + "test_la_linea_de_cada_modo"
+WEB_CANDADO = "test_web.TestPanelCorridas.test_dice_su_candado_al_empezar"
+CO_CANDADO = "test_consola.TestEjecutarReservas.test_dice_su_candado_al_empezar"
+LO_CANDADO = "test_consola.TestEjecutarLogin.test_dice_su_candado_al_empezar"
+ARR = "test_web.TestArranqueDelPanel."
+OTRO_MODO = ARR + "test_panel_en_otro_modo_avisa_y_no_corre"
+SIN_MODO = ARR + "test_panel_que_no_dice_su_modo_avisa_y_no_corre"
+MISMO_MODO = ARR + "test_mismo_modo_de_emision_cede_como_antes"
+VENTANA = ARR + "test_el_aviso_va_a_una_ventana"
+PREVIAS = [ARR + "test_instancia_previa_ociosa_se_apaga", ARR + "test_instancia_previa_ocupada_no_se_toca"]
+URL_TODAS = "test_consola.TestUtilitarios.test_toda_linea_url_va_sin_consulta"
+SALE = "    return bool(_llaves_abiertas())\n"
+CON_TODAS = "    llaves = _llaves_abiertas(todas=True)\n"
+OTRO = "        if modo is not propio:\n"
+AVISA = "            _avisar_al_lanzar(_otro_modo(puerto, estado, modo, propio))\n"
+TRAS_NEXT = '        return MSC_ERROR_TRAS_EL_NEXT if tras_el_error and paso != "sesión" else paso\n'
+ERRORES = "MSC_ERRORES = (MSC_ERROR_EN_LA_PORTADA, MSC_ERROR_TRAS_EL_NEXT, MSC_ERROR_TRAS_LA_CLAVE)\n"
+SEGUNDO = ('        segundo=f"otro error {segundo}" if segundo in MSC_ERRORES else "no llegó ni la sesión ni otro '
+           'error")\n')
+MOTIVO_DOS = '        reg.sin_sesion["msc"] = _msc_motivo_tras_dos(*desenlaces[:2])\n'
+QUITADO = '    quitado = [que for que, hay in (("su consulta", s.query), ("su fragmento", s.fragment)) if hay]\n'
+
+MUTACIONES += [
+    # El candado sale de las llaves: mirándolas todas (avisaría de config.json con otra llave abierta), o con una
+    # llave por su cuenta, fuera de _llaves_abiertas.
+    dict(id="e51-candado-con-todas", pruebas=[MODO_SALE, MODO_PRIMERA], viejo=SALE,
+         nuevo="    return bool(_llaves_abiertas(todas=True))\n"),
+    dict(id="e51-candado-con-otra-llave", pruebas=[MODO_SALE], viejo=SALE,
+         nuevo='    return bool(_llaves_abiertas()) or os.environ.get("AQUASHIELD_PRODUCCION") == "1"\n'),
+    # Las llaves con todas: deteniéndose en la primera; cada una dicha de otro modo.
+    dict(id="e51-llaves-entorno-se-detiene", pruebas=[MODO_LLAVES],
+         viejo='AQUASHIELD_EMISION.py)")\n        if not todas:\n',
+         nuevo='AQUASHIELD_EMISION.py)")\n        if True:\n'),
+    dict(id="e51-llaves-argumento-se-detiene", pruebas=[MODO_LLAVES],
+         viejo='del programa")\n        if not todas:\n', nuevo='del programa")\n        if True:\n'),
+    dict(id="e51-llave-entorno-sin-valor", pruebas=[MODO_LLAVES, MODO_PRIMERA],
+         viejo='f"la variable AQUASHIELD_EMITIR={entorno.strip()} (la que pone',
+         nuevo='f"la variable AQUASHIELD_EMITIR (la que pone'),
+    dict(id="e51-llave-argumento-el-ultimo", pruebas=[MODO_LLAVES], viejo="«{argumentos[0]}»",
+         nuevo="«{argumentos[-1]}»"),
+    dict(id="e51-llave-config-sin-decir-cual", pruebas=[MODO_LLAVES],
+         viejo='abiertas.append("config.json → opciones → emitir_reservas: true")',
+         nuevo='abiertas.append("config.json")'),
+    # La línea de cada corrida: sin mirar todas las llaves, siempre en prueba, con las llaves de otro modo, con otro
+    # texto, o sin ella en la web, en la consola o en el login.
+    dict(id="e51-anotar-sin-todas", pruebas=[MODO_LINEA, WEB_CANDADO, CO_CANDADO], viejo=CON_TODAS,
+         nuevo="    llaves = _llaves_abiertas()\n"),
+    dict(id="e51-anotar-siempre-prueba", pruebas=[MODO_LINEA, WEB_CANDADO, CO_CANDADO],
+         viejo='    if llaves:\n        reg.paso(f"🔴 Candado', nuevo='    if False:\n        reg.paso(f"🔴 Candado'),
+    dict(id="e51-anotar-llaves-con-coma", pruebas=[MODO_LINEA, WEB_CANDADO],
+         viejo="por {' y '.join(llaves)}.", nuevo="por {', '.join(llaves)}."),
+    dict(id="e51-anotar-prueba-otro-texto", pruebas=[MODO_LINEA, WEB_CANDADO, CO_CANDADO, LO_CANDADO],
+         viejo='"🛡️ Candado de emisión cerrado: modo prueba, sin ninguna',
+         nuevo='"🛡️ Candado de emisión cerrado: sin ninguna'),
+    dict(id="e51-anotar-no-en-la-web", pruebas=[WEB_CANDADO],
+         viejo='reserva(s)")\n        _anotar_candado(reg)\n', nuevo='reserva(s)")\n'),
+    dict(id="e51-anotar-no-en-la-consola", pruebas=[CO_CANDADO],
+         viejo='usuario={usuario}")\n    _anotar_candado(reg)\n', nuevo='usuario={usuario}")\n'),
+    dict(id="e51-anotar-no-en-el-login", pruebas=[LO_CANDADO],
+         viejo="navieras={','.join(navieras)}\")\n    _anotar_candado(reg)\n",
+         nuevo="navieras={','.join(navieras)}\")\n"),
+    # El lanzador: sin mirar el modo, siguiendo sin saberlo, con su modo fijo, rechazando el mismo modo de emisión,
+    # avisando y siguiendo, o sin avisar.
+    dict(id="e51-lanzador-no-mira-el-modo", pruebas=[OTRO_MODO, SIN_MODO], viejo=OTRO, nuevo="        if False:\n"),
+    dict(id="e51-lanzador-sigue-sin-saber-el-modo", pruebas=[SIN_MODO], viejo=OTRO,
+         nuevo="        if modo is not None and modo is not propio:\n"),
+    dict(id="e51-lanzador-rechaza-el-mismo-de-emision", pruebas=[MISMO_MODO], viejo=OTRO,
+         nuevo="        if modo or modo is not propio:\n"),
+    dict(id="e51-lanzador-siempre-de-prueba", pruebas=[OTRO_MODO, MISMO_MODO],
+         viejo="        propio = es_modo_emision()\n", nuevo="        propio = False\n"),
+    dict(id="e51-lanzador-siempre-de-emision", pruebas=[OTRO_MODO] + PREVIAS,
+         viejo="        propio = es_modo_emision()\n", nuevo="        propio = True\n"),
+    dict(id="e51-lanzador-avisa-y-sigue", pruebas=[OTRO_MODO, SIN_MODO], viejo=AVISA + "            return\n",
+         nuevo=AVISA),
+    dict(id="e51-lanzador-no-avisa", pruebas=[OTRO_MODO, SIN_MODO], viejo=AVISA, nuevo="            pass\n"),
+    # El modo del panel abierto: sin preguntarlo, o aceptando lo que diga aunque no sea true ni false.
+    dict(id="e51-panel-sin-preguntar-el-modo", pruebas=[OTRO_MODO, MISMO_MODO] + PREVIAS,
+         viejo='            modo = _json.loads(resp.read().decode("utf-8")).get("modo_emision")\n',
+         nuevo="            modo = None\n"),
+    dict(id="e51-panel-acepta-cualquier-modo", pruebas=[SIN_MODO],
+         viejo="    return estado, (modo if isinstance(modo, bool) else None)\n", nuevo="    return estado, modo\n"),
+    # El aviso: sin decir que el panel está armando reservas, sin decir en qué modo está, sin la ventana o sin la
+    # consola.
+    dict(id="e51-aviso-sin-esperar-la-corrida", pruebas=[OTRO_MODO],
+         viejo='            if estado.get("corriendo") else f"{cerrar[0].upper()}',
+         nuevo='            if False else f"{cerrar[0].upper()}'),
+    dict(id="e51-aviso-sin-el-modo", pruebas=[OTRO_MODO],
+         viejo='    cual = f"en modo {nombre[modo]}" if modo is not None else "y no pude saber en qué modo está"\n',
+         nuevo='    cual = "y no pude saber en qué modo está"\n'),
+    dict(id="e51-aviso-sin-ventana", pruebas=[VENTANA], viejo='        mb.showwarning("AQUASHIELD", texto)\n',
+         nuevo="        pass\n"),
+    dict(id="e51-aviso-sin-consola", pruebas=[VENTANA],
+         viejo="        print(texto, flush=True)\n    except Exception:\n        pass\n    try:\n"
+               "        import tkinter.messagebox as mb\n",
+         nuevo=("        pass\n    except Exception:\n        pass\n    try:\n"
+                "        import tkinter.messagebox as mb\n")),
+    # MSC, un solo camino: sin el error del «Next» que la recarga no arregla, o dándolo aunque llegue la sesión;
+    # la portada sin reintento; MSC_ERRORES sin uno de los tres; la clave dos veces en un intento.
+    dict(id="e51-msc-next-sin-reintento", pruebas=[MSC_OTROS, MSC_CLAVE, MSC_REC], viejo=TRAS_NEXT,
+         nuevo="        return paso\n"),
+    dict(id="e51-msc-next-aunque-llegue-la-sesion", pruebas=[MSC_REC, MSC_CLAVE], viejo=TRAS_NEXT,
+         nuevo="        return MSC_ERROR_TRAS_EL_NEXT if tras_el_error else paso\n"),
+    dict(id="e51-msc-portada-sin-reintento", pruebas=[MSC_OTROS, MSC_CLAVE],
+         viejo="        return MSC_ERROR_EN_LA_PORTADA\n", nuevo='        return "error"\n'),
+    dict(id="e51-msc-errores-sin-la-clave", pruebas=[MSC_DOS, MSC_CLAVE], viejo=ERRORES,
+         nuevo="MSC_ERRORES = (MSC_ERROR_EN_LA_PORTADA, MSC_ERROR_TRAS_EL_NEXT)\n"),
+    dict(id="e51-msc-errores-sin-el-next", pruebas=[MSC_OTROS, MSC_CLAVE, MSC_REC], viejo=ERRORES,
+         nuevo="MSC_ERRORES = (MSC_ERROR_EN_LA_PORTADA, MSC_ERROR_TRAS_LA_CLAVE)\n"),
+    dict(id="e51-msc-errores-sin-la-portada", pruebas=[MSC_OTROS, MSC_CLAVE], viejo=ERRORES,
+         nuevo="MSC_ERRORES = (MSC_ERROR_TRAS_EL_NEXT, MSC_ERROR_TRAS_LA_CLAVE)\n"),
+    dict(id="e51-msc-clave-dos-veces-en-un-intento", pruebas=[MSC_CLAVE],
+         viejo='    rellenar(page, "input[type=password]", creds["clave"], 12000, reg)\n',
+         nuevo=('    rellenar(page, "input[type=password]", creds["clave"], 12000, reg)\n'
+                '    rellenar(page, "input[type=password]", creds["clave"], 12000, reg)\n')),
+    # El aviso y el motivo: sin decir el error, con el segundo siempre sin error, con el primero fijo, al revés, o con
+    # otro texto.
+    dict(id="e51-msc-aviso-sin-el-error", pruebas=[MSC_DOS, MSC_OTROS],
+         viejo='reg.paso(f"⚠ MSC dio un error {desenlaces[-1]}. Hago', nuevo='reg.paso(f"⚠ MSC dio un error. Hago'),
+    dict(id="e51-msc-motivo-segundo-sin-error", pruebas=[MSC_DOS, MSC_OTROS, MSC_CLAVE], viejo=SEGUNDO,
+         nuevo='        segundo="no llegó ni la sesión ni otro error")\n'),
+    dict(id="e51-msc-motivo-primero-fijo", pruebas=[MSC_OTROS, MSC_CLAVE], viejo="        primero=primero,\n",
+         nuevo="        primero=MSC_ERROR_TRAS_LA_CLAVE,\n"),
+    dict(id="e51-msc-motivo-al-reves", pruebas=[MSC_DOS, MSC_CLAVE], viejo=MOTIVO_DOS,
+         nuevo='        reg.sin_sesion["msc"] = _msc_motivo_tras_dos(*desenlaces[1::-1])\n'),
+    dict(id="e51-msc-motivo-otro-texto", pruebas=[MSC_DOS, MSC_OTROS],
+         viejo='"no quedó iniciada la sesión de MSC: el portal dio un error {primero}, y el único intento "',
+         nuevo='"no quedó iniciada la sesión de MSC: el portal dio un error ({primero}), y el único intento "'),
+    # La dirección: entera en Registro.url o en el avance de MAERSK; con el fragmento, con «//» sin servidor, sin
+    # decir que quitó el fragmento, o entera si no la puede leer.
+    dict(id="e51-url-registro-entera", pruebas=[URL_REG, URL_TODAS, MSC_RESP],
+         viejo='        try: self._emit("    URL: " + _sin_consulta(page.url, decirlo=True))\n',
+         nuevo='        try: self._emit("    URL: " + page.url)\n'),
+    dict(id="e51-url-maersk-entera", pruebas=[URL_TODAS],
+         viejo='reg.info(f"avance detectado por URL: {_sin_consulta(u, decirlo=True)} (',
+         nuevo='reg.info(f"avance detectado por URL: {u} ('),
+    dict(id="e51-sin-consulta-con-fragmento", pruebas=[URL_REG], viejo=URL_LINEA,
+         nuevo=('    return limpia + (f"#{s.fragment}" if s.fragment else "") + (f" (sin {\' ni \'.join(quitado)})" '
+                'if decirlo and quitado else "")\n')),
+    dict(id="e51-sin-consulta-barras-sin-servidor", pruebas=[URL_REG],
+         viejo='                  else f"{s.scheme}:{s.path}" if s.scheme else s.path)\n',
+         nuevo='                  else f"{s.scheme}://{s.path}" if s.scheme else s.path)\n'),
+    dict(id="e51-sin-consulta-no-dice-el-fragmento", pruebas=[URL_REG, MSC_RESP], viejo=QUITADO,
+         nuevo='    quitado = [que for que, hay in (("su consulta", s.query),) if hay]\n'),
+    dict(id="e51-sin-consulta-entera-si-no-la-lee", pruebas=[URL_REG],
+         viejo='        return "(no pude leer la dirección)"\n', nuevo="        return str(url)\n"),
 ]

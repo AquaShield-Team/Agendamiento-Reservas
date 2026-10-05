@@ -8,6 +8,9 @@ corridas por hoja y por consolidado, pausa, detener, modo login, y el arranque
 (cierre a la fuerza del que ocupe el puerto; relevo de una instancia previa).
 """
 import ast
+import contextlib
+import http.server
+import io
 import json
 import re
 import socket
@@ -397,6 +400,23 @@ class TestPanelCorridas(PanelBase):
         self.assertNotIn(carpeta.name, antes)
         self.assertTrue((carpeta / "log.txt").exists())
 
+    def test_dice_su_candado_al_empezar(self):
+        # Cada corrida del panel dice al empezar, en su registro y en log.txt, con qué candado corre y por cuál llave
+        # (_anotar_candado; decisión de Marcelo, encargo 51). Con las tres apagadas, modo prueba; con llaves, cuáles
+        # (aquí, dichas por _llaves_abiertas solo para la línea: el candado de la guarda sigue cerrado).
+        with Navieras(self.mod):
+            e = self.correr("ONE", [5])
+        self.assertIn("· INICIO · ONE · operador op_prueba · 1 reserva(s)", e["lineas"][0])
+        self.assertIn("· 🛡️ Candado de emisión cerrado: modo prueba, sin ninguna de sus tres llaves abierta",
+                      e["lineas"][1])
+        log = (Path(self.mod._WEB["carpeta"]) / "log.txt").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(log[:2], e["lineas"][:2])
+        llaves = (lambda todas=False: ["la primera", "la segunda"] if todas else [])
+        with Navieras(self.mod), mock.patch.object(self.mod, "_llaves_abiertas", llaves):
+            e = self.correr("ONE", [5])
+        self.assertIn("· 🔴 Candado de emisión abierto: modo EMISIÓN, por la primera y la segunda. Cada reserva que "
+                      "llegue al botón final se envía a la naviera.", e["lineas"][1])
+
     def test_dos_corridas_en_el_mismo_segundo(self):
         # Con el reloj detenido, dos corridas seguidas caen en el mismo segundo: cada una con su carpeta
         # y su log (CICLO-carpetas-unicas.md).
@@ -779,10 +799,13 @@ class TestArranqueDelPanel(unittest.TestCase):
             srv.apagar()
             ocupante.close()
 
-    def _hijo_servidor(self, puerto, corriendo=False):
+    def _hijo_servidor(self, puerto, corriendo=False, emision=False):
+        # Con 'emision', el panel previo está en modo emisión sin abrir ninguna llave: su es_modo_emision dice True
+        # (encargo 51).
         sb = soporte.nueva_sandbox()
         codigo = (f"import sys; sys.path.insert(0, {str(TESTS)!r}); import soporte; "
                   f"mod, sb = soporte.cargar(); mod._WEB['corriendo'] = {corriendo}; "
+                  f"mod.es_modo_emision = lambda: {emision}; "
                   f"mod.lanzar_web(puerto={puerto}, abrir=False)")
         return soporte._POPEN([sys.executable, "-c", codigo], cwd=str(sb), stdout=subprocess.DEVNULL,
                               stderr=subprocess.DEVNULL, env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8"})
@@ -846,6 +869,132 @@ class TestArranqueDelPanel(unittest.TestCase):
         finally:
             if hijo.poll() is None:
                 hijo.kill()
+
+    MODO = {True: "EMISIÓN (reservas reales)", False: "prueba (sin emitir)"}
+
+    def texto_otro_modo(self, puerto, modo, propio, ocupado):
+        """El aviso del lanzador ante un panel en el otro modo (o que no dice el suyo, con 'modo' None)."""
+        cual = f"en modo {self.MODO[modo]}" if modo is not None else "y no pude saber en qué modo está"
+        cerrar = "con su botón rojo de apagar, arriba a la derecha, o cerrando su pestaña y esperando unos dos minutos"
+        como = (f"Ese panel está armando reservas: espera a que termine, después ciérralo {cerrar}, y vuelve a abrir "
+                f"este lanzador." if ocupado else f"Ciérralo {cerrar}, y vuelve a abrir este lanzador.")
+        return (f"Ya hay un panel de AQUASHIELD abierto {cual}, en http://127.0.0.1:{puerto}/, y este lanzador lo "
+                f"abriría en modo {self.MODO[propio]}. Para no mezclar los modos, no me conecto a ese panel, no lo "
+                f"cierro y no abro otro. {como}")
+
+    def lanzar(self, puerto, propio, abrir=True):
+        """Corre lanzar_web de una copia nueva, en modo 'propio' (su es_modo_emision, sin abrir ninguna llave), con su
+        aviso anotado. Devuelve (si quedó sirviendo, los avisos, la copia)."""
+        mod, _ = soporte.cargar()
+        mod.es_modo_emision = (lambda: propio)
+        avisos = []
+        mod._avisar_al_lanzar = avisos.append
+        hilo = threading.Thread(target=mod.lanzar_web, kwargs={"puerto": puerto, "abrir": abrir}, daemon=True)
+        hilo.start()
+        hilo.join(timeout=10)
+        vivo = hilo.is_alive()
+        if vivo and mod._SRV_ACTUAL:
+            mod._SRV_ACTUAL.shutdown()
+            hilo.join(timeout=6)
+        return vivo, avisos, mod
+
+    def test_panel_en_otro_modo_avisa_y_no_corre(self):
+        # Decisión de Marcelo, encargo 51 (CICLO-modo-y-lanzadores.md): un lanzador nunca se conecta a un panel abierto
+        # en otro modo; avisa y no corre. Medido antes del cambio, en estos mismos cuatro casos: con el panel ocupado,
+        # el lanzador lo abría en el navegador en el modo que tuviera (también el de prueba a uno de emisión); con el
+        # panel ocioso, le pedía que se apagara y tomaba su puerto, y una pestaña suya que quedara abierta hablaba con
+        # el panel nuevo, del otro modo. Ahora: un solo aviso; sin abrir el navegador (abrir=True: la trampa lo
+        # anotaría), sin apagar ni tocar ese panel, sin netstat ni taskkill, y sin levantar otro.
+        self._falsos("")
+        for emision in (False, True):
+            for ocupado in (False, True):
+                with self.subTest(panel="emisión" if emision else "prueba", ocupado=ocupado):
+                    p = soporte.puerto_libre()
+                    hijo = self._hijo_servidor(p, corriendo=ocupado, emision=emision)
+                    try:
+                        previa = soporte.Servidor(None, p)
+                        self._esperar(previa)
+                        vivo, avisos, mod = self.lanzar(p, not emision)
+                        self.assertFalse(vivo, "el lanzador levantó un servidor")
+                        self.assertIsNone(mod._SRV_ACTUAL)
+                        self.assertEqual(avisos, [self.texto_otro_modo(p, emision, not emision, ocupado)])
+                        self.assertIsNone(hijo.poll())
+                        self.assertEqual((previa.json("/api/estado")[1]["corriendo"],
+                                          previa.json("/api/config")[1]["modo_emision"]), (ocupado, emision))
+                        self.assertEqual(self.llamadas, [])
+                    finally:
+                        if hijo.poll() is None:
+                            hijo.kill()
+
+    def test_panel_que_no_dice_su_modo_avisa_y_no_corre(self):
+        # Si el panel abierto responde como AQUASHIELD pero no dice su modo (su /api/config falla, o no trae
+        # «modo_emision» como true o false), el lanzador tampoco se conecta: avisa que no supo en qué modo está, y no
+        # le pide que se apague.
+        self._falsos("")
+        for config in (None, {"version": "otra"}, {"modo_emision": "false"}):
+            with self.subTest(config=config):
+                pedidos = []
+
+                class Falso(http.server.BaseHTTPRequestHandler):
+                    def log_message(self, *a):
+                        pass
+
+                    def responder(self, codigo, cuerpo):
+                        self.send_response(codigo)
+                        self.send_header("Content-Length", str(len(cuerpo)))
+                        self.end_headers()
+                        self.wfile.write(cuerpo)
+
+                    def do_GET(self, cfg=config):
+                        pedidos.append(("GET", self.path))
+                        if self.path.startswith("/api/estado"):
+                            return self.responder(200, json.dumps({"corriendo": False}).encode())
+                        if self.path == "/api/config" and cfg is not None:
+                            return self.responder(200, json.dumps(cfg).encode())
+                        self.responder(500, b"falla de prueba")
+
+                    def do_POST(self):
+                        pedidos.append(("POST", self.path))
+                        self.responder(200, b"{}")
+                srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Falso)
+                hilo = threading.Thread(target=srv.serve_forever, daemon=True)
+                hilo.start()
+                try:
+                    p = srv.server_address[1]
+                    vivo, avisos, mod = self.lanzar(p, False)
+                    self.assertEqual((vivo, mod._SRV_ACTUAL), (False, None))
+                    self.assertEqual(avisos, [self.texto_otro_modo(p, None, False, False)])
+                    self.assertEqual([m for m, _ in pedidos], ["GET", "GET"])
+                    self.assertEqual(self.llamadas, [])
+                finally:
+                    srv.shutdown()
+                    srv.server_close()
+
+    def test_mismo_modo_de_emision_cede_como_antes(self):
+        # En el mismo modo, como antes: al panel de emisión ocupado, el lanzador de emisión lo deja como está y no
+        # levanta otro, sin aviso (aquí no abre el navegador: abrir=False).
+        self._falsos("")
+        p = soporte.puerto_libre()
+        hijo = self._hijo_servidor(p, corriendo=True, emision=True)
+        try:
+            self._esperar(soporte.Servidor(None, p))
+            vivo, avisos, mod = self.lanzar(p, True, abrir=False)
+            self.assertEqual((vivo, avisos, mod._SRV_ACTUAL, hijo.poll(), self.llamadas), (False, [], None, None, []))
+        finally:
+            if hijo.poll() is None:
+                hijo.kill()
+
+    def test_el_aviso_va_a_una_ventana(self):
+        # Los .bat lanzan con pythonw, sin consola: el aviso del lanzador va por la consola y a una ventana, como el de
+        # main() cuando el panel web no abre (encargo 51). Aquí la ventana es una trampa del arnés, que la anota.
+        mod, _ = soporte.cargar()
+        salida = io.StringIO()
+        with contextlib.redirect_stdout(salida):
+            mod._avisar_al_lanzar("aviso de prueba")
+        disparos = list(soporte.DISPAROS)
+        soporte.DISPAROS.clear()
+        self.assertEqual(salida.getvalue(), "aviso de prueba\n")
+        self.assertEqual(disparos, [("tkinter.messagebox.showwarning", repr(("AQUASHIELD", "aviso de prueba")))])
 
 
 if __name__ == "__main__":
