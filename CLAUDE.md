@@ -10,6 +10,11 @@ HYUNDAI/HMM y MAERSK), arma cada booking y devuelve la planilla con el estado y 
 Todo el programa vive en **un solo archivo, `AQUASHIELD.py` (~12 900 líneas)**. No hay
 `requirements.txt` ni linter; hay una red de verificación offline en `tests/` (ver su sección).
 
+**Qué asegura una reserva** (decisión de Marcelo, encargo 50, `CICLO-msc-segundo-intento.md`): solo el espacio de los
+contenedores en la nave. Después, la agencia de aduana pone en ella el cliente, el peso y el producto correctos. Por eso
+la descripción de la carga, el HS 030313 y el peso de 22.500 kg son los mismos en todas las reservas, y está bien que
+ONE declare otra descripción de salmón que las demás navieras.
+
 ## Git y GitHub
 
 Repo git desde el 2026-09-23. **Se publica en GitHub como repo público,** `AquaShield-Team/Agendamiento-Reservas`, **sin
@@ -64,6 +69,12 @@ del botón final (Submit / *Enviar el booking*), devolviendo `("OK-EJEMPLO", ...
   2026-09-23): cualquier otro valor (texto, número, `"true"` entre comillas, `null`) deja el candado
   cerrado y avisa con `_avisar_llave_config`, por el `Registro` de la corrida en curso o, sin corrida,
   por la consola y el registro del panel web.
+
+**La primera emisión real de CMA-CGM no ocurrió** (encargo 50, `CICLO-msc-segundo-intento.md`): la corrida del
+2026-10-02 a las 18:52, solo con la fila de CMA-CGM, se detuvo en la guarda, «SIN emitir» (OK-EJEMPLO), igual que la de
+las 16:50: el proceso que la corrió no tenía ninguna de las tres llaves, y el navegador se cerró al terminar. log.txt no
+dice con qué candado corre una corrida, y el panel lo muestra solo al cargar la página (`/api/config`). Aun emitiendo,
+CMA-CGM no llega a EMITIDA: no tiene forma medida (`FORMA_BOOKING`).
 
 Al probar, nunca uses el lanzador de emisión ni ninguna de esas tres vías sin que Marcelo lo pida
 explícitamente. Cualquier cambio en un `reservar_*` tiene que conservar la rama
@@ -366,7 +377,12 @@ cerrado:
   City». Si COSCO no la sugiere, o si la celda viene vacía o solo con el país, corta como objetivo no encontrado (NO
   ENVIADA, `cosco_f<fila>_sin_objetivo`). Hasta `f68ce6c` caía al puerto fijo «Lirquen»; hasta `c4df3ab`, «CORONEL,
   CHILE» o «Lirquén» no se traducían; hasta el encargo 46, «CORONEL CL» se buscaba tal cual (decisión de Marcelo,
-  `CICLO-maersk-pulsa-el-book.md`).
+  `CICLO-maersk-pulsa-el-book.md`). **Cuando el mapa cambia el puerto de la fila por otro** (`_cosco_traduccion`:
+  «CORONEL», «PUERTO CORONEL» o «CONCEPCION» a «Lirquen»; no cuando solo cambia cómo se escribe, como «PUERTO LIRQUEN»
+  o «San Antonio»), con la sugerencia ya elegida lo dice en pantalla y en log.txt, y el motivo de la reserva termina
+  diciendo desde qué puerto la arma COSCO y qué dice la fila (`_con_el_puerto_de_cosco`, por fuera de todos los
+  decoradores de `reservar_cosco`; decisión de Marcelo, encargo 50, `CICLO-msc-segundo-intento.md`: el mapa se
+  mantiene). Hasta ahí, solo lo decía el campo «Origin City» del formulario.
 - **MAERSK elige la fecha de retiro con la regla de Marcelo** (`CICLO-maersk-retiro-y-terminos.md`): el primer día hábil
   después del día en que se corre el programa (`_mk_dia_de_retiro`, `_mk_dia_habil`: de lunes a viernes y sin los
   feriados de Chile) y, si no está habilitado en el calendario, el siguiente día hábil habilitado
@@ -507,7 +523,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 573 pruebas al 2026-10-02 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 580 pruebas al 2026-10-05 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -608,10 +624,30 @@ línea cambian). De arriba hacia abajo:
        sin la sesión. El usuario no se espera con el mismo selector: `.first` miraría solo el primer campo de la página.
        La página falsa del login anota cada recarga, también la que no se espera, porque `_msc_recargar` atrapa su
        falla.
-     - Ante el error (el que sigue tras la recarga, o el del botón de entrar) va una sola vez a eBooking
-       (`MSC_EBOOKING`) y comprueba la sesión (`_msc_tras_el_error`); no vuelve a iniciar sesión, porque el portal
-       podría bloquear la cuenta. Sin la sesión, cada fila de MSC queda NO ENVIADA con `MSC_SIN_SESION`, en el panel y
-       en la consola (`SIN_SESION`; con las otras navieras, sigue sin estado).
+     - **El error después de la clave** (el 502 de la vuelta a myMSC, con el usuario y la clave ya aceptados por
+       b2clogin e identityserver): un solo intento más de inicio de sesión, completo y desde el principio
+       (`_msc_intento`), y nunca un tercero (`MSC_INTENTOS`, 2): la clave se escribe a lo más dos veces, una por
+       intento (decisión de Marcelo, encargo 50, `CICLO-msc-segundo-intento.md`). Si también falla, cada fila de MSC
+       queda NO ENVIADA con `MSC_SIN_SESION_TRAS_DOS`, que el login deja en el Registro (`reg.sin_sesion`) y el panel y
+       la consola toman con `_motivo_sin_sesion`. Las capturas y el HTML del segundo intento llevan «_2»
+       (`_msc_sufijo`).
+     - Con cualquier otro error (en la portada, o el del «Next» que sigue tras la recarga) no reintenta, porque el
+       portal podría bloquear la cuenta, y las filas quedan NO ENVIADA con `MSC_SIN_SESION` (`SIN_SESION`; con las
+       otras navieras, la fila sigue sin estado). Hasta el encargo 50, ante cualquier error iba una sola vez a eBooking
+       (`MSC_EBOOKING`, desde `_msc_tras_el_error`, que salió): no dejó la sesión en ninguno de los 4 casos medidos.
+     - **La evidencia del error** (decisión de Marcelo, encargo 50): `login_msc` escucha, sin tocar la página, las
+       respuestas y las fallas de red de los documentos de su marco principal (`_msc_escuchar`), y cada error deja en
+       log.txt la respuesta que trajo la página de error (`_msc_respuesta_del_error`): el método, la dirección sin
+       consulta (`_msc_sin_consulta`), el código HTTP, la falla de red si la hubo, el nombre de todas sus cabeceras y
+       el valor solo de las que nombran al servidor o a una protección contra robots (`MSC_CABECERAS_CON_VALOR`); nunca
+       cookies, tokens ni valores de sesión. Deja también la captura de la ventana y el HTML
+       (`_msc_evidencia_del_error`: `msc_error_portada`, `msc_error_next`, `msc_error_recarga` y `msc_error_clave`),
+       salvo el HTML que traiga el usuario o la clave (`_guardar_html_completo` con `sin`, `_textos_de_la_cuenta`).
+       Medido sin red, en Chrome y con datos inventados: un 502 sin cuerpo trae la respuesta y después la falla de red
+       `net::ERR_HTTP_RESPONSE_CODE_FAILURE`; la página de error de Chrome tras un GET repite la dirección entera, y
+       TriggerOidcLogin trae el usuario en `usernameLoginHint` (en sus 119 visitas del historial del perfil); la vuelta
+       a myMSC es un POST sin consulta (en sus 107 visitas), y su página de error no trae la dirección. Las direcciones
+       del login van a log.txt sin su consulta (`_msc_url`).
      - Hasta el encargo 45 repetía el login hasta 2 veces tras un 502 (`MSC_REINTENTOS_502`) y recargaba si salía tras
        el «Next»: el 2026-10-01 tardó 214 s y dio por iniciada una sesión que no existía, porque `_msc_logueado`
        aceptaba la página de error de MSC. La recarga y los reintentos dejaron la sesión en 7 de los 10 logins con error
@@ -625,7 +661,10 @@ línea cambian). De arriba hacia abajo:
      - Medido en el historial del perfil: b2clogin acepta la clave e identityserver acepta su vuelta; el error lo da
        www.mymsc.com, en TriggerOidcLogin tras el «Next» o en la vuelta desde identityserver. Antes del 21-09, 35 de 35
        logins llegaron a myMSC en su primera pasada; desde entonces, 10 de 16 hasta el 01-10, y 1 de 5 el 02-10. Si es
-       la protección contra robots, no está medido: falta la respuesta del portal (estado, cabeceras, cuerpo).
+       la protección contra robots, no está medido: falta la respuesta del portal (estado, cabeceras, cuerpo). Desde el
+       encargo 50, log.txt anota su estado y sus cabeceras; el cuerpo, no. En lo guardado de los inicios de sesión de
+       MSC no hay un aviso de cuenta bloqueada ni de intentos fallidos (medido el 2026-10-05: 1.189 líneas de log.txt,
+       30 capturas y 367 títulos del historial).
    - CMA: con el aviso «We are improving the eBusiness area» (mantenimiento), el login entra, pero Click & Book no
      carga. `reservar_cma` lo reconoce apenas abre Click & Book (`_cma_en_mantenimiento`), y la fila queda NO ENVIADA
      con `CMA_MANTENIMIENTO`, «el portal de CMA está en mantenimiento», y la captura `cma_f<fila>_mantenimiento`. Hasta
@@ -926,8 +965,9 @@ Las capturas siguen el patrón `<nav>_f<fila>_<n>_<paso>.png`.
   - Si una de esas llaves falta o no es un número, se usa `PESO_REEFER` o `TEMP_REEFER` y se avisa una vez por
     corrida (`CICLO-cola-nueve-items.md`). No escribas esas cifras en otro lugar.
   - La ventilación la llenan ONE y HYUNDAI con un valor fijo; COSCO no la llena.
-  - De dónde deben salir lo decide Marcelo (`CICLO-cosco-campos-y-reminder.md`). No agregues otro valor por
-    defecto.
+  - De dónde deben salir lo decide Marcelo (`CICLO-cosco-campos-y-reminder.md`). El peso, como la descripción de la
+    carga y el HS, es el mismo en todas las reservas: la agencia de aduana pone después el correcto (decisión de
+    Marcelo, encargo 50; ver «Qué es»). No agregues otro valor por defecto.
 - Camino consola: `escribir_estado` escribe directo sobre `Reservas AQUASHIELD.xlsx` junto al programa,
   en la columna que ubica `_columna_estado` por su encabezado (sin «Estado», crea «Estado (Robot)» tras el
   último encabezado y nunca antes de la M). Antes de la primera escritura de cada corrida deja **una**
@@ -972,7 +1012,10 @@ reconocer la sesión. Es opcional y en la plantilla va vacío: sin él, reconoce
 - `logs/web_<nav>_<usuario>_<fecha>/`: `log.txt` + capturas por corrida y, desde el encargo del estado
   tras el envío, el HTML de cada envío (`<captura>.html` y `<captura>_marco<n>.html`), y desde
   `CICLO-evidencia-en-la-guarda.md` el de la guarda y el de los pasos sin objetivo. Tiene datos reales:
-  nunca lo versiones ni lo copies al repo. Las crea `carpeta_corrida`, que usan el panel web (`web_…`), la
+  nunca lo versiones ni lo copies al repo. **La línea «URL:» de `reg.url` escribe la dirección entera en log.txt:**
+  medido el 2026-10-05 (encargo 50), 40 líneas traen el usuario de COSCO (`login_hint`) y 7, el `code` y el `state`
+  de la vuelta de ONE. Desde el encargo 50, el login de MSC escribe las suyas sin su consulta (`_msc_url`); las demás
+  navieras, todavía no (propuesta, `CICLO-msc-segundo-intento.md`). Las crea `carpeta_corrida`, que usan el panel web (`web_…`), la
   consola (`reservas_<nav>_<usuario>_…`) y el login (`<usuario>_…`). La fecha va al segundo; si ese nombre ya
   existe, agrega `_2`, `_3`…, así cada corrida tiene su carpeta (`CICLO-carpetas-unicas-aplicado.md`). No
   vuelvas a armar el nombre a mano. **Algunas carpetas están referenciadas a mano** por los
