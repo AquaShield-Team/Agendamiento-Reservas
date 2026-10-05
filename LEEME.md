@@ -19,10 +19,12 @@ cada fila y, si se emitió, su N° de reserva.
 **SOLO INICIAR SESIÓN** entra a los portales y los deja abiertos para trabajar a mano. **DETENER** corta la
 corrida en curso.
 
-Si MSC muestra una página de error después de aceptar el usuario y la clave, el programa hace un solo intento más de
-inicio de sesión, desde el principio, y nunca un tercero. Con otro error no vuelve a intentarlo, para no arriesgar la
-cuenta. Si la sesión no queda iniciada, las filas de MSC quedan NO ENVIADA con el motivo: vuelve a armarlas más tarde.
-Cada error deja en la carpeta de la corrida su captura y lo que respondió el portal.
+Si MSC muestra una página de error al iniciar sesión (al abrir su portada, al pulsar «Next» si recargarla no lo
+arregla, o después de aceptar el usuario y la clave), el programa hace un solo intento más de inicio de sesión, desde
+el principio, y nunca un tercero: la clave se escribe a lo más dos veces. Si no llega ni la sesión ni un error (con la
+clave equivocada, por ejemplo), no vuelve a intentarlo, para no arriesgar la cuenta. Si la sesión no queda iniciada,
+las filas de MSC quedan NO ENVIADA con el motivo: vuelve a armarlas más tarde. Cada error deja en la carpeta de la
+corrida su captura y lo que respondió el portal.
 
 ## Modo seguro y emisión
 
@@ -31,6 +33,11 @@ la confirma. La emisión la haces tú, en el portal.
 
 `Iniciar AQUASHIELD_EMISION.bat` abre el mismo panel en **modo emisión**: pulsa el botón final y crea reservas
 reales e irreversibles. Úsalo solo cuando corresponda.
+
+Cada corrida dice al empezar, en el registro del panel y en su `log.txt`, en qué modo corre y por qué. Si ya hay un
+panel abierto en el otro modo, el lanzador avisa y no abre nada: cierra ese panel con su botón rojo de apagar, arriba
+a la derecha, o cerrando su pestaña y esperando unos dos minutos, y vuelve a abrir el lanzador. Si ese panel está
+armando reservas, espera antes a que termine.
 
 ## Credenciales y opciones
 

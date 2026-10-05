@@ -72,9 +72,24 @@ del botón final (Submit / *Enviar el booking*), devolviendo `("OK-EJEMPLO", ...
 
 **La primera emisión real de CMA-CGM no ocurrió** (encargo 50, `CICLO-msc-segundo-intento.md`): la corrida del
 2026-10-02 a las 18:52, solo con la fila de CMA-CGM, se detuvo en la guarda, «SIN emitir» (OK-EJEMPLO), igual que la de
-las 16:50: el proceso que la corrió no tenía ninguna de las tres llaves, y el navegador se cerró al terminar. log.txt no
-dice con qué candado corre una corrida, y el panel lo muestra solo al cargar la página (`/api/config`). Aun emitiendo,
-CMA-CGM no llega a EMITIDA: no tiene forma medida (`FORMA_BOOKING`).
+las 16:50: el proceso que la corrió no tenía ninguna de las tres llaves, y el navegador se cerró al terminar. La que
+Marcelo repitió el 2026-10-05 no está en este equipo (encargo 51, `CICLO-modo-y-lanzadores.md`): desde el 02-10 a las
+18:54, ni una carpeta nueva en logs/, ni una planilla subida al panel, ni un uso del navegador del programa, y es la
+única copia del programa en las carpetas del usuario. Aun emitiendo, CMA-CGM no llega a EMITIDA: no tiene forma medida
+(`FORMA_BOOKING`).
+
+**Cada corrida dice al empezar con qué candado corre** (decisión de Marcelo, encargo 51, `CICLO-modo-y-lanzadores.md`):
+la de reservas, en el panel web o en la consola, y la de solo login anotan en log.txt y en su pantalla, justo después
+de su línea de INICIO, «modo prueba» o «modo EMISIÓN» y por cuál llave (`_anotar_candado`). La regla es una sola:
+`es_modo_emision` es `bool(_llaves_abiertas())`, que mira las tres llaves en el orden de siempre y se detiene en la
+primera abierta, y la línea de la corrida las mira todas (`_llaves_abiertas(todas=True)`). Del valor inválido de
+config.json, la línea avisa solo si ninguna otra llave abrió el candado, como el candado: con otra llave abierta, su
+aviso («no se emite ninguna reserva») quedaba justo encima de «modo EMISIÓN» (revisión del encargo 51).
+- `test_modo.test_el_candado_sale_de_las_llaves` vigila que el candado no mire una llave por su cuenta.
+- `test_candado` no cambió y pasa; sus mutaciones, reescritas sobre el código nuevo, caen con sus mismas pruebas.
+- `test_candado.test_llamadas_al_candado` fija quién llama a `es_modo_emision`: los reservadores y el panel. Por eso la
+  línea de la corrida no lo llama: pregunta a `_llaves_abiertas`.
+- Hasta el encargo 51, log.txt no lo decía, y el panel lo pinta solo al cargar la página (`/api/config`).
 
 Al probar, nunca uses el lanzador de emisión ni ninguna de esas tres vías sin que Marcelo lo pida
 explícitamente. Cualquier cambio en un `reservar_*` tiene que conservar la rama
@@ -508,9 +523,21 @@ python -m playwright show-trace "logs\<carpeta>\traza.zip"
 ```
 
 - Los `.bat` lanzan con `pythonw` (sin consola): los `print` no se ven; todo queda en `logs\`.
-- Al arrancar, `lanzar_web` pide a una instancia previa ociosa que se apague y, si el puerto 8765 sigue
-  ocupado, **mata con `taskkill` el proceso que lo escucha**; después prueba 8766–8768. Tiene un
-  watchdog que apaga el servidor tras 90 s sin sondeos de `/api/estado`.
+- Al arrancar, `lanzar_web` mira si en el puerto 8765 hay un panel de AQUASHIELD (`_panel_en`: su `/api/estado` y el
+  `modo_emision` de su `/api/config`). **Si está en el otro modo, o no dice en cuál, avisa y no corre** (decisión de
+  Marcelo, encargo 51, `CICLO-modo-y-lanzadores.md`): no se conecta a él, no lo cierra y no abre otro. El aviso va a la
+  consola y a una ventana (`_avisar_al_lanzar`, como el de `main()`) y dice cómo cerrar ese panel.
+  - Hasta ahí, medido sin red con el código de `aba1233`: a un panel ocupado lo abría en el navegador en el modo que
+    tuviera (también el lanzador de prueba a uno de emisión). A uno ocioso le pedía que se apagara y tomaba su puerto,
+    así que una pestaña suya que quedara abierta hablaba con un panel del otro modo, con el aviso de modo de antes.
+  - En el mismo modo, como antes: al ocupado lo abre en el navegador; al ocioso le pide que se apague.
+  - Si el puerto sigue ocupado y al arrancar nadie contestó como AQUASHIELD, antes de cerrar a quien lo tiene le
+    vuelve a preguntar, hasta `PANEL_ESPERA_LARGA` s (5; hipótesis): un panel del otro modo que tardó más de 1 s en
+    contestar, con la máquina cargada, no se cierra (`_ceder_al_previo` decide igual en las dos preguntas; revisión
+    del encargo 51). Si tampoco contesta, **mata con `taskkill` el proceso que lo escucha**, sea o no de AQUASHIELD
+    (otro programa, o un panel que no contestó en 5 s); después prueba 8766–8768.
+  - Solo mira el 8765: preguntarle a un puerto donde nadie escucha tarda 1 s en este equipo.
+  - Tiene un watchdog que apaga el servidor tras 90 s sin sondeos de `/api/estado`.
 - Para depurar un portal sin correr toda la planilla: `AQUASHIELD_SOLO_PRIMERA=1` (solo en el modo
   consola `reservas`) y `AQUASHIELD_TRAZA=1`.
 
@@ -523,7 +550,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 580 pruebas al 2026-10-05 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 598 pruebas al 2026-10-05 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -536,8 +563,9 @@ cd tests && python -m unittest test_planilla.TestLectorWeb.test_web_one    # una
 
 - **Nunca importes `AQUASHIELD.py` desde la raíz en una prueba**: usa `soporte.cargar()`, que carga una
   COPIA en una sandbox del temporal. Desde la raíz, `BASE` apunta a la planilla, `config.json` y
-  `perfiles/` reales. El arnés trae trampas (navegador, procesos, red externa y Playwright levantan
-  `EfectoReal`) y exige las tres llaves del candado apagadas antes y después de cada prueba.
+  `perfiles/` reales. El arnés trae trampas (navegador, procesos, red externa, Playwright y, desde el encargo 51, la
+  ventana de aviso de tkinter levantan `EfectoReal`) y exige las tres llaves del candado apagadas antes y después de
+  cada prueba. La de la ventana evita que una prueba, o una mutación, se quede esperando un clic.
 - **Nunca uses el puerto 8765** en una prueba: `lanzar_web` cierra con `taskkill /F` a quien lo ocupe.
 - Una página falsa no avisa de lo inesperado solo levantando una excepción: el programa se la traga en su `try`. Que lo
   anote, y que la prueba exija esa lista vacía (`PaginaRevision` y `PaginaShipper` de `test_clics`, del encargo 38, y
@@ -546,6 +574,9 @@ cd tests && python -m unittest test_planilla.TestLectorWeb.test_web_one    # una
   encargo 42, cada acción de sus localizadores, de la página, del teclado y del mouse, y cada JavaScript, sin un
   `__getattr__` general: lo que no tiene sigue fallando). Y una prueba no depende de lo que la máquina tenga instalado:
   las del retiro usan una librería holidays falsa.
+- La sandbox de una clase es una sola: dos pruebas que nombran igual su carpeta escriben en el mismo log.txt, y un
+  `assertIn` puede encontrar ahí la línea de otra prueba. Hasta el encargo 51, `login_falso` (test_clics) numeraba sus
+  corridas por prueba, y así pasaba; desde entonces, el contador es de la clase.
 - `tests/correr.py` crea al empezar su carpeta de trabajo en `%TEMP%` (`aquashield_mut_*`) y la borra en un `finally`,
   que no corre si el proceso se mata y calla si no puede borrarla (`ignore_errors=True`): una corrida cortada la deja.
   Se borran por su prefijo, sin ninguna corrida viva (encargo 37: 29 carpetas y 2,78 GB de copias de las fuentes del
@@ -620,25 +651,34 @@ línea cambian). De arriba hacia abajo:
      - **El error tras el «Next»** (el 502 de TriggerOidcLogin): espera `MSC_PAUSA_RECARGA` s (20; hipótesis), recarga
        esa página una sola vez y espera solo el campo de la clave, la sesión o el error (`_msc_recargar`; decisión de
        Marcelo, encargo 47, `CICLO-msc-recarga-y-corrida-02-10.md`). No escribe ni pulsa nada: la clave, si aparece su
-       campo, la escribe `_msc_entrar` por primera vez; si vuelve el campo del usuario, no lo escribe, y el login queda
-       sin la sesión. El usuario no se espera con el mismo selector: `.first` miraría solo el primer campo de la página.
+       campo, la escribe `_msc_entrar` por primera vez; si vuelve el campo del usuario, no lo escribe (desde el encargo
+       51, el login hace entonces su único intento más, desde el principio: abajo). El usuario no se espera con el
+       mismo selector: `.first` miraría solo el primer campo de la página.
        La página falsa del login anota cada recarga, también la que no se espera, porque `_msc_recargar` atrapa su
        falla.
-     - **El error después de la clave** (el 502 de la vuelta a myMSC, con el usuario y la clave ya aceptados por
-       b2clogin e identityserver): un solo intento más de inicio de sesión, completo y desde el principio
-       (`_msc_intento`), y nunca un tercero (`MSC_INTENTOS`, 2): la clave se escribe a lo más dos veces, una por
-       intento (decisión de Marcelo, encargo 50, `CICLO-msc-segundo-intento.md`). Si también falla, cada fila de MSC
-       queda NO ENVIADA con `MSC_SIN_SESION_TRAS_DOS`, que el login deja en el Registro (`reg.sin_sesion`) y el panel y
-       la consola toman con `_motivo_sin_sesion`. Las capturas y el HTML del segundo intento llevan «_2»
-       (`_msc_sufijo`).
-     - Con cualquier otro error (en la portada, o el del «Next» que sigue tras la recarga) no reintenta, porque el
-       portal podría bloquear la cuenta, y las filas quedan NO ENVIADA con `MSC_SIN_SESION` (`SIN_SESION`; con las
-       otras navieras, la fila sigue sin estado). Hasta el encargo 50, ante cualquier error iba una sola vez a eBooking
-       (`MSC_EBOOKING`, desde `_msc_tras_el_error`, que salió): no dejó la sesión en ninguno de los 4 casos medidos.
+     - **Un solo camino de rescate** (decisiones de Marcelo, encargo 50, `CICLO-msc-segundo-intento.md`, y encargo 51,
+       `CICLO-modo-y-lanzadores.md`): ante cualquier error del portal que no se resuelva, un solo intento más de inicio
+       de sesión, completo y desde el principio (`_msc_intento`), y nunca un tercero (`MSC_INTENTOS`, 2). Los errores
+       son los de `MSC_ERRORES`: al abrir la portada; tras el «Next», si su recarga no trae el campo de la clave ni la
+       sesión, aunque traiga de vuelta el campo del usuario; o después de la clave (el 502 de la vuelta a myMSC, con el
+       usuario y la clave ya aceptados por b2clogin e identityserver). En el encargo 50, el segundo intento era solo
+       tras el error después de la clave.
+     - La clave se escribe a lo más dos veces, una por intento: `test_la_clave_a_lo_mas_dos_veces` recorre las 85
+       combinaciones de cómo puede terminar cada intento (FRENA SI del encargo 51).
+     - Si también falla, cada fila de MSC queda NO ENVIADA con `MSC_SIN_SESION_TRAS_DOS`, que dice cómo terminó cada
+       intento (`_msc_motivo_tras_dos`). El login lo deja en el Registro (`reg.sin_sesion`), y el panel y la consola
+       lo toman con `_motivo_sin_sesion`. Lo deja ya antes del segundo intento: si se corta (con «Detener», por
+       ejemplo), el motivo dice que se cortó, y no que no se reintentó (revisión del encargo 51). Las capturas y el
+       HTML del segundo intento llevan «_2» (`_msc_sufijo`).
+     - Sin un error del portal (no llega ni la sesión ni el error: con la clave equivocada, por ejemplo) no reintenta,
+       porque el portal podría bloquear la cuenta, y las filas quedan NO ENVIADA con `MSC_SIN_SESION` (`SIN_SESION`;
+       con las otras navieras, la fila sigue sin estado). Hasta el encargo 50, ante cualquier error iba una sola vez a
+       eBooking (`MSC_EBOOKING`, desde `_msc_tras_el_error`, que salió): no dejó la sesión en ninguno de los 4 casos
+       medidos.
      - **La evidencia del error** (decisión de Marcelo, encargo 50): `login_msc` escucha, sin tocar la página, las
        respuestas y las fallas de red de los documentos de su marco principal (`_msc_escuchar`), y cada error deja en
        log.txt la respuesta que trajo la página de error (`_msc_respuesta_del_error`): el método, la dirección sin
-       consulta (`_msc_sin_consulta`), el código HTTP, la falla de red si la hubo, el nombre de todas sus cabeceras y
+       consulta (`_sin_consulta`), el código HTTP, la falla de red si la hubo, el nombre de todas sus cabeceras y
        el valor solo de las que nombran al servidor o a una protección contra robots (`MSC_CABECERAS_CON_VALOR`); nunca
        cookies, tokens ni valores de sesión. Deja también la captura de la ventana y el HTML
        (`_msc_evidencia_del_error`: `msc_error_portada`, `msc_error_next`, `msc_error_recarga` y `msc_error_clave`),
@@ -647,7 +687,7 @@ línea cambian). De arriba hacia abajo:
        `net::ERR_HTTP_RESPONSE_CODE_FAILURE`; la página de error de Chrome tras un GET repite la dirección entera, y
        TriggerOidcLogin trae el usuario en `usernameLoginHint` (en sus 119 visitas del historial del perfil); la vuelta
        a myMSC es un POST sin consulta (en sus 107 visitas), y su página de error no trae la dirección. Las direcciones
-       del login van a log.txt sin su consulta (`_msc_url`).
+       van a log.txt sin su consulta (`Registro.url`; hasta el encargo 51, solo las del login de MSC, con `_msc_url`).
      - Hasta el encargo 45 repetía el login hasta 2 veces tras un 502 (`MSC_REINTENTOS_502`) y recargaba si salía tras
        el «Next»: el 2026-10-01 tardó 214 s y dio por iniciada una sesión que no existía, porque `_msc_logueado`
        aceptaba la página de error de MSC. La recarga y los reintentos dejaron la sesión en 7 de los 10 logins con error
@@ -1012,15 +1052,24 @@ reconocer la sesión. Es opcional y en la plantilla va vacío: sin él, reconoce
 - `logs/web_<nav>_<usuario>_<fecha>/`: `log.txt` + capturas por corrida y, desde el encargo del estado
   tras el envío, el HTML de cada envío (`<captura>.html` y `<captura>_marco<n>.html`), y desde
   `CICLO-evidencia-en-la-guarda.md` el de la guarda y el de los pasos sin objetivo. Tiene datos reales:
-  nunca lo versiones ni lo copies al repo. **La línea «URL:» de `reg.url` escribe la dirección entera en log.txt:**
-  medido el 2026-10-05 (encargo 50), 40 líneas traen el usuario de COSCO (`login_hint`) y 7, el `code` y el `state`
-  de la vuelta de ONE. Desde el encargo 50, el login de MSC escribe las suyas sin su consulta (`_msc_url`); las demás
-  navieras, todavía no (propuesta, `CICLO-msc-segundo-intento.md`). Las crea `carpeta_corrida`, que usan el panel web (`web_…`), la
-  consola (`reservas_<nav>_<usuario>_…`) y el login (`<usuario>_…`). La fecha va al segundo; si ese nombre ya
-  existe, agrega `_2`, `_3`…, así cada corrida tiene su carpeta (`CICLO-carpetas-unicas-aplicado.md`). No
-  vuelvas a armar el nombre a mano. **Algunas carpetas están referenciadas a mano** por los
-  generadores de abajo, con `*` en lugar del operador (`_es_de_referencia` y `_ruta`); no limpies `logs/` sin
-  revisarlos.
+  nunca lo versiones ni lo copies al repo. **La línea «URL:» va sin la consulta ni el fragmento de la dirección,** y
+  dice qué quitó (`Registro.url` con `_sin_consulta`; decisión de Marcelo, encargo 51, en las seis navieras, y el
+  avance de MAERSK igual).
+  - Medido el 2026-10-05 en los 34 log.txt de logs/: de 237 líneas «URL:», 104 traían consulta, y 58, un valor de la
+    cuenta o de la sesión: 40, el usuario de COSCO (`login_hint`), y 18, el estado o el código del inicio de sesión de
+    ONE. El encargo 50 contó solo 7: no vio las 11 de auth.one-line.com.
+  - Los log.txt ya guardados no se tocaron: todavía los traen.
+  - `test_consola.test_toda_linea_url_va_sin_consulta` vigila que ninguna línea con «URL:» escriba una dirección sin
+    pasar por `_sin_consulta`.
+  - ONE escribe de su dirección solo el paso del asistente, o la dirección sin su consulta (`_one_paso_de_la_url`):
+    hasta la revisión del encargo 51, `reservar_one` ponía la dirección entera en log.txt y en el motivo, que llega a
+    la planilla. `test_ninguna_direccion_con_su_consulta_a_un_mensaje` rastrea en el programa que ninguna dirección
+    llegue con su consulta a una línea de log.txt ni al motivo de una reserva.
+  - Las carpetas las crea `carpeta_corrida`, que usan el panel web (`web_…`), la consola (`reservas_<nav>_<usuario>_…`)
+    y el login (`<usuario>_…`). La fecha va al segundo; si ese nombre ya existe, agrega `_2`, `_3`…, así cada corrida
+    tiene su carpeta (`CICLO-carpetas-unicas-aplicado.md`). No vuelvas a armar el nombre a mano. **Algunas carpetas
+    están referenciadas a mano** por los generadores de abajo, con `*` en lugar del operador (`_es_de_referencia` y
+    `_ruta`); no limpies `logs/` sin revisarlos.
 - **La poda del HTML** (`podar_html`, al empezar cada corrida de reservas) borra los `.html` de las carpetas
   de corrida con más de 30 días, según la fecha del nombre, y nada más.
   - Nunca toca `log.txt`, las capturas ni las subcarpetas.
