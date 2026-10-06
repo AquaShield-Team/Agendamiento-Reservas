@@ -418,6 +418,7 @@ class TestPanelCorridas(PanelBase):
         self.assertEqual(Path(lanz[0]["user_data_dir"]), self.sb / "perfiles" / "op_prueba")
         self.assertEqual((lanz[0]["channel"], lanz[0]["headless"], lanz[0]["no_viewport"], lanz[0]["ignore_default_args"]),
                          ("chrome", False, True, ["--enable-automation"]))
+        self.assertIs(lanz[0]["chromium_sandbox"], True)          # con el sandbox de Chrome (encargo 53)
         self.assertEqual(lanz[0]["args"], self.mod._args_chrome())
         self.assertTrue(n.pw.contextos[0].cerrado)
         self.assertEqual(n.pw.contextos[0].scripts, [self.mod.STEALTH_JS])
@@ -797,6 +798,17 @@ def puertos_seguidos(n=4, intentos=200):
     raise AssertionError(f"no encontré {n} puertos seguidos libres")
 
 
+def puerto_libre(p):
+    """Si nadie escucha en 127.0.0.1:'p' (lo enlaza un instante, sin escuchar). De las pruebas, no del programa: corre
+    también contra el código de antes del encargo 53."""
+    try:
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", p))
+        return True
+    except OSError:
+        return False
+
+
 def servidor_falso(puerto, responder):
     """Un servidor HTTP corriente (con SO_REUSEADDR, como cualquier programa escrito con http.server) en
     127.0.0.1:'puerto', que contesta lo que diga responder(método, ruta): (código, cuerpo). Anota cada pedido. Devuelve
@@ -855,7 +867,7 @@ def responder_como_panel(al_apagar, corriendo=False, emision=False):
 
 class TestArranqueDelPanel(unittest.TestCase):
     """Cómo arranca lanzar_web cuando su puerto está tomado. Desde el encargo 52 prueba también los puertos que siguen
-    al base: cada prueba usa los de puertos_seguidos."""
+    al base: cada prueba usa los de puertos_seguidos. Desde el 53, mira los cuatro antes de tomar uno libre."""
 
     AVISO_AJENO = "El puerto {} lo tiene otro programa, que no contesta como AQUASHIELD: no lo cerré."
 
@@ -1293,6 +1305,199 @@ class TestArranqueDelPanel(unittest.TestCase):
             self.assertEqual([r for _, r in pedidos], ["/api/estado", "/api/estado", "/api/config"])
         finally:
             apagar_falso(srv)
+
+    def test_mira_los_cuatro_puertos_con_el_base_libre(self):
+        # Decisión de Marcelo, encargo 53 (CICLO-bloqueo-cma-y-sandbox.md): el lanzador mira los cuatro puertos en cada
+        # arranque, y un panel de AQUASHIELD en cualquiera de ellos se trata como hasta hoy, también con el base libre.
+        # Aquí el panel está en el último de los cuatro, y el base y los otros dos están libres. Hasta el encargo 53,
+        # el lanzador tomaba el base sin mirar los demás y abría un panel nuevo junto al que ya estaba (medido sin red
+        # con el código de 9f45608, con esta misma prueba). Ahora: en el otro modo, avisa y no corre; en el mismo y
+        # ocupado, no levanta otro (aquí no abre el navegador: abrir=False); en el mismo y ocioso, le pide que se apague
+        # y toma su puerto, no el base. El lanzador es de prueba.
+        self._falsos("")
+        mod, _ = soporte.cargar()
+        mod.es_modo_emision = lambda: False
+        avisos = []
+        mod._avisar_al_lanzar = avisos.append
+        for emision, ocupado in ((True, False), (True, True), (False, True), (False, False)):
+            with self.subTest(panel="emisión" if emision else "prueba", ocupado=ocupado):
+                p = puertos_seguidos()
+                caja = {}
+
+                def al_apagar(caja=caja):
+                    threading.Timer(0.3, apagar_falso, args=(caja["srv"],)).start()
+                caja["srv"], pedidos = servidor_falso(p + 3, responder_como_panel(al_apagar, ocupado, emision))
+                avisos.clear()
+                mod._SRV_ACTUAL = None
+                try:
+                    hilo, puerto = self.levantar(mod, p)
+                    try:
+                        if emision:
+                            self.assertEqual((puerto, avisos),
+                                             (None, [self.texto_otro_modo(p + 3, True, False, ocupado)]))
+                        elif ocupado:
+                            self.assertEqual((puerto, avisos), (None, []))
+                        else:
+                            self.assertEqual((puerto, avisos), (p + 3, []))
+                        apagar = [] if emision or ocupado else [("POST", "/api/apagar")]
+                        self.assertEqual(pedidos, [("GET", "/api/estado"), ("GET", "/api/config")] + apagar)
+                        self.assertTrue(puerto_libre(p))                  # el base queda sin tomar
+                        self.assertEqual(self.llamadas, [])
+                    finally:
+                        self.cerrar(mod, hilo)
+                finally:
+                    apagar_falso(caja["srv"])
+
+    def test_panel_lento_en_otro_puerto_con_el_base_libre(self):
+        # Un panel del otro modo que tarda más de 1 s en contestar (con la máquina cargada) se reconoce también fuera
+        # del base: si nadie contestó y el puerto está tomado, el lanzador le vuelve a preguntar, hasta
+        # PANEL_ESPERA_LARGA s, antes de tomar uno libre (encargo 53; en el base, desde la revisión del encargo 51).
+        def responder(metodo, ruta):
+            if ruta.startswith("/api/estado"):
+                time.sleep(1.6)
+                return 200, json.dumps({"corriendo": True}).encode()
+            return 200, json.dumps({"modo_emision": True}).encode()
+        p = puertos_seguidos()
+        srv, pedidos = servidor_falso(p + 1, responder)
+        try:
+            self._falsos("")
+            vivo, avisos, mod = self.lanzar(p, False)
+            self.assertEqual((vivo, mod._SRV_ACTUAL, self.llamadas), (False, None, []))
+            self.assertEqual(avisos, [self.texto_otro_modo(p + 1, True, False, True)])
+            self.assertEqual([r for _, r in pedidos], ["/api/estado", "/api/estado", "/api/config"])
+            self.assertTrue(puerto_libre(p))
+        finally:
+            apagar_falso(srv)
+
+    def test_pregunta_a_los_cuatro_a_la_vez(self):
+        # La primera pregunta va a los cuatro puertos a la vez (_quien_esta, encargo 53): preguntarle a un puerto donde
+        # nadie escucha tarda 1 s en este equipo (encargo 51), y de a uno serían 4 s en cada arranque con los cuatro
+        # libres. Aquí cada pregunta espera a las otras tres (una barrera de 4): de a una, la barrera se rompe.
+        mod, _ = soporte.cargar()
+        barrera = threading.Barrier(4, timeout=4)
+        preguntas, rotas = [], []
+
+        def panel_en(q, espera=1.0):
+            preguntas.append((q, espera))
+            try:
+                barrera.wait()
+            except threading.BrokenBarrierError:
+                rotas.append(q)
+            return None
+        mod._panel_en = panel_en
+        self._falsos("")
+        p = puertos_seguidos()
+        hilo, puerto = self.levantar(mod, p)
+        try:
+            self.assertEqual((puerto, rotas, self.llamadas), (p, [], []))
+            self.assertEqual(sorted(preguntas), [(q, 1.0) for q in range(p, p + 4)])
+        finally:
+            self.cerrar(mod, hilo)
+
+    def test_otro_programa_despues_del_puerto_usado_no_se_avisa(self):
+        # El aviso de un puerto que tiene otro programa dice por qué el panel no quedó ahí: va solo para los que quedan
+        # antes del puerto que usa (encargo 53). Aquí el base está libre y el siguiente lo tiene un programa que
+        # contesta 404: el panel queda en el base, sin aviso, y a ese programa solo se le pregunta una vez.
+        mod, _ = soporte.cargar()
+        p = puertos_seguidos()
+        ajeno, pedidos = servidor_falso(p + 1, lambda metodo, ruta: (404, b""))
+        self._falsos("")
+        try:
+            hilo, puerto = self.levantar(mod, p)
+            try:
+                self.assertEqual((puerto, self.llamadas, pedidos), (p, [], [("GET", "/api/estado")]))
+                self.assertFalse([linea for linea in mod._WEB["log"] if "lo tiene otro programa" in linea])
+            finally:
+                self.cerrar(mod, hilo)
+        finally:
+            apagar_falso(ajeno)
+
+    def test_con_dos_paneles_decide_el_primero(self):
+        # Con más de un panel de AQUASHIELD en los cuatro puertos, decide el primero, en el orden de los puertos, como
+        # hasta hoy decidía el del base (encargo 53). Aquí el base está libre, en el siguiente hay un panel ocioso del
+        # mismo modo y en el que sigue, uno del otro modo: al ocioso le pide que se apague y toma su puerto; al del
+        # otro modo solo le pregunta, y no avisa.
+        self._falsos("")
+        p = puertos_seguidos()
+        caja = {}
+
+        def al_apagar():
+            threading.Timer(0.3, apagar_falso, args=(caja["srv"],)).start()
+        caja["srv"], pedidos_ocioso = servidor_falso(p + 1, responder_como_panel(al_apagar))
+        otro, pedidos_otro = servidor_falso(p + 2, responder_como_panel(lambda: None, emision=True))
+        mod, _ = soporte.cargar()
+        mod.es_modo_emision = lambda: False
+        avisos = []
+        mod._avisar_al_lanzar = avisos.append
+        try:
+            hilo, puerto = self.levantar(mod, p)
+            try:
+                self.assertEqual((puerto, avisos, self.llamadas), (p + 1, [], []))
+                self.assertEqual(pedidos_ocioso,
+                                 [("GET", "/api/estado"), ("GET", "/api/config"), ("POST", "/api/apagar")])
+                self.assertEqual(pedidos_otro, [("GET", "/api/estado"), ("GET", "/api/config")])
+            finally:
+                self.cerrar(mod, hilo)
+        finally:
+            apagar_falso(caja["srv"])
+            apagar_falso(otro)
+
+    def test_puerto_que_se_toma_mientras_mira_los_demas(self):
+        # Si el puerto libre que iba a tomar lo toma otro mientras el lanzador miraba los demás, a quien lo tomó se le
+        # pregunta quién es, como en la primera vuelta (encargo 53): aquí, un panel ocioso del mismo modo, que se apaga
+        # cuando se le pide, y el lanzador toma su puerto. Para simular el instante en que lo tomó, la primera pregunta
+        # y la primera mirada al base dicen que estaba libre.
+        self._falsos("")
+        p = puertos_seguidos()
+        caja = {}
+
+        def al_apagar():
+            threading.Timer(0.3, apagar_falso, args=(caja["srv"],)).start()
+        caja["srv"], pedidos = servidor_falso(p, responder_como_panel(al_apagar))
+        mod, _ = soporte.cargar()
+        mod.es_modo_emision = lambda: False
+        real_panel, real_libre = mod._panel_en, mod._puerto_libre
+        primera = {"panel": True, "libre": True}
+
+        def panel_en(q, espera=1.0):
+            if q == p and espera == 1.0 and primera["panel"]:
+                primera["panel"] = False
+                return None
+            return real_panel(q, espera)
+
+        def libre(q):
+            if q == p and primera["libre"]:
+                primera["libre"] = False
+                return True
+            return real_libre(q)
+        mod._panel_en, mod._puerto_libre = panel_en, libre
+        try:
+            hilo, puerto = self.levantar(mod, p)
+            try:
+                self.assertEqual((puerto, self.llamadas), (p, []))
+                self.assertEqual(pedidos, [("GET", "/api/estado"), ("GET", "/api/config"), ("POST", "/api/apagar")])
+            finally:
+                self.cerrar(mod, hilo)
+        finally:
+            apagar_falso(caja["srv"])
+
+    def test_con_los_cuatro_tomados_avisa_de_todos(self):
+        # Con los cuatro puertos tomados por otros programas, el lanzador no abre el panel web (main() abre el de
+        # escritorio) y dice, de cada uno, que lo tiene otro programa (encargo 53: los avisos van después de mirar los
+        # cuatro, y sin un puerto que usar, de todos).
+        mod, _ = soporte.cargar()
+        p = puertos_seguidos()
+        ajenos = [servidor_falso(q, lambda metodo, ruta: (404, b""))[0] for q in range(p, p + 4)]
+        self._falsos("")
+        try:
+            with self.assertRaises(RuntimeError):
+                mod.lanzar_web(puerto=p, abrir=False)
+            self.assertEqual([linea for linea in mod._WEB["log"] if "lo tiene otro programa" in linea],
+                             [self.AVISO_AJENO.format(q) for q in range(p, p + 4)])
+            self.assertEqual((mod._SRV_ACTUAL, self.llamadas), (None, []))
+        finally:
+            for ajeno in ajenos:
+                apagar_falso(ajeno)
 
     def test_el_aviso_va_a_una_ventana(self):
         # Los .bat lanzan con pythonw, sin consola: el aviso del lanzador va por la consola y a una ventana, como el de

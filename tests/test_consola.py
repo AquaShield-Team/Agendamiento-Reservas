@@ -114,6 +114,7 @@ class TestEjecutarReservas(ConPlanilla):
         with soporte.Navieras(self.mod, respuesta=respuesta) as n:
             res, carpeta = self.mod.ejecutar_reservas("op_prueba", "cma", esperar_cierre=lambda: None)
         self.assertEqual(res, {5: "OK-EJEMPLO", 6: "EMITIDA"})
+        self.assertEqual([kw["chromium_sandbox"] for kw in n.pw.lanzamientos], [True])     # el sandbox (encargo 53)
         self.assertEqual([r[:2] for r in n.reservas], [("cma", 5), ("cma", 6)])
         self.assertEqual(Path(carpeta).parent, self.sb / "logs")
         # Con «_2», «_3»… si otra corrida ya tomó ese segundo; la carpeta tiene que ser nueva (hasta 393f504
@@ -578,6 +579,7 @@ class TestEjecutarLogin(ConPlanilla):
         self.assertEqual([l[0] for l in n.logins], ["one", "msc"])
         self.assertRegex(Path(carpeta).name, r"^op_prueba_\d{8}_\d{6}$")
         self.assertEqual(Path(n.pw.lanzamientos[0]["user_data_dir"]), self.sb / "perfiles" / "op_prueba")
+        self.assertIs(n.pw.lanzamientos[0]["chromium_sandbox"], True)      # con el sandbox de Chrome (encargo 53)
         self.assertTrue(n.pw.contextos[0].cerrado)
 
     def test_sin_credenciales_igual_abre_el_navegador(self):
@@ -830,6 +832,54 @@ class TestUtilitarios(soporte.CasoAQ):
                     self.assertEqual(self.mod._args_chrome(), esperado)
                 finally:
                     os.environ.pop("AQUASHIELD_ZOOM", None)
+
+    def test_un_solo_lanzador_del_navegador(self):
+        # Todo navegador del programa sale de _lanzar_navegador (encargo 53): el login, las reservas de la consola y las
+        # del panel web, y nadie más llama a launch_persistent_context. Así el sandbox de Chrome vale para los tres.
+        arbol = ast.parse((soporte.FUENTES / "AQUASHIELD.py").read_text(encoding="utf-8"))
+        lanzan, llaman = [], []
+        for funcion in ast.walk(arbol):
+            if not isinstance(funcion, ast.FunctionDef):
+                continue
+            for n in ast.walk(funcion):
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and \
+                        n.func.attr == "launch_persistent_context":
+                    lanzan.append(funcion.name)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "_lanzar_navegador":
+                    llaman.append(funcion.name)
+        self.assertEqual(lanzan, ["_lanzar_navegador", "_lanzar_navegador"])          # el canal y el respaldo
+        self.assertEqual(sorted(llaman), ["_web_worker", "ejecutar_login", "ejecutar_reservas"])
+
+    def test_navegador_con_el_sandbox_de_chrome(self):
+        # Decisión de Marcelo, encargo 53 (CICLO-bloqueo-cma-y-sandbox.md): el navegador se lanza con el sandbox de
+        # Chrome activado (chromium_sandbox). Hasta ahí, Playwright le agregaba --no-sandbox porque no se le pedía, y
+        # Chrome avisaba de esa bandera en la ventana. Si el canal (Chrome) no abre, el Chromium de Playwright, también
+        # con el sandbox, y lo dice en log.txt (hasta el encargo 53, solo el login lo decía; las reservas cambiaban a
+        # Chromium sin decirlo). Las demás opciones, las de siempre, y STEALTH_JS como hasta hoy.
+        class QueNoAbre(soporte.PlaywrightFalso):
+            def launch_persistent_context(self, **kw):
+                if "channel" in kw:
+                    self.lanzamientos.append(kw)
+                    raise RuntimeError("canal falso que no abre")
+                return super().launch_persistent_context(**kw)
+        perfil = self.sb / "perfiles" / "op_navegador"
+        opciones = dict(user_data_dir=str(perfil), headless=False, no_viewport=True, args=self.mod._args_chrome(),
+                        ignore_default_args=["--enable-automation"], chromium_sandbox=True)
+        for pw, canales in ((soporte.PlaywrightFalso(), ["chrome"]), (QueNoAbre(), ["chrome", None])):
+            with self.subTest(canales=canales):
+                ruta = self.sb / "logs" / f"navegador_{len(canales)}" / "log.txt"
+                reg = self.mod.Registro(ruta)
+                try:
+                    ctx = self.mod._lanzar_navegador(pw, perfil, False, "chrome", reg)
+                finally:
+                    reg.cerrar()
+                self.assertEqual([kw.get("channel") for kw in pw.lanzamientos], canales)
+                self.assertEqual([{k: v for k, v in kw.items() if k != "channel"} for kw in pw.lanzamientos],
+                                 [opciones] * len(canales))
+                self.assertEqual(ctx.scripts, [self.mod.STEALTH_JS])
+                log = ruta.read_text(encoding="utf-8")
+                cambio = "no pude usar 'chrome' (canal falso que no abre); uso chromium de playwright"
+                self.assertEqual(cambio in log, len(canales) == 2)
 
     def test_volcado_html_cae_en_la_carpeta_del_programa(self):
         # Modo descubrir: los volcados de página van a la raíz del programa (BASE), junto a

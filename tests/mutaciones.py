@@ -6407,8 +6407,8 @@ PASO_ONE = '    return u.split("step=")[-1].split("&")[0][:30] if "step=" in u e
 MUTACIONES += [
     # La segunda pregunta del lanzador: sin ella, tan corta como la primera, o con la primera de plazo fijo.
     dict(id="e51-lanzador-sin-segunda-pregunta", pruebas=[LENTO],
-         viejo="                visto = _panel_en(p, espera=PANEL_ESPERA_LARGA)\n",
-         nuevo="                visto = None\n"),
+         viejo="            visto = _panel_en(p, espera=PANEL_ESPERA_LARGA)\n",
+         nuevo="            visto = None\n"),
     dict(id="e51-lanzador-segunda-pregunta-corta", pruebas=[LENTO], viejo="PANEL_ESPERA_LARGA = 5.0\n",
          nuevo="PANEL_ESPERA_LARGA = 1.0\n"),
     dict(id="e51-panel-espera-fija", pruebas=[LENTO],
@@ -6463,11 +6463,11 @@ ARMA = "test_web.TestPanelCorridas.test_no_arma_si_la_pagina_muestra_otro_modo"
 PAGINA = "test_envio.TestLecturaDelPanel.test_el_panel_vuelve_a_leer_su_modo_antes_de_armar"
 BOTON = "test_envio.TestLecturaDelPanel.test_armar_pregunta_el_modo_y_lo_manda"
 CIERRA = '__import__("subprocess").call("taskkill /F /PID 424242", shell=True)\n'
-SALTA = ('            _avisar_en_pantalla_y_log(f"El puerto {p} lo tiene otro programa, que no contesta como '
-         'AQUASHIELD: no lo "\n                                      f"cerré.")\n            continue\n')
-OCIOSO = ('        _avisar_en_pantalla_y_log(f"El panel de AQUASHIELD del puerto {p} no lo soltó en '
-          '{PANEL_ESPERA_LARGA:g} s, "\n                                  f"después de pedirle que se apagara: no lo '
-          'cerré.")\n')
+SALTA = ('        _avisar_en_pantalla_y_log(f"El puerto {p} lo tiene otro programa, que no contesta como '
+         'AQUASHIELD: no lo "\n                                  f"cerré.")\n')
+OCIOSO = ('            _avisar_en_pantalla_y_log(f"El panel de AQUASHIELD del puerto {p} no lo soltó en '
+          '{PANEL_ESPERA_LARGA:g} s, "\n                                      f"después de pedirle que se apagara: '
+          'no lo cerré.")\n')
 GUARDA = ('                    if d.get("modo") is not modo:\n                        return self._json({"error": '
           '_modo_de_la_pagina(d.get("modo"), modo)}, 409)\n')
 SIN_MODO_EN_EL_PEDIDO = '                    if d.get("modo") is not modo:\n'
@@ -6481,23 +6481,25 @@ MUTACIONES += [
     # puerto, no vuelve a probar el que se soltó mientras preguntaba, salta al panel del puerto siguiente, o no espera
     # al ocioso que tarda en soltar el suyo, no dice que sigue o lo cierra.
     dict(id="e52-lanzador-cierra-al-ajeno", pruebas=[NO_CIERRA, CONTESTA], viejo=SALTA,
-         nuevo=SALTA.replace("            continue\n", "            " + CIERRA + "            continue\n")),
-    dict(id="e52-lanzador-no-dice-que-salta", pruebas=[NO_CIERRA, CONTESTA], viejo=SALTA,
-         nuevo="            continue\n"),
+         nuevo=SALTA + "        " + CIERRA),
+    dict(id="e52-lanzador-no-dice-que-salta", pruebas=[NO_CIERRA, CONTESTA], viejo=SALTA, nuevo="        pass\n"),
     dict(id="e52-lanzador-enlaza-si-contesta", pruebas=[AUNQUE],
-         viejo="        if visto is None:\n            srv = _enlazar(p)\n",
-         nuevo="        if not visto:\n            srv = _enlazar(p)\n"),
+         viejo="        elif visto is False:\n            ajenos.append(p)\n",
+         nuevo="        elif visto is False:\n            libres.append(p)\n"),
     dict(id="e52-lanzador-un-solo-puerto", pruebas=[NO_CIERRA, CONTESTA, AUNQUE], viejo="PUERTOS_DEL_PANEL = 4\n",
          nuevo="PUERTOS_DEL_PANEL = 1\n"),
     dict(id="e52-lanzador-no-vuelve-a-probar", pruebas=[SE_SUELTA],
-         viejo="                srv = _enlazar(p) if visto is None else None\n", nuevo="                srv = None\n"),
+         viejo="            if visto is None and not _puerto_libre(p):\n                visto = False\n",
+         nuevo="            if visto is None:\n                visto = False\n"),
     dict(id="e52-lanzador-salta-al-panel-del-siguiente", pruebas=[SIGUIENTE],
-         viejo="        if _ceder_al_previo(p, visto, propio, abrir):\n            return\n",
-         nuevo="        if False:\n            return\n"),
+         viejo="        if _ceder_al_previo(p, visto, propio, abrir):\n            return True, None\n",
+         nuevo="        if False:\n            return True, None\n"),
     dict(id="e52-lanzador-no-espera-al-ocioso", pruebas=[TARDA],
          viejo="        srv = _enlazar(p, espera=PANEL_ESPERA_LARGA)", nuevo="        srv = _enlazar(p)"),
-    dict(id="e52-lanzador-no-dice-que-el-ocioso-sigue", pruebas=[NO_SUELTA], viejo=OCIOSO, nuevo=""),
-    dict(id="e52-lanzador-cierra-al-ocioso", pruebas=[NO_SUELTA], viejo=OCIOSO, nuevo="        " + CIERRA + OCIOSO),
+    dict(id="e52-lanzador-no-dice-que-el-ocioso-sigue", pruebas=[NO_SUELTA], viejo=OCIOSO,
+         nuevo="            pass\n"),
+    dict(id="e52-lanzador-cierra-al-ocioso", pruebas=[NO_SUELTA], viejo=OCIOSO,
+         nuevo="            " + CIERRA + OCIOSO),
     # _panel_en: a quien contesta con otro código, cierra sin contestar, no manda JSON o no dice «corriendo», como a
     # nadie.
     dict(id="e52-panel-en-error-http-como-nadie", pruebas=[QUIEN, CONTESTA],
@@ -6540,4 +6542,77 @@ MUTACIONES += [
     dict(id="e52-nombres-del-modo-otros", pruebas=[ARMA, OTRO_MODO, PAGINA],
          viejo='NOMBRE_DEL_MODO = {True: "EMISIÓN (reservas reales)", False: "prueba (sin emitir)"}\n',
          nuevo='NOMBRE_DEL_MODO = {True: "EMISIÓN", False: "prueba"}\n'),
+]
+
+# --- Encargo 53: el navegador se lanza con el sandbox de Chrome, desde un solo ayudante (_lanzar_navegador), que dice
+# también en las reservas si cambia a Chromium; y el lanzador mira los cuatro puertos antes de tomar uno libre
+# (decisiones de Marcelo, CICLO-bloqueo-cma-y-sandbox.md). Las del lanzador del 51 y el 52 que miraban su bucle quedan
+# reescritas sobre el código nuevo, con sus mismas pruebas ---
+NAV = "test_consola.TestUtilitarios."
+UN_LANZADOR = NAV + "test_un_solo_lanzador_del_navegador"
+SANDBOX = NAV + "test_navegador_con_el_sandbox_de_chrome"
+WEB_CORRIDA = "test_web.TestPanelCorridas.test_corrida_de_una_hoja"
+LOGIN_CONSOLA = "test_consola.TestEjecutarLogin.test_login_por_consola"
+RESERVAS_CONSOLA = "test_consola.TestEjecutarReservas.test_reservas_por_consola"
+CUATRO = ARR + "test_mira_los_cuatro_puertos_con_el_base_libre"
+LENTO_OTRO = ARR + "test_panel_lento_en_otro_puerto_con_el_base_libre"
+A_LA_VEZ = ARR + "test_pregunta_a_los_cuatro_a_la_vez"
+DESPUES = ARR + "test_otro_programa_despues_del_puerto_usado_no_se_avisa"
+DOS = ARR + "test_con_dos_paneles_decide_el_primero"
+SE_TOMA = ARR + "test_puerto_que_se_toma_mientras_mira_los_demas"
+TOMADOS = ARR + "test_con_los_cuatro_tomados_avisa_de_todos"
+OPCIONES = '                    ignore_default_args=["--enable-automation"], chromium_sandbox=True)\n'
+CAMBIO = "        reg.info(f\"no pude usar '{canal}' ({e}); uso chromium de playwright\")\n"
+DIRECTO = ("p.chromium.launch_persistent_context(channel=canal, user_data_dir=str({}), headless=headless, "
+           "no_viewport=True, args=_args_chrome(), ignore_default_args=[\"--enable-automation\"])")
+AVISOS = "    for p in sorted(q for q in ajenos if srv is None or q < srv.server_address[1]):\n"
+SIN_PUERTO = ('    if srv is None:\n        raise RuntimeError(f"no encontré un puerto libre para AQUASHIELD cerca de '
+              '{puerto}")\n')
+
+MUTACIONES += [
+    # El navegador: sin el sandbox o con el sandbox apagado; cambiando a Chromium sin decirlo o con el mismo canal; o
+    # lanzado en una de las tres vías sin el ayudante.
+    dict(id="e53-navegador-sin-sandbox", pruebas=[SANDBOX, WEB_CORRIDA, LOGIN_CONSOLA, RESERVAS_CONSOLA],
+         viejo=OPCIONES, nuevo='                    ignore_default_args=["--enable-automation"])\n'),
+    dict(id="e53-navegador-sandbox-apagado", pruebas=[SANDBOX, WEB_CORRIDA, LOGIN_CONSOLA, RESERVAS_CONSOLA],
+         viejo=OPCIONES, nuevo=OPCIONES.replace("chromium_sandbox=True", "chromium_sandbox=False")),
+    dict(id="e53-navegador-cambia-sin-decirlo", pruebas=[SANDBOX], viejo=CAMBIO, nuevo=""),
+    dict(id="e53-navegador-respaldo-con-el-canal", pruebas=[SANDBOX],
+         viejo="        ctx = p.chromium.launch_persistent_context(**opciones)\n",
+         nuevo="        ctx = p.chromium.launch_persistent_context(channel=canal, **opciones)\n"),
+    dict(id="e53-navegador-login-sin-el-ayudante", pruebas=[UN_LANZADOR, LOGIN_CONSOLA],
+         viejo="        ctx = _lanzar_navegador(p, perfil_dir, headless, canal, reg)\n\n        page = ",
+         nuevo="        ctx = " + DIRECTO.format("perfil_dir") + "\n\n        page = "),
+    dict(id="e53-navegador-consola-sin-el-ayudante", pruebas=[UN_LANZADOR, RESERVAS_CONSOLA],
+         viejo="        ctx = _lanzar_navegador(p, perfil_dir, headless, canal, reg)\n        # Traza",
+         nuevo="        ctx = " + DIRECTO.format("perfil_dir") + "\n        # Traza"),
+    dict(id="e53-navegador-web-sin-el-ayudante", pruebas=[UN_LANZADOR, WEB_CORRIDA],
+         viejo="                ctx = _lanzar_navegador(p, perfil, headless, canal, reg)\n",
+         nuevo="                ctx = " + DIRECTO.format("perfil") + "\n"),
+    # El lanzador: toma el primer puerto libre sin mirar los demás, pregunta de a uno, le vuelve a preguntar solo al
+    # base, da por libre un puerto tomado, toma otro después del relevo, avisa de todos los ajenos o de ninguno sin
+    # puerto, sigue sin puerto, decide con el último panel, o no pregunta quién tomó el puerto que iba a usar.
+    dict(id="e53-lanzador-toma-el-libre-sin-mirar", pruebas=[CUATRO, LENTO_OTRO, DOS],
+         viejo="        if visto is None:\n            libres.append(p)\n",
+         nuevo="        if visto is None:\n            libres.append(p)\n            break\n"),
+    dict(id="e53-lanzador-pregunta-de-a-uno", pruebas=[A_LA_VEZ],
+         viejo="        return dict(zip(puertos, pool.map(_panel_en, puertos)))\n",
+         nuevo="        return {q: _panel_en(q) for q in puertos}\n"),
+    dict(id="e53-lanzador-repregunta-solo-al-base", pruebas=[LENTO_OTRO],
+         viejo="        if visto is None and not _puerto_libre(p):\n            visto = _panel_en(",
+         nuevo="        if visto is None and p == puerto and not _puerto_libre(p):\n            visto = _panel_en("),
+    dict(id="e53-lanzador-puerto-tomado-como-libre", pruebas=[NO_CIERRA, LENTO, LENTO_OTRO],
+         viejo='            s.bind(("127.0.0.1", puerto))\n', nuevo='            s.bind(("127.0.0.1", 0))\n'),
+    dict(id="e53-lanzador-toma-otro-despues-del-relevo", pruebas=[CUATRO],
+         viejo="    for p in ([] if srv is not None else libres):\n", nuevo="    for p in libres:\n"),
+    dict(id="e53-lanzador-avisa-de-todos-los-ajenos", pruebas=[DESPUES], viejo=AVISOS,
+         nuevo="    for p in sorted(ajenos):\n"),
+    dict(id="e53-lanzador-sin-puerto-no-avisa", pruebas=[TOMADOS], viejo=AVISOS,
+         nuevo="    for p in sorted(q for q in ajenos if srv is not None and q < srv.server_address[1]):\n"),
+    dict(id="e53-lanzador-sigue-sin-puerto", pruebas=[TOMADOS], viejo=SIN_PUERTO, nuevo=""),
+    dict(id="e53-lanzador-decide-el-ultimo-panel", pruebas=[DOS],
+         viejo="    for p in puertos:\n        visto = quien(p, vistos[p])\n",
+         nuevo="    for p in reversed(puertos):\n        visto = quien(p, vistos[p])\n"),
+    dict(id="e53-lanzador-no-pregunta-quien-lo-tomo", pruebas=[SE_TOMA],
+         viejo="            visto = quien(p, None)\n", nuevo="            visto = False\n"),
 ]

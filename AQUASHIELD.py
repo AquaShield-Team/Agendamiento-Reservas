@@ -887,6 +887,31 @@ def _args_chrome():
     return args
 
 
+def _lanzar_navegador(p, perfil, headless, canal, reg):
+    """El navegador del programa sobre el perfil dado, igual en el login, en las reservas de la consola y en las del
+    panel web: el canal de config.json (Chrome) y, si no abre, el Chromium de Playwright, y lo dice en log.txt (hasta el
+    encargo 53, solo el login lo decía); con STEALTH_JS.
+
+    Con el sandbox de Chrome activado (chromium_sandbox; decisión de Marcelo, encargo 53,
+    CICLO-bloqueo-cma-y-sandbox.md). Hasta ahí, Playwright le agregaba --no-sandbox porque no se le pedía
+    (lib/server/chromium/chromium.js de Playwright 1.58.0), y Chrome avisaba de esa bandera en la ventana. Medido en
+    este equipo, en una página local sin red: Chrome y el Chromium de Playwright arrancan con él, y sus procesos de
+    página quedan aislados (chrome://sandbox); ninguna señal que lee la página cambia, y Chrome avisa ahora de otra
+    bandera del programa, --disable-blink-features=AutomationControlled (_args_chrome)."""
+    opciones = dict(user_data_dir=str(perfil), headless=headless, no_viewport=True, args=_args_chrome(),
+                    ignore_default_args=["--enable-automation"], chromium_sandbox=True)
+    try:
+        ctx = p.chromium.launch_persistent_context(channel=canal, **opciones)
+    except Exception as e:
+        reg.info(f"no pude usar '{canal}' ({e}); uso chromium de playwright")
+        ctx = p.chromium.launch_persistent_context(**opciones)
+    try:
+        ctx.add_init_script(STEALTH_JS)
+    except Exception:
+        pass
+    return ctx
+
+
 def esperar(page, seg, reg=None, motivo=""):
     if reg and motivo:
         reg.info(f"esperando {seg:.1f}s ({motivo})")
@@ -11628,23 +11653,7 @@ def ejecutar_login(usuario, navieras, cfg=None, on_log=None, on_pausa=None,
 
     resultados = {}
     with sync_playwright() as p:
-        args = dict(
-            user_data_dir=str(perfil_dir),
-            headless=headless,
-            no_viewport=True,
-            args=_args_chrome(),
-            ignore_default_args=["--enable-automation"],
-        )
-        try:
-            ctx = p.chromium.launch_persistent_context(channel=canal, **args)
-        except Exception as e:
-            reg.info(f"no pude usar '{canal}' ({e}); uso chromium de playwright")
-            ctx = p.chromium.launch_persistent_context(**args)
-
-        try:
-            ctx.add_init_script(STEALTH_JS)
-        except Exception:
-            pass
+        ctx = _lanzar_navegador(p, perfil_dir, headless, canal, reg)
 
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
@@ -11810,15 +11819,7 @@ def ejecutar_reservas(usuario, naviera_clave, cfg=None, on_log=None, on_pausa=No
         return resultados, str(carpeta)
 
     with sync_playwright() as p:
-        args = dict(user_data_dir=str(perfil_dir), headless=headless, no_viewport=True,
-                    args=_args_chrome(),
-                    ignore_default_args=["--enable-automation"])
-        try:
-            ctx = p.chromium.launch_persistent_context(channel=canal, **args)
-        except Exception:
-            ctx = p.chromium.launch_persistent_context(**args)
-        try: ctx.add_init_script(STEALTH_JS)
-        except Exception: pass
+        ctx = _lanzar_navegador(p, perfil_dir, headless, canal, reg)
         # Traza de Playwright: graba pantalla, red y DOM paso a paso. Se abre con
         #   python -m playwright show-trace "<carpeta>\traza.zip"
         # Apagada por defecto (cuesta unos MB y algo de tiempo); se enciende con
@@ -12807,17 +12808,9 @@ def _web_worker(hoja, usuario, filas_pedidas):
             _westado(f"Entrando a {nombre}…")
 
             with sync_playwright() as p:
-                args = dict(user_data_dir=str(perfil), headless=headless,
-                            no_viewport=True, args=_args_chrome(),
-                            ignore_default_args=["--enable-automation"])
-                try:
-                    ctx = p.chromium.launch_persistent_context(channel=canal, **args)
-                except Exception:
-                    ctx = p.chromium.launch_persistent_context(**args)
+                ctx = _lanzar_navegador(p, perfil, headless, canal, reg)
                 with _LOCK:
                     _WEB["ctx"] = ctx
-                try: ctx.add_init_script(STEALTH_JS)
-                except Exception: pass
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
                 reg.paso(f"===== Login {nombre} =====")
@@ -12981,7 +12974,8 @@ def _escribir_config(cfg, ruta):
 PANEL_ESPERA_LARGA = 5.0
 
 # Cuántos puertos prueba el lanzador desde el base (8765 a 8768). En cada uno, un panel de AQUASHIELD se trata como
-# en el base, y el que tiene otro programa se deja como está (decisión de Marcelo, encargo 52).
+# en el base, y el que tiene otro programa se deja como está (decisión de Marcelo, encargo 52). Los mira todos antes de
+# tomar uno libre (decisión de Marcelo, encargo 53).
 PUERTOS_DEL_PANEL = 4
 
 # Cómo dicen los avisos cada modo del candado: el del lanzador ante un panel del otro modo (encargo 51) y el del panel
@@ -13018,6 +13012,28 @@ def _panel_en(puerto, espera=1.0):
     except Exception:
         modo = None
     return estado, (modo if isinstance(modo, bool) else None)
+
+
+def _quien_esta(puertos):
+    """Lo que contesta cada puerto a la primera pregunta del lanzador (_panel_en), preguntados todos a la vez (encargo
+    53): un puerto libre tarda 1 s en contestar en este equipo (encargo 51), y así se paga una vez y no una por puerto.
+    Devuelve {puerto: lo que dijo}."""
+    from concurrent.futures import ThreadPoolExecutor
+    puertos = list(puertos)
+    with ThreadPoolExecutor(max_workers=len(puertos)) as pool:
+        return dict(zip(puertos, pool.map(_panel_en, puertos)))
+
+
+def _puerto_libre(puerto):
+    """Si nadie escucha en 127.0.0.1:'puerto': lo enlaza un instante, sin escuchar, y lo suelta (encargo 53). No ve a
+    un programa que escucha en todas las direcciones (0.0.0.0): ese deja enlazar 127.0.0.1 (encargo 52)."""
+    import socket
+    try:
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", puerto))
+        return True
+    except OSError:
+        return False
 
 
 def _otro_modo(puerto, estado, modo, propio):
@@ -13349,40 +13365,79 @@ def lanzar_web(puerto=8765, abrir=True):
                     return None
                 time.sleep(0.1)
 
-    # 1. El puerto del panel: el base (8765) o, si lo tiene otro programa, el siguiente, hasta PUERTOS_DEL_PANEL. En
-    #    cada uno, un panel de AQUASHIELD se trata como hasta hoy en el base (_ceder_al_previo): en el otro modo, o sin
-    #    decir en cuál, avisa y no corre (decisión de Marcelo, encargo 51, CICLO-modo-y-lanzadores.md); en el mismo, al
-    #    ocupado lo abre en el navegador, y al ocioso le pide que se apague y toma su puerto cuando lo suelta. Al
-    #    programa que no contesta como AQUASHIELD no lo cierra: prueba el puerto siguiente (decisión de Marcelo, encargo
-    #    52, CICLO-puerto-libre-y-modo-al-armar.md). Si contesta, aunque el puerto se pudiera enlazar, tampoco lo
-    #    usa: un programa que escucha en todas las direcciones deja enlazar 127.0.0.1, y el panel le quitaría lo que
-    #    le llega por ahí. Hasta ahí, solo miraba el base, y a quien no lo dejaba libre lo cerraba con taskkill, fuera o
-    #    no de AQUASHIELD.
+    # 1. El puerto del panel: el base (8765) o uno de los que le siguen, hasta PUERTOS_DEL_PANEL. Antes de tomar uno,
+    #    pregunta a los cuatro quién está, a la vez (_quien_esta): un panel de AQUASHIELD en cualquiera de ellos se
+    #    trata como hasta hoy en el base (_ceder_al_previo), también con el base libre, y si hay más de uno decide el
+    #    primero, en el orden de los puertos (decisión de Marcelo, encargo 53, CICLO-bloqueo-cma-y-sandbox.md). En el
+    #    otro modo, o sin decir en cuál, avisa y no corre (decisión de Marcelo, encargo 51, CICLO-modo-y-lanzadores.md);
+    #    en el mismo, al ocupado lo abre en el navegador, y al ocioso le pide que se apague y toma su puerto cuando lo
+    #    suelta. Sin un panel, toma el primero libre. Al programa que no contesta como AQUASHIELD no lo cierra: prueba
+    #    el puerto siguiente, y lo dice (decisión de Marcelo, encargo 52, CICLO-puerto-libre-y-modo-al-armar.md). Si
+    #    contesta, aunque el puerto se pudiera enlazar, tampoco lo usa: un programa que escucha en todas las direcciones
+    #    deja enlazar 127.0.0.1, y el panel le quitaría lo que le llega por ahí. Hasta el encargo 52, solo miraba el
+    #    base, y a quien no lo dejaba libre lo cerraba con taskkill, fuera o no de AQUASHIELD; hasta el 53, tomaba el
+    #    primer puerto libre sin mirar los que le seguían: con un panel en el 8766 y el 8765 libre, abría otro en el
+    #    8765.
     propio = es_modo_emision()          # el modo de este lanzador
-    srv = None
-    for p in range(puerto, puerto + PUERTOS_DEL_PANEL):
-        visto = _panel_en(p)
+    puertos = range(puerto, puerto + PUERTOS_DEL_PANEL)
+
+    def quien(p, visto):
+        """Lo que hay en el puerto 'p', con 'visto' lo que contestó a la primera pregunta (_panel_en): None si está
+        libre, False si lo tiene otro programa, o el panel de AQUASHIELD. Si nadie contestó en 1 s y el puerto está
+        tomado, le vuelve a preguntar, con más paciencia (un panel del otro modo que tardó más, con la máquina cargada,
+        avisa y no corre: revisión del encargo 51); si tampoco contesta y el puerto sigue tomado, es otro programa, y
+        si se soltó mientras tanto, está libre."""
+        if visto is None and not _puerto_libre(p):
+            visto = _panel_en(p, espera=PANEL_ESPERA_LARGA)
+            if visto is None and not _puerto_libre(p):
+                visto = False
+        return visto
+
+    def relevar(p, visto):
+        """El panel de AQUASHIELD del puerto 'p', como hasta hoy: (True, None) si el lanzador no tiene que seguir
+        (_ceder_al_previo); si no, (False, el servidor en su puerto), con el ocioso, ya avisado, cuando lo suelte, o
+        (False, None) si no lo soltó en PANEL_ESPERA_LARGA s: no lo cierra, y lo dice."""
+        if _ceder_al_previo(p, visto, propio, abrir):
+            return True, None
+        srv = _enlazar(p, espera=PANEL_ESPERA_LARGA)
+        if srv is None:
+            _avisar_en_pantalla_y_log(f"El panel de AQUASHIELD del puerto {p} no lo soltó en {PANEL_ESPERA_LARGA:g} s, "
+                                      f"después de pedirle que se apagara: no lo cerré.")
+        return False, srv
+
+    vistos = _quien_esta(puertos)       # los cuatro a la vez: tarda lo que la pregunta más lenta, 1 s con uno libre
+    srv, libres, ajenos = None, [], []
+    for p in puertos:
+        visto = quien(p, vistos[p])
         if visto is None:
-            srv = _enlazar(p)
-            if srv is None:
-                # Tomado, y nadie contestó en 1 s: se le vuelve a preguntar, con más paciencia (un panel del otro modo
-                # que tardó más, con la máquina cargada, avisa y no corre: revisión del encargo 51); si tampoco
-                # contesta, se prueba otra vez el puerto, por si se soltó mientras tanto.
-                visto = _panel_en(p, espera=PANEL_ESPERA_LARGA)
-                srv = _enlazar(p) if visto is None else None
+            libres.append(p)
+        elif visto is False:
+            ajenos.append(p)
+        else:
+            salir, srv = relevar(p, visto)
+            if salir:
+                return
             if srv is not None:
                 break
-        if not visto:
-            _avisar_en_pantalla_y_log(f"El puerto {p} lo tiene otro programa, que no contesta como AQUASHIELD: no lo "
-                                      f"cerré.")
-            continue
-        if _ceder_al_previo(p, visto, propio, abrir):
-            return
-        srv = _enlazar(p, espera=PANEL_ESPERA_LARGA)        # el ocioso, ya avisado: su puerto, cuando lo suelte
+    for p in ([] if srv is not None else libres):
+        srv = _enlazar(p)
+        if srv is None:
+            # Se tomó mientras miraba los demás: quien lo tomó se trata como en la primera vuelta.
+            visto = quien(p, None)
+            if visto is None:
+                srv = _enlazar(p)
+            elif visto is False:
+                ajenos.append(p)
+            else:
+                salir, srv = relevar(p, visto)
+                if salir:
+                    return
         if srv is not None:
             break
-        _avisar_en_pantalla_y_log(f"El panel de AQUASHIELD del puerto {p} no lo soltó en {PANEL_ESPERA_LARGA:g} s, "
-                                  f"después de pedirle que se apagara: no lo cerré.")
+    # El aviso de cada puerto que tiene otro programa y quedó antes del que se usa (de todos, si no se usa ninguno).
+    for p in sorted(q for q in ajenos if srv is None or q < srv.server_address[1]):
+        _avisar_en_pantalla_y_log(f"El puerto {p} lo tiene otro programa, que no contesta como AQUASHIELD: no lo "
+                                  f"cerré.")
     if srv is None:
         raise RuntimeError(f"no encontré un puerto libre para AQUASHIELD cerca de {puerto}")
     puerto = srv.server_address[1]
