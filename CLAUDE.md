@@ -535,10 +535,12 @@ python -m playwright show-trace "logs\<carpeta>\traza.zip"
 ```
 
 - Los `.bat` lanzan con `pythonw` (sin consola): los `print` no se ven; todo queda en `logs\`.
-- Al arrancar, `lanzar_web` busca su puerto desde el 8765, hasta el 8768 (`PUERTOS_DEL_PANEL`), y en cada uno pregunta
-  quién está (`_panel_en`: su `/api/estado` y el `modo_emision` de su `/api/config`): nadie (None), otro programa
-  (False: otro código HTTP, sin hablar HTTP, o un `/api/estado` sin «corriendo») o un panel de AQUASHIELD. Se queda con
-  el primero libre: preguntarle a un puerto donde nadie escucha tarda 1 s en este equipo, y lo paga una vez.
+- Al arrancar, `lanzar_web` mira los cuatro puertos, del 8765 al 8768 (`PUERTOS_DEL_PANEL`), antes de tomar uno
+  (decisión de Marcelo, encargo 53, `CICLO-bloqueo-cma-y-sandbox.md`). Les pregunta a la vez quién está (`_quien_esta`,
+  con `_panel_en`: su `/api/estado` y el `modo_emision` de su `/api/config`): nadie (None), otro programa (False: otro
+  código HTTP, sin hablar HTTP, o un `/api/estado` sin «corriendo») o un panel de AQUASHIELD. Preguntarle a un puerto
+  donde nadie escucha tarda 1 s en este equipo, y a los cuatro a la vez, 1 s en total. Si hay un panel de AQUASHIELD,
+  decide el primero en el orden de los puertos; si no, toma el primero libre.
   - **Un panel de AQUASHIELD se trata como hasta hoy en el base, en cualquiera de los cuatro** (decisión de Marcelo,
     encargo 52, `CICLO-puerto-libre-y-modo-al-armar.md`). **Si está en el otro modo, o no dice en cuál, avisa y no
     corre** (decisión de Marcelo, encargo 51, `CICLO-modo-y-lanzadores.md`): no se conecta a él, no lo cierra y no
@@ -550,13 +552,20 @@ python -m playwright show-trace "logs\<carpeta>\traza.zip"
     modo que tuviera (también el lanzador de prueba a uno de emisión). A uno ocioso le pedía que se apagara y tomaba
     su puerto, así que una pestaña suya que quedara abierta hablaba con un panel del otro modo, con el aviso de modo de
     antes.
+  - **Desde el encargo 53, también con el 8765 libre.** Hasta ahí tomaba el primer puerto libre sin mirar los que le
+    seguían: con un panel en el 8766 y el 8765 libre, abría otro en el 8765 (medido sin red con el código de `9f45608`
+    y las pruebas del encargo, también junto a un panel de EMISIÓN). Con más de un panel, decide el primero en el orden
+    de los puertos, como decidía el del base; la otra lectura de «como hoy», que un panel del otro modo en cualquiera
+    de ellos frene, la decide Marcelo. Con el panel en el 8765, el lanzador tarda ahora 1 s más en abrirlo. El aviso de
+    un puerto que tiene otro programa va solo para los que quedan antes del que usa (de los cuatro, si no usa ninguno).
   - **Al programa que no contesta como AQUASHIELD no lo cierra** (decisión de Marcelo, encargo 52): prueba el puerto
     siguiente, y el registro del panel lo dice. Si contesta, no usa su puerto aunque pudiera enlazarlo: a un programa
     que escucha en todas las direcciones (0.0.0.0) se le puede enlazar encima 127.0.0.1, y lo que llega por ahí pasa al
     panel (medido en este Windows). Si no contesta en 1 s y el puerto sigue tomado, le vuelve a preguntar, hasta
     `PANEL_ESPERA_LARGA` s (5; hipótesis): un panel del otro modo que tardó más, con la máquina cargada, avisa y no
     corre (`_ceder_al_previo` decide igual en las dos preguntas; revisión del encargo 51); y si tampoco contesta,
-    prueba otra vez el puerto, por si se soltó mientras tanto.
+    prueba otra vez el puerto, por si se soltó mientras tanto. Desde el encargo 53 lo hace en los cuatro puertos, antes
+    de tomar uno (`_puerto_libre`).
   - Hasta el encargo 52 solo miraba el 8765, y a quien no lo dejaba libre lo cerraba con `taskkill /F` (el pid que daba
     netstat), fuera o no de AQUASHIELD. El 2026-10-05 escuchaba ahí `servidor_sync.py`, que no es de AQUASHIELD, y el
     lanzador lo habría cerrado (medido sin red, con un servidor ajeno en su lugar).
@@ -578,7 +587,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 608 pruebas al 2026-10-05 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 617 pruebas al 2026-10-06 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -593,6 +602,9 @@ El censo completo del 2026-10-06 (1.848 mutaciones, 2.252 pares) tardó unos 120
 el equipo. En segundo plano, la herramienta Bash de Claude Code lo corta a las 2 horas: el primero se cortó ahí, y el
 segundo corrió aparte (encargo 52; el plan B está en el entorno de la máquina, `~/.claude/CLAUDE.md`). Mientras corre,
 no toques la raíz: al terminar compara la foto de los originales.
+Ese mismo día, con el equipo cargado, la suite sola tardó unos 20 minutos: la primera corrida pasó los 1.200 s que
+`correr.py` le da a la corrida entera de `unittest`, y el corredor la cortó (`TimeoutExpired`) sin dar el resultado; la
+segunda tardó 1.185 s (encargo 53).
 
 - **Nunca importes `AQUASHIELD.py` desde la raíz en una prueba**: usa `soporte.cargar()`, que carga una
   COPIA en una sandbox del temporal. Desde la raíz, `BASE` apunta a la planilla, `config.json` y
@@ -673,8 +685,10 @@ línea cambian). De arriba hacia abajo:
 3. **Utilidades**: `esperar_hasta` (espera condicional; prefiérela a `esperar`, que duerme fijo),
    `click_si_existe`, `rellenar`, `pausa_manual` (pide intervención humana vía `on_pausa`).
 4. **Login por naviera** `login_<x>(page, creds, reg, on_pausa=None) -> bool`, registrados en
-   `NAVIERAS = {clave: (nombre, login)}`. CMA tiene DataDome (slider) y COSCO un validador tipo puzzle:
-   se intenta resolver solo y, si no, se pausa hasta que el operador pulse «Ya lo resolví». Medido en las corridas
+   `NAVIERAS = {clave: (nombre, login)}`. COSCO tiene un validador tipo puzzle: se intenta resolver solo
+   (`resolver_cosco_puzzle`) y, si no, se pausa hasta que el operador pulse «Ya lo resolví». CMA tiene DataDome (un
+   deslizador): el programa espera a que el operador lo deslice (`_cma_esperar_desafio`, hasta 180 s);
+   `resolver_cma_slider`, que lo arrastraba solo, no se llama (encargo 53). Medido en las corridas
    del 2026-09-21 al 26 (`CICLO-inicio-de-todas.md`) y decidido en `CICLO-cierre-de-frenos.md`:
    - ONE: después del login, `login_one` espera `ONE_TRAS_LOGIN`, www.one-line.com/one-ecom/…, donde terminaron los 4
      logins nuevos medidos. Hasta `4948e16` esperaba ecomm.one-line.com/one-ecom, que ya no aparece: la espera vencía a
@@ -745,6 +759,12 @@ línea cambian). De arriba hacia abajo:
      carga. `reservar_cma` lo reconoce apenas abre Click & Book (`_cma_en_mantenimiento`), y la fila queda NO ENVIADA
      con `CMA_MANTENIMIENTO`, «el portal de CMA está en mantenimiento», y la captura `cma_f<fila>_mantenimiento`. Hasta
      `4948e16` cortaba en el Origen, con un motivo que hablaba de la sugerencia del puerto.
+   - **CMA, el bloqueo del 2026-10-06** (encargo 53, `CICLO-bloqueo-cma-y-sandbox.md`): DataDome desafió 10 de las 22
+     corridas con CMA-CGM de `logs/` desde el 21-09 (7 de los 8 inicios de sesión), y el operador lo pasó en las 8
+     anteriores al 06-10. Ese día, el deslizador salió con una IP y, 86 s después, «El acceso está restringido
+     temporalmente» con otra, de otro registro regional, sin un cambio de red en el equipo. La causa no se confirmó:
+     hace falta el portal. Cada página de DataDome muestra la IP con que el portal vio el pedido: se lee con OCR y no
+     se copia.
 5. **Reserva por naviera** `reservar_<x>(page, reserva, creds, reg, on_pausa=None) -> (estado, detalle)`,
    registrados en `RESERVADORES`. Cada una trae sus helpers con prefijo (`_one_*`, `_msc_*`,
    `_cosco_*`, `_hmm_*`, `_mk_*` para MAERSK, `_cma_*`) y constantes JS inyectadas `_JS_<NAV>_*`.
@@ -989,10 +1009,22 @@ línea cambian). De arriba hacia abajo:
    justo antes de `main()`); lee esa zona con Grep o `sed -n 'a,bp' | cut -c1-200`.
 10. **`main()`**: despacha entre consola, panel y web (si la web falla, cae al panel Tkinter).
 
-Todo navegador se abre con `launch_persistent_context` sobre `perfiles/<usuario>` (sesiones y cookies
-de los portales), canal `chrome` con fallback a Chromium, `STEALTH_JS` y `_args_chrome()`. Playwright le agrega
-`--no-sandbox` porque no se le pasa `chromium_sandbox=True` (`lib/server/chromium/chromium.js` de Playwright 1.58.0): de
-ahí el aviso de Chrome por esa bandera. Cambiarlo es cambiar cómo se lanza el navegador: lo decide Marcelo (encargo 45).
+Todo navegador se abre con `_lanzar_navegador` (encargo 53; hasta ahí, cada vía armaba sus opciones): un
+`launch_persistent_context` sobre `perfiles/<usuario>` (sesiones y cookies de los portales), canal `chrome` con
+fallback a Chromium, `STEALTH_JS` y `_args_chrome()`, **con el sandbox de Chrome activado** (`chromium_sandbox=True`;
+decisión de Marcelo, encargo 53, `CICLO-bloqueo-cma-y-sandbox.md`). `test_un_solo_lanzador_del_navegador` vigila que
+nadie más lo lance.
+- Hasta el encargo 53, Playwright le agregaba `--no-sandbox` porque no se le pedía el sandbox
+  (`lib/server/chromium/chromium.js` de Playwright 1.58.0), y Chrome avisaba de esa bandera en la ventana. Con el
+  sandbox arranca en este equipo (Chrome 154 y el Chromium de respaldo), sus procesos de página quedan aislados y
+  ninguna señal que lee la página cambia (medido sin red).
+- **Con el sandbox, Chrome avisa de otra bandera del programa,** `--disable-blink-features=AutomationControlled`
+  (`_args_chrome`): es la que deja `navigator.webdriver` en `false`, y sin ella queda en `true` (medido). Quitarla lo
+  decide Marcelo, como el resto del disfraz que el programa ya traía y que la página ve: `STEALTH_JS` (un `webdriver`
+  `undefined` con un getter que no es nativo, propiedades propias en `navigator`, plugins que son una lista de números
+  e idiomas que no calzan con el idioma) e `ignore_default_args=["--enable-automation"]` (sección 4 del informe).
+- Si Chrome no abre, el respaldo es el Chromium de Playwright (Chrome for Testing 145), y `log.txt` lo dice en las tres
+  vías: hasta el encargo 53, las reservas cambiaban a él sin decirlo.
 
 ### Agregar o tocar una naviera
 

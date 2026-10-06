@@ -9,7 +9,8 @@ cada fila y, si se emitió, su N° de reserva.
 1. Doble clic a **`Iniciar AQUASHIELD.bat`**. La primera vez instala Playwright, openpyxl y holidays (los feriados de
    Chile para la fecha de retiro de MAERSK) si faltan; sin red, holidays queda para otra vez y el panel abre igual.
    Después abre el panel en el navegador, en `http://127.0.0.1:8765` o, si ese puerto lo tiene otro programa, en el
-   siguiente libre, hasta el 8768: a ese programa no lo cierra, y el registro del panel lo dice.
+   siguiente libre, hasta el 8768: a ese programa no lo cierra, y el registro del panel lo dice. Si ya hay un panel de
+   AQUASHIELD abierto en alguno de esos cuatro puertos, lo trata como si estuviera en el 8765.
 2. En **PLANILLA DE RESERVAS**, arrastra el `.xlsx` o haz clic para elegirlo.
 3. Elige la **Naviera** (la hoja de la planilla) y el **Operador**, y marca las filas que quieres correr
    (**todas** y **ninguna** ayudan).
@@ -19,6 +20,9 @@ cada fila y, si se emitió, su N° de reserva.
 
 **SOLO INICIAR SESIÓN** entra a los portales y los deja abiertos para trabajar a mano. **DETENER** corta la
 corrida en curso.
+
+El Chrome que abre el programa muestra arriba un aviso de una bandera que no admite
+(`--disable-blink-features=AutomationControlled`): esa bandera la pone el programa, y el aviso se cierra con su ✕.
 
 Si MSC muestra una página de error al iniciar sesión (al abrir su portada, al pulsar «Next» si recargarla no lo
 arregla, o después de aceptar el usuario y la clave), el programa hace un solo intento más de inicio de sesión, desde
