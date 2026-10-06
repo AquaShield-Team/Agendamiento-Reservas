@@ -1292,7 +1292,7 @@ MUTACIONES += [
          viejo=CAPTURA_EG, nuevo="        png = reg.captura(page, nombre, full=True)\n"),
     dict(id="captura-no-fuerza-la-pagina-entera",
          pruebas=[EG + "test_captura_de_la_pagina_completa_y_html_de_la_pagina_y_los_marcos"],
-         viejo="full_page=completa or bool(pagina_entera))", nuevo="full_page=completa)"),
+         viejo="full_page=completa or bool(pagina_entera),", nuevo="full_page=completa,"),
     dict(id="guarda-sin-html", pruebas=[EG + "test_captura_de_la_pagina_completa_y_html_de_la_pagina_y_los_marcos",
                                         EG + "test_si_la_captura_falla_avisa_y_la_reserva_sigue"],
          viejo=HTML_EG, nuevo="        guardados, total, sin_shadow = 1, 1, 0\n"),
@@ -3617,10 +3617,10 @@ MUTACIONES += [
     # Sin la sesión de MSC, la fila queda sin estado, como antes, en el panel o en la consola; o NO ENVIADA con
     # cualquier naviera.
     dict(id="msc-sin-sesion-panel-sin-estado", pruebas=[CO + "test_login_fallido_de_msc_queda_no_enviada"],
-         viejo="                    for rsv in (sub_elegidas if nav in SIN_SESION else ()):\n",
+         viejo="                    for rsv in (sub_elegidas if _motivo_sin_sesion(reg, nav) else ()):\n",
          nuevo="                    for rsv in ():\n"),
     dict(id="msc-sin-sesion-consola-sin-estado", pruebas=[ER + "test_login_fallido_de_msc_queda_no_enviada"],
-         viejo="            for i, rsv in (con_nave if naviera_clave in SIN_SESION else ()):\n",
+         viejo="            for i, rsv in (con_nave if _motivo_sin_sesion(reg, naviera_clave) else ()):\n",
          nuevo="            for i, rsv in ():\n"),
     dict(id="sin-sesion-cualquier-naviera",
          pruebas=[CO + "test_login_fallido_no_reserva", ER + "test_login_fallido_no_toca_la_planilla"],
@@ -6084,7 +6084,8 @@ TRADUCCION = ('    return otro if otro and not set(_cosco_puerto_de_la_celda(otr
 DECORADORES = ('@_con_el_puerto_de_cosco\n@_con_la_nave_de_la_fila\n@_con_la_ruta_de_la_fila\n'
                '@_sin_clic_a_ciegas("cosco")\n')
 DECORADO = "test_clics.TestSinClicACiegas.test_cada_reservador_que_corta_esta_decorado"
-MOTIVO = '    return (getattr(reg, "sin_sesion", None) or {}).get(nav) or SIN_SESION[nav]\n'
+MOTIVO = ('    return (_naviera_detenida(reg, nav) or (getattr(reg, "sin_sesion", None) or {}).get(nav)\n'
+          '            or SIN_SESION.get(nav, ""))\n')
 
 MUTACIONES += [
     # El segundo intento: con un tercero, sin él, también sin un error (desde el encargo 51, ante cualquier error), sin
@@ -6205,7 +6206,7 @@ MUTACIONES += [
     # El motivo de las filas sin la sesión: siempre el de SIN_SESION, en _motivo_sin_sesion, en el panel o en la
     # consola.
     dict(id="e50-motivo-sin-sesion-fijo", pruebas=[CO_MOTIVO, ER_MOTIVO, MSC_DOS], viejo=MOTIVO,
-         nuevo="    return SIN_SESION[nav]\n"),
+         nuevo='    return SIN_SESION.get(nav, "")\n'),
     dict(id="e50-panel-motivo-fijo", pruebas=[CO_MOTIVO],
          viejo='"estado": NO_ENVIADA, "detalle": _motivo_sin_sesion(reg, nav), "booking": "",\n',
          nuevo='"estado": NO_ENVIADA, "detalle": SIN_SESION[nav], "booking": "",\n'),
@@ -6615,4 +6616,204 @@ MUTACIONES += [
          nuevo="    for p in reversed(puertos):\n        visto = quien(p, vistos[p])\n"),
     dict(id="e53-lanzador-no-pregunta-quien-lo-tomo", pruebas=[SE_TOMA],
          viejo="            visto = quien(p, None)\n", nuevo="            visto = False\n"),
+]
+
+# --- Encargo 54: CMA-CGM se detiene, sin reintentar ni recargar, si su portal restringe el acceso o su página no
+# termina de cargar (decisión de Marcelo, CICLO-cma-acceso-restringido.md). ---
+DD = "test_datadome.TestLoQueMuestraDataDome."
+SD = "test_datadome.TestCmaSeDetiene."
+LG = "test_datadome.TestLoginCma."
+RS = "test_datadome.TestReservaCma."
+RECONOCE = DD + "test_reconoce_cada_pagina_medida"
+MEDIDO = DD + "test_lo_medido"
+BLOQUEO_YA = SD + "test_bloqueo_se_detiene_enseguida"
+SIN_FIN = SD + "test_verificacion_que_no_termina_se_detiene_al_plazo"
+VACIA_PLAZO = SD + "test_pagina_vacia_se_detiene_al_plazo"
+EVIDENCIA_CMA = SD + "test_evidencia_sin_las_credenciales_y_con_plazo"
+PORTADA_MUDA = LG + "test_portada_que_no_responde_se_detiene"
+PORTADA_BLOQUEADA = LG + "test_bloqueo_en_la_portada_no_intenta_entrar"
+CLICK_BOOK = RS + "test_bloqueo_en_click_and_book_queda_no_enviada_y_no_sigue"
+CO_CMA = CO + "test_cma_detenida_en_el_login_queda_no_enviada"
+ER_CMA = ER + "test_cma_detenida_en_el_login_queda_no_enviada"
+OTRAS_SIGUEN = CO + "test_cma_detenida_no_frena_a_las_otras"
+SOLO_LOGIN_CMA = "test_consola.TestEjecutarLogin.test_login_que_se_detiene_en_cma_sigue"
+CLASIFICA = ('    if de_datadome:\n        return "otra" if any(de_datadome) else "vacia"\n')
+TRAE = '        if (partes.hostname or "").lower().endswith("captcha-delivery.com"):\n'
+HTTP_ENTERO = '    return estado if isinstance(estado, int) and not isinstance(estado, bool) else None\n'
+ROBOT_403 = '        if _cma_http(page) == 403:\n            return True\n'
+HTML_CMA = ('    guardados, total, _ = _guardar_html_completo(page, reg, nombre, "con CMA-CGM detenida",\n'
+            '                                                 '
+            'sin=_textos_de_la_cuenta(creds), plazo_ms=CMA_LECTURA_MS)\n')
+CAPTURA_CON_PLAZO = ('            page.screenshot(path=str(ruta), full_page=completa or bool(pagina_entera),\n'
+                     '                            **({"timeout": plazo_ms} if plazo_ms else {}))\n')
+VUELTA = '        while que in ("verificacion", "vacia") and time.time() < fin:\n'
+AL_PLAZO = '    if que in ("verificacion", "vacia"):\n        _cma_detener(page, reg, CMA_SIN_CARGAR.format(\n'
+PRIMERO = ('    if _cma_sin_bloqueo_ni_espera(page, reg, creds) == "" and not _cma_es_robotcheck(page):\n'
+           '        reg.paso("DataDome dejó pasar la página; sigo.")\n        return True\n')
+ATAJA = ('        try:\n            return login(page, creds, reg, on_pausa=on_pausa)\n        except CmaDetenida:\n'
+         '            return False\n')
+PORTADA_GOTO = ('        page.goto("https://www.cma-cgm.com/", wait_until="domcontentloaded", '
+                'timeout=CMA_ESPERA_PORTADA * 1000)\n')
+SIN_CARGAR_PORTADA = ('    except PWTimeout:\n'
+                      '        _cma_detener(page, reg, CMA_SIN_CARGAR.format(seg=CMA_ESPERA_PORTADA, '
+                      'que="la portada no respondió"),\n')
+DETENIDA_CMA = '    return (_naviera_detenida(reg, nav) or (getattr(reg, "sin_sesion", None) or {}).get(nav)\n'
+
+MUTACIONES += [
+    # Qué muestra DataDome: el bloqueo como deslizador, reconocido por «bloqueo» (que también trae el deslizador), sin
+    # el deslizador, la verificación sin su marco o sin su texto, el marco sin texto como «otra» o con texto como vacío,
+    # el 403 que no cuenta, otro servidor de DataDome, o el texto sin normalizar.
+    dict(id="e54-datadome-bloqueo-como-deslizador", pruebas=[RECONOCE, BLOQUEO_YA],
+         viejo='        return "bloqueo"\n', nuevo='        return "deslizador"\n'),
+    dict(id="e54-datadome-por-bloqueo", pruebas=[RECONOCE, MEDIDO, SD + "test_deslizador_como_antes"],
+         viejo='CMA_TEXTO_BLOQUEO = "restringido temporalmente"\n', nuevo='CMA_TEXTO_BLOQUEO = "bloqueo"\n'),
+    dict(id="e54-datadome-sin-deslizador", pruebas=[RECONOCE],
+         viejo='    if any(CMA_TEXTO_DESLIZADOR in t for t in textos):\n        return "deslizador"\n', nuevo=""),
+    dict(id="e54-datadome-verificacion-sin-su-marco", pruebas=[RECONOCE],
+         viejo='            verifica = verifica or partes.path.startswith("/interstitial")\n',
+         nuevo="            pass\n"),
+    dict(id="e54-datadome-verificacion-sin-su-texto", pruebas=[RECONOCE],
+         viejo="    if verifica or any(CMA_TEXTO_VERIFICACION in t for t in textos):\n", nuevo="    if verifica:\n"),
+    dict(id="e54-datadome-marco-sin-texto-como-otra", pruebas=[RECONOCE], viejo=CLASIFICA,
+         nuevo='    if de_datadome:\n        return "otra"\n'),
+    dict(id="e54-datadome-otra-como-vacia", pruebas=[RECONOCE, SD + "test_otra_pagina_de_datadome_va_al_operador"],
+         viejo=CLASIFICA, nuevo='    if de_datadome:\n        return "vacia"\n'),
+    dict(id="e54-datadome-403-no-cuenta", pruebas=[RECONOCE, VACIA_PLAZO],
+         viejo='    return "vacia" if _cma_http(page) == 403 else ""\n', nuevo='    return ""\n'),
+    dict(id="e54-datadome-otro-servidor", pruebas=[RECONOCE], viejo=TRAE,
+         nuevo=TRAE.replace("captcha-delivery.com", "captcha-delivery.invalid")),
+    dict(id="e54-datadome-sin-normalizar", pruebas=[RECONOCE],
+         viejo='        texto = " ".join(str(_cma_leer(fr, _JS_CMA_TEXTO) or "").split()).lower()\n',
+         nuevo='        texto = str(_cma_leer(fr, _JS_CMA_TEXTO) or "")\n'),
+    # Las lecturas: sin plazo, con otro plazo, sin atajar el plazo vencido; el código HTTP que no es un entero.
+    dict(id="e54-leer-sin-plazo", pruebas=[DD + "test_lee_solo_con_plazo", EVIDENCIA_CMA],
+         viejo='    return alcance.locator(":root").evaluate(js, timeout=plazo_ms)\n',
+         nuevo="    return alcance.evaluate(js)\n"),
+    dict(id="e54-leer-otro-plazo", pruebas=[MEDIDO], viejo="CMA_LECTURA_MS = 1500\n", nuevo="CMA_LECTURA_MS = 15000\n"),
+    dict(id="e54-leer-sin-atajar", pruebas=[RECONOCE, EVIDENCIA_CMA],
+         viejo=("        return _evaluar_con_plazo(alcance, js, CMA_LECTURA_MS)\n    except Exception:\n"
+                "        return None\n"),
+         nuevo=("        return _evaluar_con_plazo(alcance, js, CMA_LECTURA_MS)\n    except ValueError:\n"
+                "        return None\n")),
+    dict(id="e54-http-cualquier-cosa", pruebas=[DD + "test_codigo_http_solo_entero"], viejo=HTTP_ENTERO,
+         nuevo="    return estado\n"),
+    dict(id="e54-http-verdadero", pruebas=[DD + "test_codigo_http_solo_entero"], viejo=HTTP_ENTERO,
+         nuevo="    return estado if isinstance(estado, int) else None\n"),
+    # El detector de antes: sin el 403, o también con el 200.
+    dict(id="e54-robotcheck-sin-403", pruebas=[DD + "test_robotcheck_con_403_sin_leer_los_marcos"], viejo=ROBOT_403,
+         nuevo=""),
+    dict(id="e54-robotcheck-200-tambien",
+         pruebas=[DD + "test_robotcheck_con_403_sin_leer_los_marcos", SD + "test_sin_datadome_sigue_sin_tocar_nada"],
+         viejo=ROBOT_403, nuevo=ROBOT_403.replace("== 403", "in (200, 403)")),
+    # La evidencia: el HTML sin plazo o con el de Playwright, que no lo tiene; la captura sin su plazo o con otro.
+    dict(id="e54-html-sin-plazo", pruebas=[EVIDENCIA_CMA],
+         viejo="                if plazo_ms:\n                    html = str((_evaluar_con_plazo(",
+         nuevo="                if False:\n                    html = str((_evaluar_con_plazo("),
+    dict(id="e54-html-con-content", pruebas=[EVIDENCIA_CMA],
+         viejo=("                if plazo_ms:\n                    raise                  # sin el HTML de Playwright "
+                "(content), que no tiene plazo\n"), nuevo=""),
+    dict(id="e54-captura-sin-plazo", pruebas=[BLOQUEO_YA], viejo=CAPTURA_CON_PLAZO,
+         nuevo="            page.screenshot(path=str(ruta), full_page=completa or bool(pagina_entera))\n"),
+    dict(id="e54-captura-otro-plazo", pruebas=[MEDIDO], viejo="CMA_CAPTURA_MS = 5000\n",
+         nuevo="CMA_CAPTURA_MS = 30000\n"),
+    # La detención: sin el HTML, con las credenciales, sin la captura, sin el motivo en el Registro, sin detenerse,
+    # o sin el aviso en pantalla.
+    dict(id="e54-detener-sin-html", pruebas=[BLOQUEO_YA], viejo=HTML_CMA, nuevo="    guardados, total = 0, 1\n"),
+    dict(id="e54-detener-con-las-credenciales", pruebas=[EVIDENCIA_CMA, PORTADA_BLOQUEADA, CLICK_BOOK], viejo=HTML_CMA,
+         nuevo=HTML_CMA.replace("sin=_textos_de_la_cuenta(creds)", "sin=()")),
+    dict(id="e54-detener-sin-captura", pruebas=[BLOQUEO_YA],
+         viejo="    png = reg.captura(page, nombre, plazo_ms=CMA_CAPTURA_MS)\n", nuevo="    png = False\n"),
+    dict(id="e54-detener-sin-motivo", pruebas=[BLOQUEO_YA, CLICK_BOOK, CO_CMA, ER_CMA],
+         viejo='    vars(reg).setdefault("detenida", {})["cma"] = motivo\n',
+         nuevo='    vars(reg).setdefault("detenida", {})\n'),
+    dict(id="e54-detener-no-detiene", pruebas=[BLOQUEO_YA], viejo="    raise CmaDetenida(motivo)\n",
+         nuevo="    return False\n"),
+    dict(id="e54-detener-sin-aviso", pruebas=[BLOQUEO_YA, PORTADA_MUDA],
+         viejo='    reg.paso(f"⛔ {causa[:1].upper()}{causa[1:]}. Me detengo sin reintentar ni recargar la página.")\n',
+         nuevo='    reg.info(f"⛔ {causa[:1].upper()}{causa[1:]}. Me detengo sin reintentar ni recargar la página.")\n'),
+    # La espera de la verificación o de la página vacía: sin esperar, el doble, sin detenerse al plazo, el bloqueo al
+    # operador, otro plazo, sin su captura, o con los motivos cruzados.
+    dict(id="e54-espera-sin-esperar",
+         pruebas=[SD + "test_verificacion_que_termina_sigue",
+                  SD + "test_verificacion_que_pasa_al_deslizador_lo_pide_al_operador", SIN_FIN],
+         viejo=VUELTA, nuevo="        while False:\n"),
+    dict(id="e54-espera-el-doble", pruebas=[SIN_FIN], viejo="        fin = time.time() + CMA_ESPERA_PORTADA\n",
+         nuevo="        fin = time.time() + 2 * CMA_ESPERA_PORTADA\n"),
+    dict(id="e54-espera-sin-detenerse-al-plazo", pruebas=[SIN_FIN, VACIA_PLAZO], viejo=AL_PLAZO,
+         nuevo=AL_PLAZO.replace('if que in ("verificacion", "vacia"):', "if False:")),
+    dict(id="e54-espera-bloqueo-al-operador", pruebas=[BLOQUEO_YA],
+         viejo=('    if que == "bloqueo":\n        _cma_detener(page, reg, CMA_ACCESO_RESTRINGIDO, '
+                '"cma_acceso_restringido", creds)\n    if que in'), nuevo="    if que in"),
+    dict(id="e54-espera-otro-plazo", pruebas=[MEDIDO], viejo="CMA_ESPERA_PORTADA = 30\n",
+         nuevo="CMA_ESPERA_PORTADA = 300\n"),
+    dict(id="e54-espera-sin-captura", pruebas=[SIN_FIN],
+         viejo='        reg.captura(page, "cma_verificacion", plazo_ms=CMA_CAPTURA_MS)\n', nuevo=""),
+    dict(id="e54-espera-motivos-cruzados", pruebas=[SIN_FIN, VACIA_PLAZO],
+         viejo='que="DataDome no terminó de verificar el navegador" if que == "verificacion"\n',
+         nuevo='que="DataDome no terminó de verificar el navegador" if que == "vacia"\n'),
+    # Antes de pedirle al operador que deslice: sin mirar qué muestra DataDome, sin volver a mirar con el detector de
+    # antes, o sin el bloqueo mientras espera.
+    dict(id="e54-desafio-sin-mirar-datadome", pruebas=[BLOQUEO_YA, SD + "test_verificacion_que_termina_sigue"],
+         viejo=PRIMERO, nuevo=""),
+    dict(id="e54-desafio-sin-volver-a-mirar", pruebas=[SD + "test_lo_que_solo_ve_el_detector_viejo_va_al_operador"],
+         viejo=PRIMERO, nuevo=PRIMERO.replace(' and not _cma_es_robotcheck(page)', "")),
+    dict(id="e54-desafio-sin-bloqueo-en-la-espera", pruebas=[SD + "test_bloqueo_mientras_espera_al_operador"],
+         viejo=('        if _cma_datadome(page) == "bloqueo":\n'
+                '            _cma_detener(page, reg, CMA_ACCESO_RESTRINGIDO, "cma_acceso_restringido", creds)\n'),
+         nuevo=""),
+    # El login: la portada sin plazo o sin detenerse, sin el decorador, el decorador que no ataja la detención o que
+    # se traga todo, o sin las credenciales para la evidencia.
+    dict(id="e54-login-sin-plazo-en-la-portada", pruebas=[PORTADA_MUDA], viejo=PORTADA_GOTO,
+         nuevo=PORTADA_GOTO.replace(", timeout=CMA_ESPERA_PORTADA * 1000", "")),
+    dict(id="e54-login-sin-detenerse-en-la-portada", pruebas=[PORTADA_MUDA], viejo=SIN_CARGAR_PORTADA,
+         nuevo=SIN_CARGAR_PORTADA.replace("    except PWTimeout:\n", "    except PWTimeout:\n        raise\n")),
+    dict(id="e54-login-sin-decorador", pruebas=[PORTADA_BLOQUEADA, PORTADA_MUDA],
+         viejo="@_cma_login_se_detiene\ndef login_cma(", nuevo="def login_cma("),
+    dict(id="e54-login-decorador-no-ataja", pruebas=[OTRAS_SIGUEN, SOLO_LOGIN_CMA, CO_CMA], viejo=ATAJA,
+         nuevo="        return login(page, creds, reg, on_pausa=on_pausa)\n"),
+    dict(id="e54-login-decorador-se-traga-todo", pruebas=[LG + "test_otra_falla_del_login_sigue_como_antes"],
+         viejo=ATAJA, nuevo=ATAJA.replace("except CmaDetenida:", "except BaseException:")),
+    dict(id="e54-login-sin-credenciales-para-la-evidencia", pruebas=[PORTADA_BLOQUEADA],
+         viejo=("    # ¿Verificación de robot (deslizador)?\n    if _cma_es_robotcheck(page):\n"
+                "        if not _cma_esperar_desafio(page, reg, on_pausa, creds=creds):\n"),
+         nuevo=("    # ¿Verificación de robot (deslizador)?\n    if _cma_es_robotcheck(page):\n"
+                "        if not _cma_esperar_desafio(page, reg, on_pausa):\n")),
+    # La reserva: sin el decorador, de vuelta al portal en la fila siguiente, sin el motivo, sin las credenciales para
+    # la evidencia, la detención después de la guarda, o una detención que un `except Exception` se traga.
+    dict(id="e54-reserva-sin-decorador", pruebas=[CLICK_BOOK, DECORADO],
+         viejo='@_sin_clic_a_ciegas("cma")\n@_cma_si_se_detuvo\n', nuevo='@_sin_clic_a_ciegas("cma")\n'),
+    dict(id="e54-reserva-vuelve-al-portal", pruebas=[CLICK_BOOK],
+         viejo=('        motivo = _naviera_detenida(reg, "cma")\n        if motivo:\n'
+                '            return _no_enviada(reg, motivo)\n'),
+         nuevo=""),
+    dict(id="e54-reserva-sin-motivo", pruebas=[CLICK_BOOK], viejo="            return _no_enviada(reg, e.motivo)\n",
+         nuevo='            return (NO_ENVIADA, "")\n'),
+    dict(id="e54-reserva-sin-credenciales-para-la-evidencia", pruebas=[CLICK_BOOK],
+         viejo=('            _cma_esperar_desafio(page, reg, on_pausa, creds=creds)\n'
+                '            esperar_hasta(page, "#pol"'),
+         nuevo=('            _cma_esperar_desafio(page, reg, on_pausa)\n'
+                '            esperar_hasta(page, "#pol"')),
+    dict(id="e54-reserva-detenida-despues-de-la-guarda",
+         pruebas=[RS + "test_lo_que_detiene_no_corre_despues_de_la_guarda"],
+         viejo='            return _resultado_envio(page, reg, "cma", "CMA", f"cma_f{f}_6_confirmado"',
+         nuevo=('            _cma_esperar_desafio(page, reg, on_pausa)\n'
+                '            return _resultado_envio(page, reg, "cma", "CMA", f"cma_f{f}_6_confirmado"')),
+    dict(id="e54-detenida-de-exception", pruebas=[CLICK_BOOK], viejo="class CmaDetenida(BaseException):\n",
+         nuevo="class CmaDetenida(Exception):\n"),
+    # El panel y la consola: las filas de CMA detenida en el login sin estado (como antes), el motivo sin la naviera
+    # detenida, NO ENVIADA con cualquier naviera, o la naviera detenida que nunca se lee.
+    dict(id="e54-panel-solo-sin-sesion", pruebas=[CO_CMA],
+         viejo="                    for rsv in (sub_elegidas if _motivo_sin_sesion(reg, nav) else ()):\n",
+         nuevo="                    for rsv in (sub_elegidas if nav in SIN_SESION else ()):\n"),
+    dict(id="e54-consola-solo-sin-sesion", pruebas=[ER_CMA],
+         viejo="            for i, rsv in (con_nave if _motivo_sin_sesion(reg, naviera_clave) else ()):\n",
+         nuevo="            for i, rsv in (con_nave if naviera_clave in SIN_SESION else ()):\n"),
+    dict(id="e54-motivo-sin-la-detenida", pruebas=[CO_CMA, ER_CMA], viejo=DETENIDA_CMA,
+         nuevo='    return ((getattr(reg, "sin_sesion", None) or {}).get(nav)\n'),
+    dict(id="e54-motivo-para-todas",
+         pruebas=[CO + "test_login_fallido_no_reserva", ER + "test_login_fallido_no_toca_la_planilla"],
+         viejo='            or SIN_SESION.get(nav, ""))\n',
+         nuevo="            or SIN_SESION.get(nav, MSC_SIN_SESION))\n"),
+    dict(id="e54-naviera-detenida-nunca", pruebas=[CLICK_BOOK, CO_CMA, BLOQUEO_YA],
+         viejo='    return (getattr(reg, "detenida", None) or {}).get(nav, "")\n', nuevo='    return ""\n'),
 ]

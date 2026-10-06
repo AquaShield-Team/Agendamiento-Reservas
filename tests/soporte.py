@@ -248,7 +248,8 @@ class PaginaFalsa:
     def wait_for_timeout(self, ms):
         self.esperas += 1
 
-    def screenshot(self, path=None, full_page=False):
+    def screenshot(self, path=None, full_page=False, timeout=None):
+        # timeout: el plazo de la captura de CMA detenida (Registro.captura con plazo_ms, encargo 54).
         self.capturas.append((Path(path).name, full_page))
         Path(path).write_bytes(b"")
 

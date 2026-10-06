@@ -538,6 +538,23 @@ class TestEjecutarReservas(ConPlanilla):
         self.assertEqual((res.get(5), n.reservas), ("NO ENVIADA", []))
         self.assertTrue(openpyxl.load_workbook(self.planilla)["MSC"]["H5"].value.endswith(motivo))
 
+    def test_cma_detenida_en_el_login_queda_no_enviada(self):
+        # Si el login de CMA-CGM se detuvo porque el portal restringió el acceso o no terminó de cargar (decisión de
+        # Marcelo, encargo 54), cada fila de CMA queda NO ENVIADA con ese motivo en la planilla, sin reservar; hasta ahí
+        # no se tocaba, como con el login fallido de las navieras que no son MSC.
+        motivo = self.mod.CMA_DETENIDA.format(causa=self.mod.CMA_ACCESO_RESTRINGIDO)
+
+        def login(page, creds, reg, on_pausa=None):
+            self.mod._cma_detener(page, reg, self.mod.CMA_ACCESO_RESTRINGIDO, "cma_acceso_restringido", creds)
+        with soporte.Navieras(self.mod) as n:
+            self.mod.NAVIERAS["cma"] = ("CMA-CGM", self.mod._cma_login_se_detiene(login))
+            res, _ = self.mod.ejecutar_reservas("op_prueba", "cma", esperar_cierre=lambda: None)
+        self.assertEqual((sorted(res), sorted(set(res.values())), n.reservas), ([5, 6], ["NO ENVIADA"], []))
+        ws = openpyxl.load_workbook(self.planilla)["CMA-CGM"]
+        for f in res:
+            with self.subTest(fila=f):
+                self.assertTrue(ws[f"H{f}"].value.endswith(motivo))
+
     def test_reservador_que_revienta(self):
         def respuesta(nav, rsv, on_pausa):
             raise RuntimeError("falla falsa")
@@ -596,6 +613,21 @@ class TestEjecutarLogin(ConPlanilla):
             res, _ = self.mod.ejecutar_login("op_prueba", ["cosco"], esperar_cierre=lambda: None)
         self.assertEqual(res, {"cosco": False})
         self.assertEqual(n.pw.contextos[0].pages[0].capturas, [("cosco_error.png", False)])
+
+    def test_login_que_se_detiene_en_cma_sigue(self):
+        # En «Solo iniciar sesión», CMA-CGM detenida por el portal queda REVISAR, con su línea en log.txt, y la naviera
+        # siguiente entra igual: la detención no corta la corrida (decisión de Marcelo, encargo 54). Corre después de
+        # test_login_por_consola, que pide su carpeta sin «_2».
+        def login(page, creds, reg, on_pausa=None):
+            self.mod._cma_detener(page, reg, self.mod.CMA_ACCESO_RESTRINGIDO, "cma_acceso_restringido", creds)
+        with soporte.Navieras(self.mod) as n:
+            self.mod.NAVIERAS["cma"] = ("CMA-CGM", self.mod._cma_login_se_detiene(login))
+            res, carpeta = self.mod.ejecutar_login("op_prueba", ["cma", "cosco"], esperar_cierre=lambda: None)
+        self.assertEqual((res, [l[0] for l in n.logins]), ({"cma": False, "cosco": True}, ["cosco"]))
+        log = (Path(carpeta) / "log.txt").read_text(encoding="utf-8")
+        self.assertIn("· ⛔ CMA-CGM restringió el acceso: su página dice «El acceso está restringido temporalmente». "
+                      "Me detengo sin reintentar ni recargar la página.", log)
+        self.assertIn("· [CMA-CGM] resultado=REVISAR", log)
 
     def test_operador_desconocido(self):
         with self.assertRaises(ValueError):

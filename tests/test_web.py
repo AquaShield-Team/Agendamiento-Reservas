@@ -720,6 +720,35 @@ class TestPanelCorridas(PanelBase):
                          ([], ("NO ENVIADA", motivo)))
         self.assertTrue(any(f"✗ fila 5: NO ENVIADA · {motivo}" in l for l in e["lineas"]))
 
+    def login_de_cma_que_se_detiene(self):
+        """El login de CMA-CGM detenido por el portal (_cma_detener, con su decorador), sobre la página falsa."""
+        def login(page, creds, reg, on_pausa=None):
+            self.mod._cma_detener(page, reg, self.mod.CMA_ACCESO_RESTRINGIDO, "cma_acceso_restringido", creds)
+        return ("CMA-CGM", self.mod._cma_login_se_detiene(login))
+
+    def test_cma_detenida_en_el_login_queda_no_enviada(self):
+        # Si el login de CMA-CGM se detuvo porque el portal restringió el acceso o no terminó de cargar (decisión de
+        # Marcelo, encargo 54), cada fila de CMA queda NO ENVIADA con ese motivo, en el panel y en log.txt, sin
+        # reservar; hasta ahí quedaba sin estado, como con el login fallido de las navieras que no son MSC.
+        motivo = self.mod.CMA_DETENIDA.format(causa=self.mod.CMA_ACCESO_RESTRINGIDO)
+        with Navieras(self.mod) as n:
+            self.mod.NAVIERAS["cma"] = self.login_de_cma_que_se_detiene()
+            e = self.correr("CMA-CGM", [5, 6])
+        self.assertEqual((n.reservas, {k: (v["estado"], v["detalle"]) for k, v in e["resultados"].items()}),
+                         ([], {"5": ("NO ENVIADA", motivo), "6": ("NO ENVIADA", motivo)}))
+        self.assertTrue(any(f"✗ fila 6: NO ENVIADA · {motivo}" in l for l in e["lineas"]))
+
+    def test_cma_detenida_no_frena_a_las_otras(self):
+        # Las otras navieras siguen normal (decisión de Marcelo, encargo 54).
+        with Navieras(self.mod) as n:
+            self.mod.NAVIERAS["cma"] = self.login_de_cma_que_se_detiene()
+            e = self.correr("CONSOLIDADO", [5, 6, 7, 8, 9, 10])
+        self.assertEqual([r[:2] for r in n.reservas],
+                         [("one", 5), ("msc", 6), ("cosco", 8), ("hyundai", 9), ("maersk", 10)])
+        self.assertEqual({k: v["estado"] for k, v in e["resultados"].items()},
+                         {"5": "OK-EJEMPLO", "6": "OK-EJEMPLO", "7": "NO ENVIADA", "8": "OK-EJEMPLO",
+                          "9": "OK-EJEMPLO", "10": "OK-EJEMPLO"})
+
     def test_reservador_que_revienta(self):
         def respuesta(nav, rsv, on_pausa):
             raise RuntimeError("falla falsa del portal")

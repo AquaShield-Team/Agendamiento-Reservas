@@ -271,11 +271,13 @@ class TestSinClicACiegas(ConRegistro):
             if any(x in cortan for x in uni[r][1]):
                 decorados[r] = decos
                 # Desde el encargo 28, antes va el de la fila sin nave (CICLO-solo-la-nave-pedida.md); desde el 42,
-                # entre los dos, el de la fila sin puerto de carga o sin destino (CICLO-maersk-y-fila-sin-ruta.md); y
-                # desde el 50, en COSCO, por fuera de todos, el del puerto traducido (CICLO-msc-segundo-intento.md).
+                # entre los dos, el de la fila sin puerto de carga o sin destino (CICLO-maersk-y-fila-sin-ruta.md);
+                # desde el 50, en COSCO, por fuera de todos, el del puerto traducido (CICLO-msc-segundo-intento.md); y
+                # desde el 54, en CMA, por dentro de todos, el de CMA detenida (CICLO-cma-acceso-restringido.md).
                 self.assertEqual(decos, (["_con_el_puerto_de_cosco"] if r == "reservar_cosco" else [])
                                  + ["_con_la_nave_de_la_fila", "_con_la_ruta_de_la_fila",
-                                    f"_sin_clic_a_ciegas({prefijo!r})"], r)
+                                    f"_sin_clic_a_ciegas({prefijo!r})"]
+                                 + (["_cma_si_se_detuvo"] if r == "reservar_cma" else []), r)
         self.assertEqual(sorted(decorados), sorted(self.CORTAN))
 
     CORTAN = ["reservar_cma", "reservar_cosco", "reservar_hyundai", "reservar_maersk", "reservar_msc", "reservar_one"]

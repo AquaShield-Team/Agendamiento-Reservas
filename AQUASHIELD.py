@@ -255,12 +255,23 @@ def _texto_error(e):
     return f"{type(e).__name__}: {' '.join(str(e).split())[:150]}"
 
 
-def _guardar_html_completo(page, reg, nombre, momento, sin=()):
+def _evaluar_con_plazo(alcance, js, plazo_ms):
+    """Corre 'js' en la página o en un marco, con plazo: con un localizador de su documento (':root'), cuyo evaluate se
+    rinde a los 'plazo_ms' con el TimeoutError de Playwright, que levanta. frame.evaluate no tiene plazo: en un marco
+    que no responde, no vuelve. Medido sin red en Chrome 154, con un marco de otro sitio ocupado en un bucle sin fin:
+    frame.evaluate seguía esperando a los 40 s, y esta lectura se rindió a los 1,5 s (encargo 54,
+    CICLO-cma-acceso-restringido.md)."""
+    return alcance.locator(":root").evaluate(js, timeout=plazo_ms)
+
+
+def _guardar_html_completo(page, reg, nombre, momento, sin=(), plazo_ms=None):
     """El HTML completo de la página y de cada marco (con sus raíces shadow abiertas) en la carpeta
     de la corrida: «<nombre>.html» y «<nombre>_marco<n>.html». Solo lee: ni clics, ni navegación,
     ni esperas. Un HTML que no se puede guardar se avisa ('momento' dice cuándo: «tras el envío»,
     «en la guarda»…) y no tapa a los demás. Con 'sin' (textos, como _textos_de_la_cuenta), no escribe el que traiga
-    uno de ellos, sin distinguir mayúsculas, y lo avisa sin decir cuál (encargo 50: el login de MSC). Devuelve
+    uno de ellos, sin distinguir mayúsculas, y lo avisa sin decir cuál (encargo 50: el login de MSC). Con 'plazo_ms',
+    cada lectura se rinde a ese plazo (_evaluar_con_plazo), y el HTML de un marco que no responde se avisa como no
+    guardado, sin el de Playwright, que no tiene plazo (encargo 54: CMA-CGM detenida). Devuelve
     (guardados, total, sin_shadow)."""
     principal = getattr(page, "main_frame", None)
     marcos = [f for f in (getattr(page, "frames", None) or []) if f is not page and f is not principal]
@@ -270,8 +281,13 @@ def _guardar_html_completo(page, reg, nombre, momento, sin=()):
         destino = reg.dir_capturas / (f"{nombre}.html" if i == 0 else f"{nombre}_marco{i}.html")
         try:
             try:
-                html = str((alcance.evaluate(_JS_HTML_COMPLETO) or {}).get("html") or "")
+                if plazo_ms:
+                    html = str((_evaluar_con_plazo(alcance, _JS_HTML_COMPLETO, plazo_ms) or {}).get("html") or "")
+                else:
+                    html = str((alcance.evaluate(_JS_HTML_COMPLETO) or {}).get("html") or "")
             except Exception:
+                if plazo_ms:
+                    raise                  # sin el HTML de Playwright (content), que no tiene plazo
                 html = ""
             if not html:                   # sin JavaScript: el HTML de Playwright, sin raíces shadow
                 html = alcance.content()
@@ -811,17 +827,20 @@ class Registro:
         try: self._emit("    URL: " + _sin_consulta(page.url, decirlo=True))
         except Exception: pass
 
-    def captura(self, page, nombre, full=False, pagina_entera=False):
+    def captura(self, page, nombre, full=False, pagina_entera=False, plazo_ms=None):
         """Guarda una captura. Por defecto SOLO la ventana visible: la captura de
         pagina completa cuesta entre 1 y 4 s en portales largos (medido) y no
         aporta para el seguimiento normal. Se activa con AQUASHIELD_CAPTURA_FULL
         o en modo descubrir; 'pagina_entera' la pide siempre (la evidencia de la
-        guarda del candado). Devuelve True si la guardó."""
+        guarda del candado). Con 'plazo_ms', se rinde a ese plazo, y no al de
+        Playwright (30 s): con un marco que no responde, lo esperaba entero
+        (encargo 54, CMA-CGM detenida). Devuelve True si la guardó."""
         try:
             completa = bool(full) and bool(os.environ.get("AQUASHIELD_CAPTURA_FULL")
                                            or os.environ.get("AQUASHIELD_DESCUBRIR"))
             ruta = self.dir_capturas / f"{nombre}.png"
-            page.screenshot(path=str(ruta), full_page=completa or bool(pagina_entera))
+            page.screenshot(path=str(ruta), full_page=completa or bool(pagina_entera),
+                            **({"timeout": plazo_ms} if plazo_ms else {}))
             self._emit(f"    captura: {ruta.name}")
             return True
         except Exception as e:
@@ -1525,11 +1544,21 @@ def _msc_motivo_tras_dos(primero, segundo):
     return MSC_SIN_SESION_TRAS_DOS.format(primero=primero, segundo=como)
 
 
+def _naviera_detenida(reg, nav):
+    """El motivo con que se detuvo 'nav' en esta corrida, o '': hoy, solo CMA-CGM, cuando su portal restringe el acceso
+    o su página no termina de cargar (_cma_detener; decisión de Marcelo, encargo 54). Sus filas quedan NO ENVIADA con
+    él, sin volver al portal: las que siguen (_cma_si_se_detuvo) y, si se detuvo en el login, todas
+    (_motivo_sin_sesion)."""
+    return (getattr(reg, "detenida", None) or {}).get(nav, "")
+
+
 def _motivo_sin_sesion(reg, nav):
-    """El motivo de las filas de 'nav' (una naviera de SIN_SESION) cuando su login no dejó la sesión iniciada: el que el
-    login dejó en el Registro, si dejó uno (MSC, tras su segundo intento: MSC_SIN_SESION_TRAS_DOS, encargos 50 y
-    51), o el de SIN_SESION."""
-    return (getattr(reg, "sin_sesion", None) or {}).get(nav) or SIN_SESION[nav]
+    """El motivo de las filas de 'nav' cuando su login no dejó la sesión iniciada: el de la naviera detenida, si el
+    login la detuvo (CMA-CGM, encargo 54: _naviera_detenida); el que el login dejó en el Registro, si dejó uno (MSC,
+    tras su segundo intento: MSC_SIN_SESION_TRAS_DOS, encargos 50 y 51); o el de SIN_SESION. Si no hay ninguno, '': la
+    fila queda sin estado, como antes."""
+    return (_naviera_detenida(reg, nav) or (getattr(reg, "sin_sesion", None) or {}).get(nav)
+            or SIN_SESION.get(nav, ""))
 
 
 # ============================================================
@@ -1546,9 +1575,173 @@ _JS_CMA_LOGIN = """() => {
     if (el) { el.click(); return true; } return false; }"""
 
 
-def _cma_es_robotcheck(page):
-    """Detecta el captcha o verificación anti-bot (DataDome / captcha-delivery) en CMA CGM."""
+# Lo que muestra DataDome en CMA-CGM, medido sin abrir el portal (decisión de Marcelo, encargo 54,
+# CICLO-cma-acceso-restringido.md), en las 11 capturas de su verificación en logs/ (cma_robot_desafio, del 2026-09-24 al
+# 2026-10-06), leídas con OCR, y en los archivos de sesión del perfil del programa, que guardan el código HTTP de cada
+# navegación y la dirección de cada marco:
+# - el deslizador, en 9: «Desliza hacia la derecha para asegurar tu acceso»;
+# - el acceso restringido, en 1 (el 06-10 a las 09:57:52): «El acceso está restringido temporalmente», en el marco
+#   geo.captcha-delivery.com/captcha/ (el marco del deslizador no quedó en los archivos de sesión);
+# - la verificación del dispositivo, en 1 (el 06-10 a las 14:26:41): «Verificación del dispositivo ...», en el marco
+#   /interstitial/. A los 5 s la página se recargó sola y quedó vacía, sin ningún marco, 351,7 s.
+# Las 4 navegaciones de ese día respondieron 403. El deslizador y el acceso restringido traen también «El bloqueo actual
+# puede ser…»: por eso el bloqueo se reconoce por «restringido temporalmente», y no por «bloqueo».
+CMA_TEXTO_BLOQUEO = "restringido temporalmente"
+CMA_TEXTO_DESLIZADOR = "desliza hacia la derecha"
+CMA_TEXTO_VERIFICACION = "verificación del dispositivo"
+# Cuántos segundos tienen la portada para cargar, y la verificación o la página vacía de DataDome para terminar, antes
+# de que la corrida de CMA se detenga. Hipótesis: unas 8 veces lo más largo medido en los 23 inicios de sesión de CMA de
+# logs/ (de «Abriendo cma-cgm.com...» al fin de su carga: de 1,1 a 3,7 s, mediana 2,0), y 6 veces lo que tardó la
+# verificación en recargar la página (5 s, la única medida). Es también el plazo que Playwright le daba a la portada.
+CMA_ESPERA_PORTADA = 30
+# El plazo de cada lectura de la página o de un marco (_cma_leer). Medido sin red en Chrome 154: cada una tardó de 0,01
+# a 0,15 s.
+CMA_LECTURA_MS = 1500
+# El plazo de la captura de la ventana de CMA detenida o en su verificación. Medido sin red en Chrome 154: tardó de 0,1
+# a 0,2 s; con un marco que no responde, Playwright esperaba sus 30 s, y con la portada que no contesta, 25 s.
+CMA_CAPTURA_MS = 5000
+CMA_ACCESO_RESTRINGIDO = "CMA-CGM restringió el acceso: su página dice «El acceso está restringido temporalmente»"
+CMA_SIN_CARGAR = "la página de CMA-CGM no terminó de cargar en {seg} s ({que})"
+# El motivo de las filas de CMA-CGM detenida, en la planilla, en el panel y en log.txt.
+CMA_DETENIDA = ("{causa}. La reserva no se envió, y el programa se detuvo sin reintentar ni recargar la página (la "
+                "captura y el HTML, en la carpeta de la corrida)")
+_JS_CMA_HTTP = "() => { const n = performance.getEntriesByType('navigation')[0]; return n ? n.responseStatus : null; }"
+_JS_CMA_TEXTO = "() => document.body ? document.body.innerText : ''"
+
+
+class CmaDetenida(BaseException):
+    """CMA-CGM restringió el acceso o su página no terminó de cargar: su corrida se detiene, sin reintentar ni recargar
+    (_cma_detener; decisión de Marcelo, encargo 54). Deriva de BaseException, como ObjetivoNoEncontrado: el login y la
+    reserva tienen muchos `except Exception` que se la tragarían, y seguirían. La atajan el login y el reservador de CMA
+    (_cma_login_se_detiene, _cma_si_se_detuvo), y las otras navieras siguen."""
+
+    def __init__(self, motivo):
+        super().__init__(motivo)
+        self.motivo = motivo
+
+
+def _cma_leer(alcance, js):
+    """'js' en la página o en un marco, con plazo (_evaluar_con_plazo, CMA_LECTURA_MS); si no se puede leer, None."""
     try:
+        return _evaluar_con_plazo(alcance, js, CMA_LECTURA_MS)
+    except Exception:
+        return None
+
+
+def _cma_http(page):
+    """El código HTTP del documento que muestra la página (el responseStatus de su navegación, que Chrome 154 da: medido
+    sin red, 403 y 200), o None."""
+    estado = _cma_leer(page, _JS_CMA_HTTP)
+    return estado if isinstance(estado, int) and not isinstance(estado, bool) else None
+
+
+def _cma_datadome(page):
+    """Qué muestra DataDome en la página de CMA-CGM (lo medido está arriba de CMA_TEXTO_BLOQUEO), leído con plazo en
+    cada marco (_cma_leer): "bloqueo" (el acceso restringido), "deslizador", "verificacion" (la del dispositivo: su
+    marco /interstitial/ o su texto), "vacia" (un documento 403 sin el marco de DataDome, o su marco sin texto: así
+    quedó a las 14:26:44 del 06-10), "otra" (su marco, con otro texto) o "" (sin DataDome). Un marco que no se deja
+    leer cuenta como sin texto. Solo lee: ni clics, ni navegación, ni esperas."""
+    try:
+        marcos = list(page.frames)
+    except Exception:
+        marcos = []
+    textos, de_datadome, verifica = [], [], False
+    for fr in marcos:
+        partes = urlsplit(str(getattr(fr, "url", "") or ""))
+        texto = " ".join(str(_cma_leer(fr, _JS_CMA_TEXTO) or "").split()).lower()
+        textos.append(texto)
+        if (partes.hostname or "").lower().endswith("captcha-delivery.com"):
+            de_datadome.append(texto)
+            verifica = verifica or partes.path.startswith("/interstitial")
+    if any(CMA_TEXTO_BLOQUEO in t for t in textos):
+        return "bloqueo"
+    if any(CMA_TEXTO_DESLIZADOR in t for t in textos):
+        return "deslizador"
+    if verifica or any(CMA_TEXTO_VERIFICACION in t for t in textos):
+        return "verificacion"
+    if de_datadome:
+        return "otra" if any(de_datadome) else "vacia"
+    return "vacia" if _cma_http(page) == 403 else ""
+
+
+def _cma_detener(page, reg, causa, nombre, creds=None):
+    """Detiene la corrida de CMA-CGM (decisión de Marcelo, encargo 54): lo dice en pantalla y en log.txt, anota la
+    dirección sin su consulta, guarda la captura de la ventana y el HTML de la página y de cada marco, con plazo y sin
+    el que traiga el usuario o la clave (_textos_de_la_cuenta), deja el motivo en el Registro (_naviera_detenida) y
+    levanta CmaDetenida. Solo lee: ni clics, ni navegación, ni recarga, ni otro intento."""
+    motivo = CMA_DETENIDA.format(causa=causa)
+    vars(reg).setdefault("detenida", {})["cma"] = motivo
+    reg.paso(f"⛔ {causa[:1].upper()}{causa[1:]}. Me detengo sin reintentar ni recargar la página.")
+    reg.url(page)
+    png = reg.captura(page, nombre, plazo_ms=CMA_CAPTURA_MS)
+    guardados, total, _ = _guardar_html_completo(page, reg, nombre, "con CMA-CGM detenida",
+                                                 sin=_textos_de_la_cuenta(creds), plazo_ms=CMA_LECTURA_MS)
+    reg.info(f"evidencia de CMA-CGM detenida: {f'{nombre}.png' if png else 'sin la captura'} y {guardados} de "
+             f"{total} HTML (la página y {total - 1} marco(s))")
+    raise CmaDetenida(motivo)
+
+
+def _cma_sin_bloqueo_ni_espera(page, reg, creds=None):
+    """Lo que mira _cma_esperar_desafio antes de pedirle al operador que deslice (decisión de Marcelo, encargo 54): si
+    DataDome restringe el acceso, detiene la corrida de CMA (_cma_detener); si muestra su verificación o una página
+    vacía, espera hasta CMA_ESPERA_PORTADA s, sin tocar nada, a que salga de ahí, y si no sale, también la detiene.
+    Devuelve lo que muestra al final (_cma_datadome): "", "deslizador" u "otra"."""
+    que = _cma_datadome(page)
+    if que in ("verificacion", "vacia"):
+        fin = time.time() + CMA_ESPERA_PORTADA
+        reg.paso(f"CMA CGM muestra la verificación del navegador de DataDome, o una página vacía: espero hasta "
+                 f"{CMA_ESPERA_PORTADA} s a que termine de cargar, sin tocar nada.")
+        reg.captura(page, "cma_verificacion", plazo_ms=CMA_CAPTURA_MS)
+        while que in ("verificacion", "vacia") and time.time() < fin:
+            esperar(page, 1)
+            que = _cma_datadome(page)
+    if que == "bloqueo":
+        _cma_detener(page, reg, CMA_ACCESO_RESTRINGIDO, "cma_acceso_restringido", creds)
+    if que in ("verificacion", "vacia"):
+        _cma_detener(page, reg, CMA_SIN_CARGAR.format(
+            seg=CMA_ESPERA_PORTADA, que="DataDome no terminó de verificar el navegador" if que == "verificacion"
+            else "la página de DataDome quedó vacía"), "cma_sin_cargar", creds)
+    return que
+
+
+def _cma_login_se_detiene(login):
+    """Decorador del login de CMA (decisión de Marcelo, encargo 54): si se detuvo (CmaDetenida, _cma_detener), no hay
+    sesión, y las filas de CMA quedan NO ENVIADA con el motivo (_motivo_sin_sesion). Sin él, CmaDetenida, que deriva de
+    BaseException, cortaría la corrida entera: las otras navieras siguen."""
+    def login_cma_detenible(page, creds, reg, on_pausa=None):
+        try:
+            return login(page, creds, reg, on_pausa=on_pausa)
+        except CmaDetenida:
+            return False
+    login_cma_detenible.__name__ = login.__name__
+    login_cma_detenible.__doc__ = login.__doc__
+    return login_cma_detenible
+
+
+def _cma_si_se_detuvo(reservar):
+    """Decorador del reservador de CMA (decisión de Marcelo, encargo 54): si CMA-CGM ya se detuvo en esta corrida (en
+    el login o en una fila anterior: _naviera_detenida), la fila queda NO ENVIADA con ese motivo, sin volver al portal;
+    y si se detiene en esta (CmaDetenida), también. Así, ninguna fila de CMA vuelve a intentarlo."""
+    def reservar_cma_detenible(page, reserva, creds, reg, on_pausa=None):
+        motivo = _naviera_detenida(reg, "cma")
+        if motivo:
+            return _no_enviada(reg, motivo)
+        try:
+            return reservar(page, reserva, creds, reg, on_pausa=on_pausa)
+        except CmaDetenida as e:
+            return _no_enviada(reg, e.motivo)
+    reservar_cma_detenible.__name__ = reservar.__name__
+    reservar_cma_detenible.__doc__ = reservar.__doc__
+    return reservar_cma_detenible
+
+
+def _cma_es_robotcheck(page):
+    """Detecta el captcha o verificación anti-bot (DataDome / captcha-delivery) en CMA CGM. Desde el encargo 54,
+    también un documento que respondió 403, como las páginas de DataDome del 2026-10-06, también la que quedó vacía,
+    sin su marco (_cma_http, con plazo): con eso basta, sin leer los marcos."""
+    try:
+        if _cma_http(page) == 403:
+            return True
         # 1. Chequear URLs, títulos y texto de frames (DataDome usa geo.captcha-delivery.com)
         for fr in page.frames:
             u = (fr.url or "").lower()
@@ -1670,11 +1863,18 @@ def resolver_cma_slider(page, reg=None):
     return not _cma_es_robotcheck(page)
 
 
-def _cma_esperar_desafio(page, reg, on_pausa=None, segundos=180):
+def _cma_esperar_desafio(page, reg, on_pausa=None, segundos=180, creds=None):
     """Si CMA CGM muestra la verificación de DataDome (deslizar flecha a la derecha),
     alerta al operador y espera de forma reactiva a que deslice la flecha con el mouse.
-    (No se debe arrastrar con eventos sintéticos porque DataDome bloquea temporalmente la IP)."""
+    (No se debe arrastrar con eventos sintéticos porque DataDome bloquea temporalmente la IP).
+    Desde el encargo 54 (decisión de Marcelo), antes mira qué muestra DataDome (_cma_sin_bloqueo_ni_espera): con el
+    acceso restringido, o con su verificación o su página vacía que no terminan de cargar en CMA_ESPERA_PORTADA s,
+    detiene la corrida de CMA (_cma_detener: CmaDetenida), sin reintentar ni recargar; y mientras espera al operador,
+    si la página pasa al acceso restringido, también. Con el deslizador, como antes."""
     if not _cma_es_robotcheck(page):
+        return True
+    if _cma_sin_bloqueo_ni_espera(page, reg, creds) == "" and not _cma_es_robotcheck(page):
+        reg.paso("DataDome dejó pasar la página; sigo.")
         return True
 
     reg.paso("CMA CGM muestra verificación de seguridad (DataDome: 'Desliza hacia la derecha').")
@@ -1711,6 +1911,8 @@ def _cma_esperar_desafio(page, reg, on_pausa=None, segundos=180):
             reg.paso("Verificación de CMA CGM superada ✓; continúo automáticamente.")
             esperar(page, 1.5)
             return True
+        if _cma_datadome(page) == "bloqueo":
+            _cma_detener(page, reg, CMA_ACCESO_RESTRINGIDO, "cma_acceso_restringido", creds)
         seg_transcurridos = int(_t.time() - t0)
         if seg_transcurridos - ultimo_aviso >= 5:
             ultimo_aviso = seg_transcurridos
@@ -1720,10 +1922,18 @@ def _cma_esperar_desafio(page, reg, on_pausa=None, segundos=180):
     return False
 
 
+@_cma_login_se_detiene
 def login_cma(page, creds, reg, on_pausa=None):
     marc = ["customer-hub", "/ebusiness/"]
     reg.paso("Abriendo cma-cgm.com...")
-    page.goto("https://www.cma-cgm.com/", wait_until="domcontentloaded")
+    # La portada tiene CMA_ESPERA_PORTADA s para cargar; si no, la corrida de CMA se detiene, sin reintentar ni recargar
+    # (decisión de Marcelo, encargo 54). Hasta ahí, al vencer el plazo de Playwright (los mismos 30 s), el login
+    # terminaba con un error inesperado, y las filas de CMA quedaban sin estado.
+    try:
+        page.goto("https://www.cma-cgm.com/", wait_until="domcontentloaded", timeout=CMA_ESPERA_PORTADA * 1000)
+    except PWTimeout:
+        _cma_detener(page, reg, CMA_SIN_CARGAR.format(seg=CMA_ESPERA_PORTADA, que="la portada no respondió"),
+                     "cma_sin_cargar", creds)
 
     # Esperar verificación de dispositivo
     for i in range(20):
@@ -1737,7 +1947,7 @@ def login_cma(page, creds, reg, on_pausa=None):
 
     # ¿Verificación de robot (deslizador)?
     if _cma_es_robotcheck(page):
-        if not _cma_esperar_desafio(page, reg, on_pausa):
+        if not _cma_esperar_desafio(page, reg, on_pausa, creds=creds):
             return False
 
     if any(m in page.url.lower() for m in marc):
@@ -1747,7 +1957,7 @@ def login_cma(page, creds, reg, on_pausa=None):
     llego = False
     for intento in range(4):
         if _cma_es_robotcheck(page):
-            if not _cma_esperar_desafio(page, reg, on_pausa):
+            if not _cma_esperar_desafio(page, reg, on_pausa, creds=creds):
                 return False
 
         try:
@@ -1762,7 +1972,7 @@ def login_cma(page, creds, reg, on_pausa=None):
 
         # Comprobar si tras pulsar login apareció el desafío
         if _cma_es_robotcheck(page):
-            if not _cma_esperar_desafio(page, reg, on_pausa):
+            if not _cma_esperar_desafio(page, reg, on_pausa, creds=creds):
                 return False
 
         import time as _t
@@ -1775,7 +1985,7 @@ def login_cma(page, creds, reg, on_pausa=None):
             esperar(page, 0.4)
 
         if _cma_es_robotcheck(page):
-            if not _cma_esperar_desafio(page, reg, on_pausa):
+            if not _cma_esperar_desafio(page, reg, on_pausa, creds=creds):
                 return False
 
         if "auth.cma-cgm.com" in page.url.lower():
@@ -1784,7 +1994,7 @@ def login_cma(page, creds, reg, on_pausa=None):
 
     if not llego and "auth.cma-cgm.com" not in page.url.lower():
         if _cma_es_robotcheck(page):
-            if not _cma_esperar_desafio(page, reg, on_pausa):
+            if not _cma_esperar_desafio(page, reg, on_pausa, creds=creds):
                 pass
         if any(m in page.url.lower() for m in marc):
             reg.paso("Ya había una sesión activa."); return True
@@ -11385,6 +11595,7 @@ def _cma_en_mantenimiento(page):
 @_con_la_nave_de_la_fila
 @_con_la_ruta_de_la_fila
 @_sin_clic_a_ciegas("cma")
+@_cma_si_se_detuvo
 def reservar_cma(page, reserva, creds, reg, on_pausa=None):
     """CMA-CGM (Click & Book): ruta + cotización, carga reefer, itinerario, ajustes
     reefer, comentarios y se DETIENE antes de emitir en Envío de la reserva."""
@@ -11405,7 +11616,7 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
         try:
             page.goto("https://www.cma-cgm.com/ebusiness/shipment/request",
                       wait_until="domcontentloaded")
-            _cma_esperar_desafio(page, reg, on_pausa)
+            _cma_esperar_desafio(page, reg, on_pausa, creds=creds)
             esperar_hasta(page, "#pol", 8, reg, "cargar Click & Book", asentar=1.2)
         except Exception as e:
             reg.info(f"goto: {str(e)[:45]}")
@@ -11843,8 +12054,9 @@ def ejecutar_reservas(usuario, naviera_clave, cfg=None, on_log=None, on_pausa=No
             reg.paso("No se pudo iniciar sesión; no proceso reservas.")
             # Sin la sesión de MSC, cada fila queda NO ENVIADA con su motivo, en la planilla y en log.txt (decisión de
             # Marcelo, encargo 45, CICLO-login-msc-y-maersk.md), el que dejó su login (_motivo_sin_sesion, encargo 50).
-            # Con las otras navieras, como antes: no se toca.
-            for i, rsv in (con_nave if naviera_clave in SIN_SESION else ()):
+            # Desde el encargo 54, también las de CMA-CGM, si su login se detuvo porque el portal restringió el acceso o
+            # no terminó de cargar. Con las otras navieras, o con otra falla del login de CMA, como antes: no se toca.
+            for i, rsv in (con_nave if _motivo_sin_sesion(reg, naviera_clave) else ()):
                 anotar(i, rsv, NO_ENVIADA, _motivo_sin_sesion(reg, naviera_clave))
         else:
             for i, rsv in con_nave:
@@ -12823,9 +13035,11 @@ def _web_worker(hoja, usuario, filas_pedidas):
                     reg.paso(f"No se pudo iniciar sesión en {nombre}; no proceso sus reservas.")
                     # Sin la sesión de MSC, cada fila queda NO ENVIADA con su motivo (decisión de Marcelo, encargo 45,
                     # CICLO-login-msc-y-maersk.md), el que dejó su login: desde el encargo 50, tras su único intento
-                    # más (_motivo_sin_sesion; desde el 51, ante cualquier error). Con las otras navieras, como antes:
-                    # la fila queda sin estado.
-                    for rsv in (sub_elegidas if nav in SIN_SESION else ()):
+                    # más (_motivo_sin_sesion; desde el 51, ante cualquier error). Desde el encargo 54, también las de
+                    # CMA-CGM, si su login se detuvo porque el portal restringió el acceso o no terminó de cargar
+                    # (_naviera_detenida). Con las otras navieras, o con otra falla del login de CMA, como antes: la
+                    # fila queda sin estado.
+                    for rsv in (sub_elegidas if _motivo_sin_sesion(reg, nav) else ()):
                         reg.paso(f"✗ fila {rsv['fila']}: {NO_ENVIADA} · {_motivo_sin_sesion(reg, nav)}")
                         with _LOCK:
                             _WEB["resultados"][str(rsv["fila"])] = {
