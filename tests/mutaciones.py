@@ -478,10 +478,6 @@ MUTACIONES += [
          viejo='esperar_cierre=lambda: _time.sleep(6))', nuevo='esperar_cierre=lambda: _time.sleep(1))'),
     dict(id="login-acepta-navieras-desconocidas", pruebas=[CO + "test_modo_login"],
          viejo='navs = [n for n in (d.get("navieras") or []) if n in NAVIERAS]', nuevo='navs = list(d.get("navieras") or [])'),
-    dict(id="puerto-mata-sin-forzar", pruebas=[AR + "test_cierra_a_la_fuerza_al_que_ocupa_el_puerto"],
-         viejo='subprocess.call(f"taskkill /F /PID {pid}", shell=True)', nuevo='subprocess.call(f"taskkill /PID {pid}", shell=True)'),
-    dict(id="puerto-no-busca-al-ocupante", pruebas=[AR + "test_cierra_a_la_fuerza_al_que_ocupa_el_puerto"],
-         viejo='                _liberar_puerto(p)\n', nuevo='                pass\n'),
     dict(id="previa-ociosa-no-se-apaga", pruebas=[AR + "test_instancia_previa_ociosa_se_apaga"],
          viejo='req = urllib.request.Request(f"http://127.0.0.1:{puerto}/api/apagar", data=b"{}", method="POST")',
          nuevo='req = urllib.request.Request(f"http://127.0.0.1:{puerto}/api/estado", data=b"{}", method="POST")'),
@@ -6411,8 +6407,8 @@ PASO_ONE = '    return u.split("step=")[-1].split("&")[0][:30] if "step=" in u e
 MUTACIONES += [
     # La segunda pregunta del lanzador: sin ella, tan corta como la primera, o con la primera de plazo fijo.
     dict(id="e51-lanzador-sin-segunda-pregunta", pruebas=[LENTO],
-         viejo="                tarde = _panel_en(p, espera=PANEL_ESPERA_LARGA) if previo is None else None\n",
-         nuevo="                tarde = None\n"),
+         viejo="                visto = _panel_en(p, espera=PANEL_ESPERA_LARGA)\n",
+         nuevo="                visto = None\n"),
     dict(id="e51-lanzador-segunda-pregunta-corta", pruebas=[LENTO], viejo="PANEL_ESPERA_LARGA = 5.0\n",
          nuevo="PANEL_ESPERA_LARGA = 1.0\n"),
     dict(id="e51-panel-espera-fija", pruebas=[LENTO],
@@ -6449,4 +6445,99 @@ MUTACIONES += [
     dict(id="e51-msc-cortado-como-sin-nada", pruebas=[MSC_CORTADO],
          viejo='    if segundo is None:\n        como = "se cortó antes de terminar"\n',
          nuevo='    if False:\n        como = "se cortó antes de terminar"\n'),
+]
+
+# --- Encargo 52: el lanzador no cierra a quien tiene su puerto y no contesta como AQUASHIELD, y prueba el siguiente,
+# con los paneles de AQUASHIELD tratados como hasta hoy en cada puerto; y antes de armar, el panel vuelve a leer su modo
+# y no corre si no es el que muestra la página (decisiones de Marcelo, CICLO-puerto-libre-y-modo-al-armar.md). Salen
+# puerto-mata-sin-forzar y puerto-no-busca-al-ocupante: el lanzador ya no llama a taskkill ---
+NO_CIERRA = ARR + "test_no_cierra_al_que_ocupa_el_puerto"
+CONTESTA = ARR + "test_otro_programa_que_contesta_no_se_cierra"
+AUNQUE = ARR + "test_no_usa_el_puerto_de_quien_contesta_aunque_se_pueda_enlazar"
+SE_SUELTA = ARR + "test_puerto_que_se_suelta_mientras_pregunta"
+QUIEN = ARR + "test_panel_en_dice_quien_contesta"
+SIGUIENTE = ARR + "test_panel_en_el_puerto_siguiente_como_hoy"
+TARDA = ARR + "test_ocioso_que_tarda_en_soltar_el_puerto"
+NO_SUELTA = ARR + "test_ocioso_que_no_suelta_el_puerto_no_se_cierra"
+ARMA = "test_web.TestPanelCorridas.test_no_arma_si_la_pagina_muestra_otro_modo"
+PAGINA = "test_envio.TestLecturaDelPanel.test_el_panel_vuelve_a_leer_su_modo_antes_de_armar"
+BOTON = "test_envio.TestLecturaDelPanel.test_armar_pregunta_el_modo_y_lo_manda"
+CIERRA = '__import__("subprocess").call("taskkill /F /PID 424242", shell=True)\n'
+SALTA = ('            _avisar_en_pantalla_y_log(f"El puerto {p} lo tiene otro programa, que no contesta como '
+         'AQUASHIELD: no lo "\n                                      f"cerré.")\n            continue\n')
+OCIOSO = ('        _avisar_en_pantalla_y_log(f"El panel de AQUASHIELD del puerto {p} no lo soltó en '
+          '{PANEL_ESPERA_LARGA:g} s, "\n                                  f"después de pedirle que se apagara: no lo '
+          'cerré.")\n')
+GUARDA = ('                    if d.get("modo") is not modo:\n                        return self._json({"error": '
+          '_modo_de_la_pagina(d.get("modo"), modo)}, 409)\n')
+SIN_MODO_EN_EL_PEDIDO = '                    if d.get("modo") is not modo:\n'
+OTRO_PROGRAMA = "    except (urllib.error.HTTPError, http.client.HTTPException):\n"
+NO_ES_PANEL = '    if not isinstance(estado, dict) or "corriendo" not in estado:\n        return '
+SIN_JSON = '        estado = _json.loads(cuerpo.decode("utf-8"))\n    except Exception:\n        return '
+COMPARA = '  if (typeof modo === "boolean" && modo === MODO_PAGINA) return true;\n'
+
+MUTACIONES += [
+    # El lanzador: cierra a quien tiene el puerto, no lo dice, enlaza el puerto de quien contestó, prueba un solo
+    # puerto, no vuelve a probar el que se soltó mientras preguntaba, salta al panel del puerto siguiente, o no espera
+    # al ocioso que tarda en soltar el suyo, no dice que sigue o lo cierra.
+    dict(id="e52-lanzador-cierra-al-ajeno", pruebas=[NO_CIERRA, CONTESTA], viejo=SALTA,
+         nuevo=SALTA.replace("            continue\n", "            " + CIERRA + "            continue\n")),
+    dict(id="e52-lanzador-no-dice-que-salta", pruebas=[NO_CIERRA, CONTESTA], viejo=SALTA,
+         nuevo="            continue\n"),
+    dict(id="e52-lanzador-enlaza-si-contesta", pruebas=[AUNQUE],
+         viejo="        if visto is None:\n            srv = _enlazar(p)\n",
+         nuevo="        if not visto:\n            srv = _enlazar(p)\n"),
+    dict(id="e52-lanzador-un-solo-puerto", pruebas=[NO_CIERRA, CONTESTA, AUNQUE], viejo="PUERTOS_DEL_PANEL = 4\n",
+         nuevo="PUERTOS_DEL_PANEL = 1\n"),
+    dict(id="e52-lanzador-no-vuelve-a-probar", pruebas=[SE_SUELTA],
+         viejo="                srv = _enlazar(p) if visto is None else None\n", nuevo="                srv = None\n"),
+    dict(id="e52-lanzador-salta-al-panel-del-siguiente", pruebas=[SIGUIENTE],
+         viejo="        if _ceder_al_previo(p, visto, propio, abrir):\n            return\n",
+         nuevo="        if False:\n            return\n"),
+    dict(id="e52-lanzador-no-espera-al-ocioso", pruebas=[TARDA],
+         viejo="        srv = _enlazar(p, espera=PANEL_ESPERA_LARGA)", nuevo="        srv = _enlazar(p)"),
+    dict(id="e52-lanzador-no-dice-que-el-ocioso-sigue", pruebas=[NO_SUELTA], viejo=OCIOSO, nuevo=""),
+    dict(id="e52-lanzador-cierra-al-ocioso", pruebas=[NO_SUELTA], viejo=OCIOSO, nuevo="        " + CIERRA + OCIOSO),
+    # _panel_en: a quien contesta con otro código, cierra sin contestar, no manda JSON o no dice «corriendo», como a
+    # nadie.
+    dict(id="e52-panel-en-error-http-como-nadie", pruebas=[QUIEN, CONTESTA],
+         viejo=OTRO_PROGRAMA + "        return False\n", nuevo=OTRO_PROGRAMA + "        return None\n"),
+    dict(id="e52-panel-en-cierre-como-nadie", pruebas=[QUIEN], viejo=OTRO_PROGRAMA,
+         nuevo="    except urllib.error.HTTPError:\n"),
+    dict(id="e52-panel-en-sin-json-como-nadie", pruebas=[QUIEN], viejo=SIN_JSON + "False\n", nuevo=SIN_JSON + "None\n"),
+    dict(id="e52-panel-en-sin-corriendo-como-nadie", pruebas=[QUIEN], viejo=NO_ES_PANEL + "False\n",
+         nuevo=NO_ES_PANEL + "None\n"),
+    # El servidor: arma sin mirar el modo, sin que la página lo diga, comparando a medias, con su modo fijo, o con el
+    # aviso sin el modo que muestra la página.
+    dict(id="e52-correr-sin-mirar-el-modo", pruebas=[ARMA], viejo=GUARDA, nuevo=""),
+    dict(id="e52-correr-acepta-sin-modo", pruebas=[ARMA], viejo=SIN_MODO_EN_EL_PEDIDO,
+         nuevo='                    if d.get("modo") is not None and d.get("modo") is not modo:\n'),
+    dict(id="e52-correr-compara-a-medias", pruebas=[ARMA], viejo=SIN_MODO_EN_EL_PEDIDO,
+         nuevo='                    if d.get("modo") != modo:\n'),
+    dict(id="e52-correr-con-su-modo-fijo", pruebas=[ARMA],
+         viejo="                    modo = bool(_llaves_abiertas())\n", nuevo="                    modo = False\n"),
+    dict(id="e52-correr-aviso-sin-el-modo-de-la-pagina", pruebas=[ARMA],
+         viejo='    muestra = (f"muestra el modo {NOMBRE_DEL_MODO[pagina]}" if isinstance(pagina, bool)\n',
+         nuevo='    muestra = ("no dice qué modo muestra" if isinstance(pagina, bool)\n'),
+    # La página: arma sin preguntar el modo, acepta cualquiera, compara a medias, no lo manda, no guarda el que pinta,
+    # pinta con otro, cambia los nombres o no pide recargarla.
+    dict(id="e52-armar-sin-preguntar-el-modo", pruebas=[BOTON], viejo="  if (!(await mismoModo())) return;\n",
+         nuevo=""),
+    dict(id="e52-pagina-acepta-cualquier-modo", pruebas=[PAGINA], viejo=COMPARA, nuevo="  return true;\n"),
+    dict(id="e52-pagina-compara-a-medias", pruebas=[PAGINA], viejo=COMPARA,
+         nuevo="  if (modo == MODO_PAGINA) return true;\n"),
+    dict(id="e52-armar-sin-mandar-el-modo", pruebas=[BOTON], viejo="filas, modo: MODO_PAGINA })", nuevo="filas })"),
+    dict(id="e52-pagina-sin-guardar-su-modo", pruebas=[BOTON], viejo="    MODO_PAGINA = Boolean(d.modo_emision);\n",
+         nuevo=""),
+    dict(id="e52-pagina-pinta-sin-su-modo", pruebas=[BOTON], viejo="      if (MODO_PAGINA) {",
+         nuevo="      if (d.modo_emision) {"),
+    dict(id="e52-pagina-aviso-con-los-modos-cambiados", pruebas=[PAGINA],
+         viejo='  const nombre = { true: "EMISIÓN (reservas reales)", false: "prueba (sin emitir)" };\n',
+         nuevo='  const nombre = { true: "prueba (sin emitir)", false: "EMISIÓN (reservas reales)" };\n'),
+    dict(id="e52-pagina-sin-pedir-recargar", pruebas=[PAGINA], viejo='  estado("Recarga la página antes de armar");\n',
+         nuevo=""),
+    # Los nombres de los modos, otros en el programa que en la página.
+    dict(id="e52-nombres-del-modo-otros", pruebas=[ARMA, OTRO_MODO, PAGINA],
+         viejo='NOMBRE_DEL_MODO = {True: "EMISIÓN (reservas reales)", False: "prueba (sin emitir)"}\n',
+         nuevo='NOMBRE_DEL_MODO = {True: "EMISIÓN", False: "prueba"}\n'),
 ]

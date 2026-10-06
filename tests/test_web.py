@@ -4,14 +4,16 @@
 Las navieras se reemplazan por login y reservador FALSOS y Playwright por uno
 que solo registra: ninguna prueba abre un navegador ni toca un portal. Lo que
 se fotografía es la orquestación: rutas, credenciales, planilla subida,
-corridas por hoja y por consolidado, pausa, detener, modo login, y el arranque
-(cierre a la fuerza del que ocupe el puerto; relevo de una instancia previa).
+corridas por hoja y por consolidado, pausa, detener, modo login, el modo que manda la página al armar, y el
+arranque (el puerto siguiente si otro programa tiene el base, sin cerrarlo; relevo de una instancia previa).
 """
 import ast
 import contextlib
 import http.server
 import io
 import json
+import os
+import random
 import re
 import socket
 import subprocess
@@ -60,7 +62,8 @@ class PanelBase(soporte.CasoAQ):
         return self.srv.json(f"/api/planilla?nombre={quote(nombre)}", self.xlsx)
 
     def correr(self, hoja, filas, usuario="op_prueba"):
-        st, r = self.srv.json("/api/correr", {"hoja": hoja, "usuario": usuario, "filas": filas})
+        # «modo»: el que muestra la página, que en la sandbox es prueba (encargo 52).
+        st, r = self.srv.json("/api/correr", {"hoja": hoja, "usuario": usuario, "filas": filas, "modo": False})
         self.assertEqual((st, r), (200, {"ok": True}))
         return self.srv.esperar_fin()
 
@@ -357,16 +360,43 @@ class TestPanelCorridas(PanelBase):
         self.subir()
 
     def test_correr_rechazos(self):
-        self.assertEqual(self.srv.json("/api/correr", {"hoja": "OTRA", "filas": [5]}),
+        self.assertEqual(self.srv.json("/api/correr", {"hoja": "OTRA", "filas": [5], "modo": False}),
                          (400, {"error": "'OTRA' no tiene automatización"}))
         with self.mod._LOCK:
             self.mod._WEB["corriendo"] = True
         try:
-            self.assertEqual(self.srv.json("/api/correr", {"hoja": "ONE", "filas": [5]}),
+            self.assertEqual(self.srv.json("/api/correr", {"hoja": "ONE", "filas": [5], "modo": False}),
                              (409, {"error": "ya hay una corrida en curso"}))
         finally:
             with self.mod._LOCK:
                 self.mod._WEB["corriendo"] = False
+
+    def test_no_arma_si_la_pagina_muestra_otro_modo(self):
+        # Decisión de Marcelo, encargo 52 (CICLO-puerto-libre-y-modo-al-armar.md): antes de armar, el panel vuelve a
+        # leer su modo, y si no es el que la página dice mostrar («modo», en /api/correr), no corre y avisa que hay que
+        # recargarla. La página lo manda desde que pinta su aviso de modo (MODO_PAGINA: test_envio); la que no lo
+        # manda, como una pestaña de antes de este encargo, tampoco arma. Nada corre: ni el navegador ni el estado del
+        # panel.
+        texto = ("No armé las reservas: este panel está en modo {}, y la página {}. Recarga la página (F5) para ver el "
+                 "modo del panel, y vuelve a armarlas.")
+        prueba, emision = "prueba (sin emitir)", "EMISIÓN (reservas reales)"
+        sin_decir = texto.format(prueba, "no dice qué modo muestra")
+        casos = [({"modo": True}, texto.format(prueba, f"muestra el modo {emision}")), ({}, sin_decir),
+                 ({"modo": None}, sin_decir), ({"modo": "false"}, sin_decir), ({"modo": 0}, sin_decir)]
+        pedido = {"hoja": "ONE", "usuario": "op_prueba", "filas": [5]}
+        with Navieras(self.mod) as n:
+            for extra, error in casos:
+                with self.subTest(extra=extra):
+                    self.assertEqual(self.srv.json("/api/correr", {**pedido, **extra}), (409, {"error": error}))
+            # Con una llave del candado abierta, el panel está en modo emisión: la página que muestra el de prueba
+            # tampoco arma. (Con «modo» true no se prueba: armaría las reservas en modo emisión.)
+            try:
+                os.environ[soporte.LLAVE_ENTORNO] = "1"
+                respuesta = self.srv.json("/api/correr", {**pedido, "modo": False})
+            finally:
+                soporte.apagar_llaves()
+        self.assertEqual(respuesta, (409, {"error": texto.format(emision, f"muestra el modo {prueba}")}))
+        self.assertEqual((self.mod._WEB["corriendo"], n.pw.lanzamientos, n.reservas), (False, [], []))
 
     def test_corrida_de_una_hoja(self):
         # Con las filas 5 y 6: hasta a198645 eran la 5 y la 7, que no trae nave y ahora no va al portal
@@ -703,7 +733,7 @@ class TestPanelCorridas(PanelBase):
             on_pausa("resuelve el paso de prueba")
             return ("OK-EJEMPLO", "siguió tras la pausa")
         with Navieras(self.mod, respuesta=respuesta):
-            self.srv.json("/api/correr", {"hoja": "HYUNDAI", "usuario": "op_prueba", "filas": [5]})
+            self.srv.json("/api/correr", {"hoja": "HYUNDAI", "usuario": "op_prueba", "filas": [5], "modo": False})
             fin = time.time() + 10
             while time.time() < fin:
                 _, e = self.srv.json("/api/estado")
@@ -722,7 +752,8 @@ class TestPanelCorridas(PanelBase):
             on_pausa("esperando para detener")
             return ("OK-EJEMPLO", "fila tras detener")
         with Navieras(self.mod, respuesta=respuesta) as n:
-            self.srv.json("/api/correr", {"hoja": "MAERSK", "usuario": "op_prueba", "filas": [5, 6]})
+            self.srv.json("/api/correr", {"hoja": "MAERSK", "usuario": "op_prueba", "filas": [5, 6],
+                                          "modo": False})
             fin = time.time() + 10
             while time.time() < fin and not self.srv.json("/api/estado")[1]["pausa"]:
                 time.sleep(0.1)
@@ -749,8 +780,84 @@ class TestPanelCorridas(PanelBase):
         self.assertEqual(Path(n.pw.lanzamientos[0]["user_data_dir"]), self.sb / "perfiles" / "op_prueba")
 
 
+def puertos_seguidos(n=4, intentos=200):
+    """El primero de 'n' puertos seguidos libres en 127.0.0.1, entre el 20000 y el 39999. El lanzador prueba los puertos
+    que siguen a su base (PUERTOS_DEL_PANEL, encargo 52), y los que reparte el sistema (desde el 49152 en este Windows)
+    vienen seguidos: dos pruebas en paralelo, como las del censo, quedarían en puertos vecinos, y el lanzador de una
+    podría dar con el panel de la otra (medido: 29 de 29 seguidos)."""
+    for _ in range(intentos):
+        p = random.randrange(20000, 40000 - n)
+        try:
+            for q in range(p, p + n):
+                with socket.socket() as s:
+                    s.bind(("127.0.0.1", q))
+        except OSError:
+            continue
+        return p
+    raise AssertionError(f"no encontré {n} puertos seguidos libres")
+
+
+def servidor_falso(puerto, responder):
+    """Un servidor HTTP corriente (con SO_REUSEADDR, como cualquier programa escrito con http.server) en
+    127.0.0.1:'puerto', que contesta lo que diga responder(método, ruta): (código, cuerpo). Anota cada pedido. Devuelve
+    (servidor, pedidos); se apaga con apagar_falso."""
+    pedidos = []
+
+    class Falso(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def atender(self, metodo):
+            pedidos.append((metodo, self.path))
+            codigo, cuerpo = responder(metodo, self.path)
+            self.send_response(codigo)
+            self.send_header("Content-Length", str(len(cuerpo)))
+            self.end_headers()
+            self.wfile.write(cuerpo)
+
+        def do_GET(self):
+            self.atender("GET")
+
+        def do_POST(self):
+            self.atender("POST")
+
+    class Servidor(http.server.ThreadingHTTPServer):
+        daemon_threads = True
+
+        def handle_error(self, request, client_address):
+            pass                                # una pregunta que vence deja su respuesta sin a quién
+
+    srv = Servidor(("127.0.0.1", puerto), Falso)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, pedidos
+
+
+def apagar_falso(srv):
+    with contextlib.suppress(Exception):
+        srv.shutdown()
+    srv.server_close()
+
+
+def responder_como_panel(al_apagar, corriendo=False, emision=False):
+    """Las respuestas de un panel ocioso u ocupado, en un modo, sin ser AQUASHIELD: su /api/estado, su /api/config, y
+    su /api/apagar, que llama a al_apagar()."""
+    def responder(metodo, ruta):
+        if metodo == "POST" and ruta == "/api/apagar":
+            al_apagar()
+            return 200, b'{"ok": true}'
+        if ruta.startswith("/api/estado"):
+            return 200, json.dumps({"corriendo": corriendo}).encode()
+        if ruta == "/api/config":
+            return 200, json.dumps({"modo_emision": emision}).encode()
+        return 404, b""
+    return responder
+
+
 class TestArranqueDelPanel(unittest.TestCase):
-    """Cómo arranca lanzar_web cuando el puerto está ocupado."""
+    """Cómo arranca lanzar_web cuando su puerto está tomado. Desde el encargo 52 prueba también los puertos que siguen
+    al base: cada prueba usa los de puertos_seguidos."""
+
+    AVISO_AJENO = "El puerto {} lo tiene otro programa, que no contesta como AQUASHIELD: no lo cerré."
 
     def setUp(self):
         soporte.DISPAROS.clear()
@@ -765,6 +872,8 @@ class TestArranqueDelPanel(unittest.TestCase):
         self.assertEqual(disparos, [])
 
     def _falsos(self, salida_netstat):
+        # netstat y taskkill, si el lanzador los llamara, quedan anotados y no corren (hasta el encargo 52 cerraba así
+        # a quien tuviera su puerto).
         def check_output(cmd, shell=False):
             self.llamadas.append(("netstat", cmd))
             return salida_netstat.encode()
@@ -774,32 +883,140 @@ class TestArranqueDelPanel(unittest.TestCase):
             return 0
         subprocess.check_output, subprocess.call = check_output, call
 
-    def test_cierra_a_la_fuerza_al_que_ocupa_el_puerto(self):
+    def levantar(self, mod, puerto, abrir=False, segundos=25):
+        """lanzar_web de 'mod' en un hilo, hasta que levanta su panel o termina. Devuelve (el hilo, el puerto del panel
+        o None)."""
+        hilo = threading.Thread(target=mod.lanzar_web, kwargs={"puerto": puerto, "abrir": abrir}, daemon=True)
+        hilo.start()
+        fin = time.time() + segundos
+        while time.time() < fin and hilo.is_alive() and mod._SRV_ACTUAL is None:
+            time.sleep(0.05)
+        return hilo, (mod._SRV_ACTUAL.server_address[1] if mod._SRV_ACTUAL else None)
+
+    def cerrar(self, mod, hilo):
+        """Apaga el panel que haya levantado lanzar_web de 'mod', en el puerto que sea, y espera su hilo."""
+        if mod._SRV_ACTUAL:
+            with contextlib.suppress(Exception):
+                mod._SRV_ACTUAL.shutdown()
+        hilo.join(timeout=6)
+
+    def test_no_cierra_al_que_ocupa_el_puerto(self):
+        # Decisión de Marcelo, encargo 52 (CICLO-puerto-libre-y-modo-al-armar.md): el lanzador no cierra a quien tiene
+        # su puerto y no contesta como AQUASHIELD; prueba el siguiente, y lo dice en el registro del panel. Hasta ahí,
+        # le pedía a taskkill que cerrara al pid que netstat daba en ese puerto: el 2026-10-05 lo habría hecho con otro
+        # programa que escuchaba en el 8765 (medido sin red con un servidor ajeno). Este ocupante acepta la conexión y
+        # calla: el lanzador le pregunta dos veces (1 s y PANEL_ESPERA_LARGA s).
         mod, _ = soporte.cargar()
+        p = puertos_seguidos()
         ocupante = socket.socket()
-        ocupante.bind(("127.0.0.1", 0))
-        ocupante.listen(1)
-        p = ocupante.getsockname()[1]
+        ocupante.bind(("127.0.0.1", p))
+        ocupante.listen(5)
         self._falsos(f"  TCP    127.0.0.1:{p}     0.0.0.0:0      LISTENING       424242\n")
-        srv = soporte.Servidor(mod, p + 1)
-        hilo = threading.Thread(target=mod.lanzar_web, kwargs={"puerto": p, "abrir": False}, daemon=True)
         try:
-            hilo.start()
-            fin = time.time() + 15
-            while time.time() < fin:
-                try:
-                    srv.get("/api/estado")
-                    break
-                except Exception:
-                    time.sleep(0.1)
-            self.assertEqual(self.llamadas, [
-                ("netstat", f'netstat -ano -p tcp | findstr /R /C:":{p} .*LISTENING"'),
-                ("call", "taskkill /F /PID 424242")])
-            self.assertEqual(srv.get("/api/estado")[0], 200)     # como el ocupante sigue, usa el puerto siguiente
+            hilo, puerto = self.levantar(mod, p)
+            try:
+                self.assertEqual((puerto, self.llamadas), (p + 1, []))
+                self.assertIn(self.AVISO_AJENO.format(p), mod._WEB["log"])
+            finally:
+                self.cerrar(mod, hilo)
         finally:
-            srv.hilo = hilo
-            srv.apagar()
             ocupante.close()
+
+    def test_otro_programa_que_contesta_no_se_cierra(self):
+        # El caso del 2026-10-05: en el 8765 escucha un programa en Python que no es de AQUASHIELD. Aquí, un http.server
+        # que contesta 404: el lanzador le pregunta una sola vez (contestó, y no como un panel), no le pide nada más ni
+        # lo cierra, y abre el panel en el puerto siguiente; el otro programa sigue contestando.
+        mod, _ = soporte.cargar()
+        p = puertos_seguidos()
+        ajeno, pedidos = servidor_falso(p, lambda metodo, ruta: (404, b""))
+        self._falsos(f"  TCP    127.0.0.1:{p}     0.0.0.0:0      LISTENING       424242\n")
+        try:
+            hilo, puerto = self.levantar(mod, p)
+            try:
+                self.assertEqual((puerto, self.llamadas, pedidos), (p + 1, [], [("GET", "/api/estado")]))
+                self.assertIn(self.AVISO_AJENO.format(p), mod._WEB["log"])
+                self.assertEqual(soporte.Servidor(None, p).get("/api/estado"), (404, b""))
+            finally:
+                self.cerrar(mod, hilo)
+        finally:
+            apagar_falso(ajeno)
+
+    def test_no_usa_el_puerto_de_quien_contesta_aunque_se_pueda_enlazar(self):
+        # Un programa que escucha en todas las direcciones (0.0.0.0, sin SO_EXCLUSIVEADDRUSE) deja enlazar 127.0.0.1 en
+        # su puerto, y lo que llega por 127.0.0.1 pasa al que se enlazó después (medido en este Windows, encargo 52): el
+        # panel le quitaría a ese programa lo que le llega por ahí. Si contesta, el lanzador no usa su puerto aunque
+        # pudiera enlazarlo. Aquí nadie escucha en 0.0.0.0 (le hablaría al firewall): _panel_en dice que en el puerto
+        # base contestó otro programa, y el puerto está libre.
+        mod, _ = soporte.cargar()
+        p = puertos_seguidos()
+        real = mod._panel_en
+        mod._panel_en = lambda q, espera=1.0: False if q == p else real(q, espera)
+        self._falsos("")
+        hilo, puerto = self.levantar(mod, p)
+        try:
+            self.assertEqual((puerto, self.llamadas), (p + 1, []))
+        finally:
+            self.cerrar(mod, hilo)
+
+    def test_puerto_que_se_suelta_mientras_pregunta(self):
+        # Si el puerto se suelta mientras el lanzador le vuelve a preguntar a quien lo tenía (un panel que se estaba
+        # apagando, por ejemplo), lo vuelve a probar y lo toma, como hasta hoy (hasta el encargo 52, después de
+        # taskkill). Aquí el ocupante acepta sin contestar y suelta el puerto a los 2 s.
+        mod, _ = soporte.cargar()
+        p = puertos_seguidos()
+        ocupante = socket.socket()
+        ocupante.bind(("127.0.0.1", p))
+        ocupante.listen(5)
+        threading.Timer(2.0, ocupante.close).start()
+        self._falsos("")
+        try:
+            hilo, puerto = self.levantar(mod, p)
+            try:
+                self.assertEqual((puerto, self.llamadas), (p, []))
+                self.assertNotIn(self.AVISO_AJENO.format(p), mod._WEB["log"])
+            finally:
+                self.cerrar(mod, hilo)
+        finally:
+            ocupante.close()
+
+    def test_panel_en_dice_quien_contesta(self):
+        # _panel_en distingue a nadie (None) de otro programa (False; encargo 52) y de un panel de AQUASHIELD ((su
+        # estado, su modo)). El lanzador enlaza el puerto solo si nadie contestó.
+        mod, _ = soporte.cargar()
+        self.assertIsNone(mod._panel_en(puertos_seguidos(1)))                     # nadie escucha
+        casos = [((404, b""), False), ((200, b"no es json"), False), ((200, b'{"otra": 1}'), False),
+                 ((200, b'[1, 2]'), False), ((200, b'{"corriendo": false}'), ({"corriendo": False}, True))]
+        for respuesta, esperado in casos:
+            with self.subTest(respuesta=respuesta):
+                p = puertos_seguidos(1)
+                falso, _ = servidor_falso(p, lambda metodo, ruta, r=respuesta: (
+                    r if ruta.startswith("/api/estado") else (200, b'{"modo_emision": true}')))
+                try:
+                    self.assertEqual(mod._panel_en(p), esperado)
+                finally:
+                    apagar_falso(falso)
+        # Quien acepta, lee el pedido y cierra sin contestar tampoco es un panel; quien acepta y calla es como nadie.
+        for cierra, esperado in ((True, False), (False, None)):
+            with self.subTest(cierra=cierra):
+                p = puertos_seguidos(1)
+                oyente = socket.socket()
+                oyente.bind(("127.0.0.1", p))
+                oyente.listen(5)
+
+                def atender(oyente=oyente, cierra=cierra):
+                    with contextlib.suppress(OSError):
+                        conexion, _ = oyente.accept()
+                        conexion.recv(65536)
+                        if cierra:
+                            conexion.close()
+                        else:
+                            time.sleep(2)
+                            conexion.close()
+                threading.Thread(target=atender, daemon=True).start()
+                try:
+                    self.assertIs(mod._panel_en(p), esperado)
+                finally:
+                    oyente.close()
 
     def _hijo_servidor(self, puerto, corriendo=False, emision=False):
         # Con 'emision', el panel previo está en modo emisión sin abrir ninguna llave: su es_modo_emision dice True
@@ -833,8 +1050,11 @@ class TestArranqueDelPanel(unittest.TestCase):
         raise AssertionError("no respondió")
 
     def test_instancia_previa_ociosa_se_apaga(self):
+        # Le pide que se apague y toma su puerto. Hasta el encargo 52 esperaba 0,6 s y, si el puerto seguía tomado,
+        # cerraba con taskkill a quien lo tuviera; ahora espera que lo suelte, hasta PANEL_ESPERA_LARGA s (sin carga,
+        # a los 0,52 s): el relevo queda siempre en el mismo puerto.
         self._falsos("")
-        p = soporte.puerto_libre()
+        p = puertos_seguidos()
         hijo = self._hijo_servidor(p)
         try:
             self._esperar(soporte.Servidor(None, p))
@@ -844,16 +1064,10 @@ class TestArranqueDelPanel(unittest.TestCase):
             hilo = threading.Thread(target=mod.lanzar_web, kwargs={"puerto": p, "abrir": False}, daemon=True)
             hilo.start()
             self.assertEqual(hijo.wait(timeout=15), 0)               # la instancia previa se apagó sola
-            # El relevo espera 0,6 s y toma el puerto; si la previa tardó más en soltarlo,
-            # usa el siguiente. Las dos salidas son del programa tal como es.
-            for q in (p, p + 1):
-                srv = soporte.Servidor(mod, q)
-                try:
-                    self._esperar(srv, 5)
-                    break
-                except AssertionError:
-                    continue
+            srv = soporte.Servidor(mod, p)
+            self._esperar(srv, 10)
             self.assertEqual(srv.json("/api/config")[1]["usuarios"], ["op_relevo"])
+            self.assertEqual(self.llamadas, [])
             srv.hilo = hilo
             srv.apagar()
         finally:
@@ -861,7 +1075,7 @@ class TestArranqueDelPanel(unittest.TestCase):
 
     def test_instancia_previa_ocupada_no_se_toca(self):
         self._falsos("")
-        p = soporte.puerto_libre()
+        p = puertos_seguidos()
         hijo = self._hijo_servidor(p, corriendo=True)
         try:
             previa = soporte.Servidor(None, p)
@@ -880,6 +1094,55 @@ class TestArranqueDelPanel(unittest.TestCase):
             self.assertEqual(self.llamadas, [])
         finally:
             self._cerrar_hijo(hijo, p)
+
+    def test_ocioso_que_tarda_en_soltar_el_puerto(self):
+        # Al panel ocioso del mismo modo le pide que se apague y toma su puerto, como hasta hoy, aunque tarde en
+        # soltarlo: lo espera hasta PANEL_ESPERA_LARGA s. Hasta el encargo 52, a los 0,6 s cerraba con taskkill a todos
+        # los que siguieran en el puerto, por los pid que daba netstat, fueran o no de AQUASHIELD (un programa en
+        # 0.0.0.0 puede escuchar en el mismo puerto, con el panel encima en 127.0.0.1). Sin carga, un panel lo suelta a
+        # los 0,52 s (medido 5 veces); este, a los 1,5 s.
+        self._falsos("")
+        p = puertos_seguidos()
+        caja = {}
+
+        def al_apagar():
+            def despues():
+                time.sleep(1.5)
+                apagar_falso(caja["srv"])
+            threading.Thread(target=despues, daemon=True).start()
+        caja["srv"], pedidos = servidor_falso(p, responder_como_panel(al_apagar))
+        mod, _ = soporte.cargar()
+        mod.es_modo_emision = lambda: False
+        try:
+            hilo, puerto = self.levantar(mod, p)
+            try:
+                self.assertEqual((puerto, self.llamadas), (p, []))
+                self.assertEqual(pedidos, [("GET", "/api/estado"), ("GET", "/api/config"), ("POST", "/api/apagar")])
+            finally:
+                self.cerrar(mod, hilo)
+        finally:
+            apagar_falso(caja["srv"])
+
+    def test_ocioso_que_no_suelta_el_puerto_no_se_cierra(self):
+        # Si el panel ocioso no suelta su puerto en PANEL_ESPERA_LARGA s, el lanzador no lo cierra: lo dice, y prueba
+        # el puerto siguiente (encargo 52). Aquí el plazo es de 1,5 s, para no esperar 5.
+        self._falsos("")
+        p = puertos_seguidos()
+        falso, _ = servidor_falso(p, responder_como_panel(lambda: None))
+        mod, _ = soporte.cargar()
+        mod.es_modo_emision = lambda: False
+        mod.PANEL_ESPERA_LARGA = 1.5
+        try:
+            hilo, puerto = self.levantar(mod, p)
+            try:
+                self.assertEqual((puerto, self.llamadas), (p + 1, []))
+                self.assertIn(f"El panel de AQUASHIELD del puerto {p} no lo soltó en 1.5 s, después de pedirle que se "
+                              f"apagara: no lo cerré.", mod._WEB["log"])
+                self.assertEqual(soporte.Servidor(None, p).json("/api/estado"), (200, {"corriendo": False}))
+            finally:
+                self.cerrar(mod, hilo)
+        finally:
+            apagar_falso(falso)
 
     MODO = {True: "EMISIÓN (reservas reales)", False: "prueba (sin emitir)"}
 
@@ -920,7 +1183,7 @@ class TestArranqueDelPanel(unittest.TestCase):
         for emision in (False, True):
             for ocupado in (False, True):
                 with self.subTest(panel="emisión" if emision else "prueba", ocupado=ocupado):
-                    p = soporte.puerto_libre()
+                    p = puertos_seguidos()
                     hijo = self._hijo_servidor(p, corriendo=ocupado, emision=emision)
                     try:
                         previa = soporte.Servidor(None, p)
@@ -936,6 +1199,42 @@ class TestArranqueDelPanel(unittest.TestCase):
                     finally:
                         self._cerrar_hijo(hijo, p)
 
+    def test_panel_en_el_puerto_siguiente_como_hoy(self):
+        # Los paneles de AQUASHIELD se tratan como hasta hoy en el puerto base, también en el que sigue (decisión de
+        # Marcelo, encargo 52): con otro programa en el base, un panel en el siguiente, en el otro modo, avisa y no
+        # corre; en el mismo y ocupado, no levanta otro (aquí no abre el navegador: abrir=False); en el mismo y ocioso,
+        # le pide que se apague y toma su puerto. El lanzador es de prueba.
+        self._falsos("")
+        for emision, ocupado in ((True, False), (True, True), (False, True), (False, False)):
+            with self.subTest(panel="emisión" if emision else "prueba", ocupado=ocupado):
+                p = puertos_seguidos()
+                ajeno, _ = servidor_falso(p, lambda metodo, ruta: (404, b""))
+                hijo = self._hijo_servidor(p + 1, corriendo=ocupado, emision=emision)
+                try:
+                    self._esperar(soporte.Servidor(None, p + 1))
+                    mod, _ = soporte.cargar()
+                    mod.es_modo_emision = lambda: False
+                    avisos = []
+                    mod._avisar_al_lanzar = avisos.append
+                    hilo, puerto = self.levantar(mod, p)
+                    try:
+                        if emision:
+                            self.assertEqual((puerto, avisos),
+                                             (None, [self.texto_otro_modo(p + 1, True, False, ocupado)]))
+                            self.assertIsNone(hijo.poll())
+                        elif ocupado:
+                            self.assertEqual((puerto, avisos), (None, []))
+                            self.assertIsNone(hijo.poll())
+                        else:
+                            self.assertEqual((puerto, avisos), (p + 1, []))
+                            self.assertEqual(hijo.wait(timeout=15), 0)
+                        self.assertEqual(self.llamadas, [])
+                    finally:
+                        self.cerrar(mod, hilo)
+                finally:
+                    self._cerrar_hijo(hijo, p + 1)
+                    apagar_falso(ajeno)
+
     def test_panel_que_no_dice_su_modo_avisa_y_no_corre(self):
         # Si el panel abierto responde como AQUASHIELD pero no dice su modo (su /api/config falla, o no trae
         # «modo_emision» como true o false), el lanzador tampoco se conecta: avisa que no supo en qué modo está, y no
@@ -943,48 +1242,28 @@ class TestArranqueDelPanel(unittest.TestCase):
         self._falsos("")
         for config in (None, {"version": "otra"}, {"modo_emision": "false"}):
             with self.subTest(config=config):
-                pedidos = []
-
-                class Falso(http.server.BaseHTTPRequestHandler):
-                    def log_message(self, *a):
-                        pass
-
-                    def responder(self, codigo, cuerpo):
-                        self.send_response(codigo)
-                        self.send_header("Content-Length", str(len(cuerpo)))
-                        self.end_headers()
-                        self.wfile.write(cuerpo)
-
-                    def do_GET(self, cfg=config):
-                        pedidos.append(("GET", self.path))
-                        if self.path.startswith("/api/estado"):
-                            return self.responder(200, json.dumps({"corriendo": False}).encode())
-                        if self.path == "/api/config" and cfg is not None:
-                            return self.responder(200, json.dumps(cfg).encode())
-                        self.responder(500, b"falla de prueba")
-
-                    def do_POST(self):
-                        pedidos.append(("POST", self.path))
-                        self.responder(200, b"{}")
-                srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Falso)
-                hilo = threading.Thread(target=srv.serve_forever, daemon=True)
-                hilo.start()
+                def responder(metodo, ruta, cfg=config):
+                    if metodo == "GET" and ruta.startswith("/api/estado"):
+                        return 200, json.dumps({"corriendo": False}).encode()
+                    if metodo == "GET" and ruta == "/api/config" and cfg is not None:
+                        return 200, json.dumps(cfg).encode()
+                    return (500, b"falla de prueba") if metodo == "GET" else (200, b"{}")
+                p = puertos_seguidos()
+                srv, pedidos = servidor_falso(p, responder)
                 try:
-                    p = srv.server_address[1]
                     vivo, avisos, mod = self.lanzar(p, False)
                     self.assertEqual((vivo, mod._SRV_ACTUAL), (False, None))
                     self.assertEqual(avisos, [self.texto_otro_modo(p, None, False, False)])
                     self.assertEqual([m for m, _ in pedidos], ["GET", "GET"])
                     self.assertEqual(self.llamadas, [])
                 finally:
-                    srv.shutdown()
-                    srv.server_close()
+                    apagar_falso(srv)
 
     def test_mismo_modo_de_emision_cede_como_antes(self):
         # En el mismo modo, como antes: al panel de emisión ocupado, el lanzador de emisión lo deja como está y no
         # levanta otro, sin aviso (aquí no abre el navegador: abrir=False).
         self._falsos("")
-        p = soporte.puerto_libre()
+        p = puertos_seguidos()
         hijo = self._hijo_servidor(p, corriendo=True, emision=True)
         try:
             self._esperar(soporte.Servidor(None, p))
@@ -994,47 +1273,26 @@ class TestArranqueDelPanel(unittest.TestCase):
             self._cerrar_hijo(hijo, p)
 
     def test_panel_lento_del_otro_modo_no_se_cierra(self):
-        # Un panel del otro modo que tarda más de 1 s en contestar (con la máquina cargada) no se cierra a la fuerza: si
-        # el puerto sigue ocupado, el lanzador le vuelve a preguntar, hasta PANEL_ESPERA_LARGA s, antes de cerrar a
-        # quien lo tiene, y avisa. Revisión del encargo 51: a 1 s lo daba por ajeno y le pedía a taskkill que lo
-        # cerrara (aquí, netstat diría que el puerto es de un pid inventado; taskkill no corre).
-        pedidos = []
-
-        class Lento(http.server.BaseHTTPRequestHandler):
-            def log_message(self, *a):
-                pass
-
-            def do_GET(self):
-                pedidos.append(self.path)
-                if self.path.startswith("/api/estado"):
-                    time.sleep(1.6)
-                    cuerpo = json.dumps({"corriendo": True}).encode()
-                else:
-                    cuerpo = json.dumps({"modo_emision": True}).encode()
-                self.send_response(200)
-                self.send_header("Content-Length", str(len(cuerpo)))
-                self.end_headers()
-                self.wfile.write(cuerpo)
-
-        class Servidor(http.server.ThreadingHTTPServer):
-            daemon_threads = True
-
-            def handle_error(self, request, client_address):
-                pass                                # la primera pregunta se va a 1 s, y su respuesta no tiene a quién
-        srv = Servidor(("127.0.0.1", 0), Lento)
-        hilo = threading.Thread(target=srv.serve_forever, daemon=True)
-        hilo.start()
+        # Un panel del otro modo que tarda más de 1 s en contestar (con la máquina cargada) avisa y no corre: si el
+        # puerto sigue tomado, el lanzador le vuelve a preguntar, hasta PANEL_ESPERA_LARGA s (revisión del encargo 51:
+        # a 1 s lo daba por ajeno y le pedía a taskkill que lo cerrara; desde el encargo 52, al ajeno no lo cierra, pero
+        # abriría el suyo en el puerto siguiente, junto a un panel del otro modo).
+        def responder(metodo, ruta):
+            if ruta.startswith("/api/estado"):
+                time.sleep(1.6)
+                return 200, json.dumps({"corriendo": True}).encode()
+            return 200, json.dumps({"modo_emision": True}).encode()
+        p = puertos_seguidos()
+        srv, pedidos = servidor_falso(p, responder)
         try:
-            p = srv.server_address[1]
             self._falsos(f"  TCP    127.0.0.1:{p}     0.0.0.0:0      LISTENING       424242\n")
             vivo, avisos, mod = self.lanzar(p, False)
             self.assertEqual(mod.PANEL_ESPERA_LARGA, 5.0)
             self.assertEqual((vivo, mod._SRV_ACTUAL, self.llamadas), (False, None, []))
             self.assertEqual(avisos, [self.texto_otro_modo(p, True, False, True)])
-            self.assertEqual(pedidos, ["/api/estado", "/api/estado", "/api/config"])
+            self.assertEqual([r for _, r in pedidos], ["/api/estado", "/api/estado", "/api/config"])
         finally:
-            srv.shutdown()
-            srv.server_close()
+            apagar_falso(srv)
 
     def test_el_aviso_va_a_una_ventana(self):
         # Los .bat lanzan con pythonw, sin consola: el aviso del lanzador va por la consola y a una ventana, como el de

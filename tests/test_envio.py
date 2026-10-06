@@ -685,6 +685,76 @@ class TestLecturaDelPanel(soporte.CasoAQ):
                           t(None)],
                          ["EBKG20000001", "BKGFALSO12", "lista para emitir", "", "", "lista para emitir", ""])
 
+    def aviso_de_modo(self, pagina, panel):
+        """El aviso de la página que no arma las reservas: 'pagina', el modo que muestra (o None si no lo pudo leer);
+        'panel', el que dijo el panel (o None si no dijo uno). Con los nombres de NOMBRE_DEL_MODO, los del programa."""
+        n = self.mod.NOMBRE_DEL_MODO
+        muestra = f"muestra el modo {n[pagina]}" if isinstance(pagina, bool) else "no muestra el modo del panel"
+        esta = f"está en modo {n[panel]}" if isinstance(panel, bool) else "no dijo en qué modo está"
+        return (f"No armé las reservas: esta página {muestra}, y el panel {esta}. Recarga la página (F5) para ver el "
+                f"modo del panel, y vuelve a armarlas.")
+
+    def test_el_panel_vuelve_a_leer_su_modo_antes_de_armar(self):
+        # Decisión de Marcelo, encargo 52 (CICLO-puerto-libre-y-modo-al-armar.md): la página pinta su aviso de modo al
+        # cargar (MODO_PAGINA); antes de armar, vuelve a leer el modo del panel (/api/config), y si no es el que
+        # muestra, no corre y avisa que hay que recargarla. Tampoco corre si el panel no dice un modo (no contesta, o no
+        # dice true ni false) o si la página no pudo leer el suyo. Se corre en Node, con api, feed y estado falsos.
+        js = self.mod.JS_INDEX
+        f = re.search(r"^async function mismoModo\(\) \{\n.*?\n\}\n", js, re.S | re.M)
+        a = re.search(r"^function avisoDeModo\(pagina, panel\) \{\n.*?\n\}\n", js, re.S | re.M)
+        self.assertIsNotNone(f, "no encontré mismoModo en JS_INDEX")
+        self.assertIsNotNone(a, "no encontré avisoDeModo en JS_INDEX")
+        casos = [[False, False], [True, True], [False, True], [True, False], [False, "error"], [None, False],
+                 [None, "error"], [False, "false"], [True, None]]
+        guion = ("let MODO_PAGINA = null, RESPUESTA = null, AVISOS = [], ESTADOS = [], RUTAS = [];\n"
+                 "async function api(ruta) {\n"
+                 "  RUTAS.push(ruta);\n"
+                 "  if (RESPUESTA === 'error') throw new Error('sin respuesta');\n"
+                 "  return { modo_emision: RESPUESTA };\n"
+                 "}\n"
+                 "function feed(t, c, e) { AVISOS.push([t, c, e]); }\n"
+                 "function estado(t) { ESTADOS.push(t); }\n"
+                 + f.group(0) + a.group(0) +
+                 "(async () => {\n"
+                 "  const salida = [];\n"
+                 f"  for (const [pagina, panel] of {json.dumps(casos)}) {{\n"
+                 "    MODO_PAGINA = pagina; RESPUESTA = panel; AVISOS = []; ESTADOS = []; RUTAS = [];\n"
+                 "    salida.push([await mismoModo(), AVISOS, ESTADOS, RUTAS]);\n"
+                 "  }\n"
+                 "  console.log(JSON.stringify(salida));\n"
+                 "})();\n")
+        esperado = []
+        for pagina, panel in casos:
+            dijo = panel if isinstance(panel, bool) else None
+            if isinstance(pagina, bool) and pagina is dijo:
+                esperado.append([True, [], [], ["/api/config"]])
+            else:
+                esperado.append([False, [[self.aviso_de_modo(pagina, dijo), "f-alerta", "REVISAR"]],
+                                 ["Recarga la página antes de armar"], ["/api/config"]])
+        self.assertEqual(correr_node(self, guion), esperado)
+
+    def test_armar_pregunta_el_modo_y_lo_manda(self):
+        # El botón de armar pregunta el modo (mismoModo) antes de tocar la pantalla o el panel, y manda a /api/correr el
+        # modo que muestra la página, que el panel vuelve a comparar con el suyo (test_web). MODO_PAGINA es el modo con
+        # que la página pintó su aviso al cargar, y el aviso se pinta con él (encargo 52).
+        js = self.mod.JS_INDEX
+        for trozo in ("let MODO_PAGINA = null;", "MODO_PAGINA = Boolean(d.modo_emision);", "if (MODO_PAGINA) {",
+                      "if (!(await mismoModo())) return;"):
+            with self.subTest(trozo=trozo):
+                self.assertEqual(js.count(trozo), 1)
+        self.assertEqual(js.count("d.modo_emision"), 1)
+        m = re.search(r'^\$\("#wg-armar"\)\.onclick = async \(\) => \{\n(.*?)\n\};\n', js, re.S | re.M)
+        self.assertIsNotNone(m, "no encontré el botón de armar")
+        boton = m.group(1)
+        pregunta = boton.find("if (!(await mismoModo())) return;")
+        self.assertGreater(pregunta, -1)
+        for despues in ('$("#log").innerHTML = ""; CURSOR = 0;', 'chip(f, "curso", "en curso");',
+                        'await api("/api/correr"'):
+            with self.subTest(despues=despues):
+                self.assertGreater(boton.find(despues), pregunta)
+        self.assertIn('body: JSON.stringify({ hoja: HOJA_ACT, usuario: $("#usuario").value, filas, '
+                      'modo: MODO_PAGINA })', boton)
+
 
 if __name__ == "__main__":
     unittest.main()

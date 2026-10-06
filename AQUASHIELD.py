@@ -12974,26 +12974,44 @@ def _escribir_config(cfg, ruta):
     return _reemplazar(tmp, ruta)          # Windows lo niega a veces un instante (antivirus)
 
 
-# Cuántos segundos espera el lanzador la segunda pregunta a quien no dejó libre su puerto, antes de cerrarlo a la
-# fuerza: un panel de AQUASHIELD ocupado, con la máquina cargada, puede tardar más de 1 s en contestar (revisión del
-# encargo 51). Hipótesis: no está medido cuánto tarda un panel así.
+# Cuántos segundos espera el lanzador a un panel de AQUASHIELD: la segunda pregunta a quien no dejó libre su puerto (un
+# panel ocupado, con la máquina cargada, puede tardar más de 1 s en contestar; revisión del encargo 51), y que el panel
+# ocioso al que le pidió apagarse suelte su puerto (sin carga, a los 0,52 s, medido 5 veces; encargo 52). Hipótesis: no
+# está medido cuánto tarda un panel así con la máquina cargada.
 PANEL_ESPERA_LARGA = 5.0
+
+# Cuántos puertos prueba el lanzador desde el base (8765 a 8768). En cada uno, un panel de AQUASHIELD se trata como
+# en el base, y el que tiene otro programa se deja como está (decisión de Marcelo, encargo 52).
+PUERTOS_DEL_PANEL = 4
+
+# Cómo dicen los avisos cada modo del candado: el del lanzador ante un panel del otro modo (encargo 51) y el del panel
+# que no arma las reservas desde una página que muestra otro (encargo 52). El de la página, en JavaScript (avisoDeModo),
+# los repite: test_web vigila que digan lo mismo.
+NOMBRE_DEL_MODO = {True: "EMISIÓN (reservas reales)", False: "prueba (sin emitir)"}
 
 
 def _panel_en(puerto, espera=1.0):
     """El panel de AQUASHIELD que escucha en 'puerto' de esta máquina, como lo ve el lanzador al arrancar: None si nadie
-    responde ahí como AQUASHIELD (su /api/estado, en 'espera' s, con «corriendo»); si no, (su estado, su modo). Su modo
-    es el «modo_emision» de su /api/config (en 2 s, o 'espera' si es más), el mismo con que pinta su aviso de modo al
-    cargar: True o False, o None si no lo dice (encargo 51). Solo pregunta: a ese panel no le cambia nada más que su
-    último latido."""
+    contesta ahí en 'espera' s; False si contesta otro programa: con otro código HTTP, sin hablar HTTP, o con un
+    /api/estado sin «corriendo» (encargo 52); si no, (su estado, su modo). Su modo es el «modo_emision» de su
+    /api/config (en 2 s, o 'espera' si es más), el mismo con que pinta su aviso de modo al cargar: True o False, o None
+    si no lo dice (encargo 51). Solo pregunta: a ese panel no le cambia nada más que su último latido."""
+    import http.client
+    import urllib.error
     import urllib.request
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/api/estado", timeout=espera) as resp:
-            estado = _json.loads(resp.read().decode("utf-8"))
+            cuerpo = resp.read()
+    except (urllib.error.HTTPError, http.client.HTTPException):
+        return False
     except Exception:
         return None
+    try:
+        estado = _json.loads(cuerpo.decode("utf-8"))
+    except Exception:
+        return False
     if not isinstance(estado, dict) or "corriendo" not in estado:
-        return None
+        return False
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/api/config", timeout=max(2.0, espera)) as resp:
             modo = _json.loads(resp.read().decode("utf-8")).get("modo_emision")
@@ -13008,7 +13026,7 @@ def _otro_modo(puerto, estado, modo, propio):
     apagar del panel (/api/apagar) o su pestaña cerrada, que el vigilante de inactividad apaga en unos dos minutos; si
     tiene una corrida en curso, de reservas o de solo login, que primero termine (el vigilante no lo apaga mientras
     corre, y el botón cortaría la corrida)."""
-    nombre = {True: "EMISIÓN (reservas reales)", False: "prueba (sin emitir)"}
+    nombre = NOMBRE_DEL_MODO
     cual = f"en modo {nombre[modo]}" if modo is not None else "y no pude saber en qué modo está"
     cerrar = ("ciérralo con su botón rojo de apagar, arriba a la derecha, o cerrando su pestaña y esperando unos dos "
               "minutos")
@@ -13024,8 +13042,9 @@ def _ceder_al_previo(puerto, previo, propio, abrir):
     """Lo que hace el lanzador con el panel de AQUASHIELD que encontró en su puerto ('previo', de _panel_en), con su
     propio modo ('propio'): si el panel está en el otro modo, o no dice en cuál, avisa y no corre (_otro_modo; decisión
     de Marcelo, encargo 51); en el mismo modo, como antes: al ocupado lo abre en el navegador, y al ocioso le pide que
-    se apague para renovarlo. Devuelve True si el lanzador no tiene que seguir. Lo usan las dos preguntas de lanzar_web:
-    la de al arrancar y la de antes de cerrar a quien no dejó libre el puerto (revisión del encargo 51)."""
+    se apague para renovarlo. Devuelve True si el lanzador no tiene que seguir. Lo usa lanzar_web en cada puerto que
+    prueba, con la primera pregunta o con la segunda, la de más paciencia (revisión del encargo 51; desde el encargo 52,
+    en los cuatro puertos)."""
     import urllib.request
     import webbrowser
     estado, modo = previo
@@ -13062,6 +13081,16 @@ def _avisar_al_lanzar(texto):
         mb.showwarning("AQUASHIELD", texto)
     except Exception:
         pass
+
+
+def _modo_de_la_pagina(pagina, panel):
+    """Lo que contesta el panel a /api/correr cuando la página no muestra su modo: 'pagina' es el que la página dice
+    mostrar (True o False, u otra cosa si no lo dice), y 'panel', el suyo. No arma las reservas, y pide recargarla
+    (decisión de Marcelo, encargo 52)."""
+    muestra = (f"muestra el modo {NOMBRE_DEL_MODO[pagina]}" if isinstance(pagina, bool)
+               else "no dice qué modo muestra")
+    return (f"No armé las reservas: este panel está en modo {NOMBRE_DEL_MODO[panel]}, y la página {muestra}. Recarga "
+            f"la página (F5) para ver el modo del panel, y vuelve a armarlas.")
 
 
 def lanzar_web(puerto=8765, abrir=True):
@@ -13229,6 +13258,13 @@ def lanzar_web(puerto=8765, abrir=True):
 
                 if u.path == "/api/correr":
                     d = _json.loads(cuerpo or b"{}")
+                    # Antes de armar, el panel vuelve a leer su modo: si no es el que la página dice mostrar
+                    # («modo»), no corre, y la página avisa que hay que recargarla (decisión de Marcelo, encargo 52).
+                    # Lo lee con la regla del candado, _llaves_abiertas, como la línea de cada corrida: test_candado
+                    # fija quién llama a es_modo_emision.
+                    modo = bool(_llaves_abiertas())
+                    if d.get("modo") is not modo:
+                        return self._json({"error": _modo_de_la_pagina(d.get("modo"), modo)}, 409)
                     if _WEB["corriendo"]:
                         return self._json({"error": "ya hay una corrida en curso"}, 409)
                     hoja = d.get("hoja") or ""
@@ -13296,62 +13332,60 @@ def lanzar_web(puerto=8765, abrir=True):
 
     global _SRV_ACTUAL
 
-    # 1. Comprobar si ya hay una instancia de AQUASHIELD en el puerto base (8765). Si está en el otro modo, o no dice en
-    #    cuál, avisa y no corre: no se conecta a ella, no la cierra y no abre otra (decisión de Marcelo, encargo 51,
-    #    CICLO-modo-y-lanzadores.md). Hasta ahí, una ocupada se abría en el navegador en el modo que tuviera, y a una
-    #    ociosa se le pedía que se apagara: su pestaña, si seguía abierta, quedaba hablando con el panel nuevo, del otro
-    #    modo, con el aviso de modo de antes.
-    propio = es_modo_emision()          # el modo de este lanzador
-    previo = _panel_en(puerto)
-    if previo is not None and _ceder_al_previo(puerto, previo, propio, abrir):
-        return
-
-    def _liberar_puerto(p):
-        try:
-            import subprocess
-            cmd = f'netstat -ano -p tcp | findstr /R /C:":{p} .*LISTENING"'
-            out = subprocess.check_output(cmd, shell=True).decode(errors="ignore")
-            for linea in out.strip().splitlines():
-                partes = linea.split()
-                if len(partes) >= 5 and f":{p}" in partes[1] and partes[3].upper() == "LISTENING":
-                    pid = partes[4]
-                    if pid and pid != "0":
-                        subprocess.call(f"taskkill /F /PID {pid}", shell=True)
-                        time.sleep(0.5)
-        except Exception:
-            pass
-
     class _Srv(ThreadingHTTPServer):
         # En Windows, allow_reuse_address deja que un segundo proceso tome el puerto.
         allow_reuse_address = False
         daemon_threads = True
 
-    srv = None
-    for intento in range(4):
-        p = puerto + intento
-        try:
-            srv = _Srv(("127.0.0.1", p), H)
-            puerto = p
-            break
-        except OSError:
-            if intento == 0:
-                # El puerto sigue ocupado. Si al arrancar nadie contestó como AQUASHIELD, antes de cerrar a la fuerza a
-                # quien lo tiene se le vuelve a preguntar, con más paciencia: un panel del otro modo que tardó más de
-                # 1 s no se cierra (revisión del encargo 51). Si contesta, decide _ceder_al_previo, como al arrancar.
-                tarde = _panel_en(p, espera=PANEL_ESPERA_LARGA) if previo is None else None
-                if tarde is not None and _ceder_al_previo(p, tarde, propio, abrir):
-                    return
-                _liberar_puerto(p)
-                try:
-                    srv = _Srv(("127.0.0.1", p), H)
-                    puerto = p
-                    break
-                except OSError:
-                    continue
-            continue
+    def _enlazar(p, espera=0.0):
+        """El servidor del panel en el puerto 'p'. Si está tomado, lo vuelve a probar cada 0,1 s hasta 'espera' s; si
+        sigue tomado, None."""
+        fin = time.time() + espera
+        while True:
+            try:
+                return _Srv(("127.0.0.1", p), H)
+            except OSError:
+                if time.time() >= fin:
+                    return None
+                time.sleep(0.1)
 
+    # 1. El puerto del panel: el base (8765) o, si lo tiene otro programa, el siguiente, hasta PUERTOS_DEL_PANEL. En
+    #    cada uno, un panel de AQUASHIELD se trata como hasta hoy en el base (_ceder_al_previo): en el otro modo, o sin
+    #    decir en cuál, avisa y no corre (decisión de Marcelo, encargo 51, CICLO-modo-y-lanzadores.md); en el mismo, al
+    #    ocupado lo abre en el navegador, y al ocioso le pide que se apague y toma su puerto cuando lo suelta. Al
+    #    programa que no contesta como AQUASHIELD no lo cierra: prueba el puerto siguiente (decisión de Marcelo, encargo
+    #    52, CICLO-puerto-libre-y-modo-al-armar.md). Si contesta, aunque el puerto se pudiera enlazar, tampoco lo
+    #    usa: un programa que escucha en todas las direcciones deja enlazar 127.0.0.1, y el panel le quitaría lo que
+    #    le llega por ahí. Hasta ahí, solo miraba el base, y a quien no lo dejaba libre lo cerraba con taskkill, fuera o
+    #    no de AQUASHIELD.
+    propio = es_modo_emision()          # el modo de este lanzador
+    srv = None
+    for p in range(puerto, puerto + PUERTOS_DEL_PANEL):
+        visto = _panel_en(p)
+        if visto is None:
+            srv = _enlazar(p)
+            if srv is None:
+                # Tomado, y nadie contestó en 1 s: se le vuelve a preguntar, con más paciencia (un panel del otro modo
+                # que tardó más, con la máquina cargada, avisa y no corre: revisión del encargo 51); si tampoco
+                # contesta, se prueba otra vez el puerto, por si se soltó mientras tanto.
+                visto = _panel_en(p, espera=PANEL_ESPERA_LARGA)
+                srv = _enlazar(p) if visto is None else None
+            if srv is not None:
+                break
+        if not visto:
+            _avisar_en_pantalla_y_log(f"El puerto {p} lo tiene otro programa, que no contesta como AQUASHIELD: no lo "
+                                      f"cerré.")
+            continue
+        if _ceder_al_previo(p, visto, propio, abrir):
+            return
+        srv = _enlazar(p, espera=PANEL_ESPERA_LARGA)        # el ocioso, ya avisado: su puerto, cuando lo suelte
+        if srv is not None:
+            break
+        _avisar_en_pantalla_y_log(f"El panel de AQUASHIELD del puerto {p} no lo soltó en {PANEL_ESPERA_LARGA:g} s, "
+                                  f"después de pedirle que se apagara: no lo cerré.")
     if srv is None:
         raise RuntimeError(f"no encontré un puerto libre para AQUASHIELD cerca de {puerto}")
+    puerto = srv.server_address[1]
 
     _SRV_ACTUAL = srv
 
@@ -13590,6 +13624,7 @@ HTML_INDEX = r"""<!doctype html>
 JS_INDEX = r"""const $ = (s) => document.querySelector(s);
 let ARCHIVO = null, FILAS = [], CORRIENDO = false, CURSOR = 0, HOJA_ACT = "";
 let HUBO_CORRIDA = false;
+let MODO_PAGINA = null;   // el modo que pintó el aviso al cargar la página; null si no lo pudo leer (encargo 52)
 
 async function api(ruta, opts) {
   const r = await fetch(ruta, opts || {});
@@ -13712,11 +13747,33 @@ function seleccion() {
   return [...document.querySelectorAll("[data-chk]")].filter(c => c.checked).map(c => FILAS[+c.dataset.chk].fila);
 }
 
+// ---------- el modo, otra vez, antes de armar ----------
+// El aviso de modo se pinta al cargar la página (MODO_PAGINA). Antes de armar las reservas, el panel vuelve a leer su
+// modo, y si no es el que muestra la página, no corre y avisa que hay que recargarla: una pestaña que quedó abierta
+// mientras su panel se cerraba, y otro del otro modo se abría en el mismo puerto, mostraría el aviso de antes (decisión
+// de Marcelo, encargo 52). El servidor lo vuelve a mirar al recibir la corrida: la página le manda el modo que muestra.
+async function mismoModo() {
+  let modo = null;
+  try { modo = (await api("/api/config")).modo_emision; } catch (e) {}
+  if (typeof modo === "boolean" && modo === MODO_PAGINA) return true;
+  feed(avisoDeModo(MODO_PAGINA, modo), "f-alerta", "REVISAR");
+  estado("Recarga la página antes de armar");
+  return false;
+}
+function avisoDeModo(pagina, panel) {
+  const nombre = { true: "EMISIÓN (reservas reales)", false: "prueba (sin emitir)" };
+  const muestra = typeof pagina === "boolean" ? "muestra el modo " + nombre[pagina] : "no muestra el modo del panel";
+  const esta = typeof panel === "boolean" ? "está en modo " + nombre[panel] : "no dijo en qué modo está";
+  return "No armé las reservas: esta página " + muestra + ", y el panel " + esta + ". Recarga la página (F5) para " +
+         "ver el modo del panel, y vuelve a armarlas.";
+}
+
 // ---------- widget ARMAR ----------
 $("#wg-armar").onclick = async () => {
   if (apagado($("#wg-armar"))) return;
   const filas = seleccion();
   if (!filas.length) return;
+  if (!(await mismoModo())) return;
   $("#log").innerHTML = ""; CURSOR = 0;
 
   filas.forEach((f, idx) => {
@@ -13741,7 +13798,7 @@ $("#wg-armar").onclick = async () => {
   try {
     await api("/api/correr", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hoja: HOJA_ACT, usuario: $("#usuario").value, filas })
+      body: JSON.stringify({ hoja: HOJA_ACT, usuario: $("#usuario").value, filas, modo: MODO_PAGINA })
     });
     CORRIENDO = true; HUBO_CORRIDA = true; pintarWidgets();
   } catch (e) {
@@ -13965,9 +14022,10 @@ function chip(fila, tipo, txt) {
   try {
     const d = await api("/api/config");
     if ($("#ver")) $("#ver").textContent = d.version;
+    MODO_PAGINA = Boolean(d.modo_emision);
     const nm = $("#nota-modo");
     if (nm) {
-      if (d.modo_emision) {
+      if (MODO_PAGINA) {
         nm.innerHTML = `<b style="color:#ef4444;">🔴 MODO EMISIÓN REAL ACTIVO:</b> Las reservas seleccionadas se enviarán y confirmarán formalmente ante las navieras.<br><span class="rs-version">v<span id="ver">${esc(d.version)}</span> · <span style="background:#ef4444;color:#fff;padding:2px 6px;border-radius:4px;font-weight:bold;font-size:10px;">EMISIÓN REAL</span></span>`;
       } else {
         nm.innerHTML = `<b>🛡️ Modo Seguro Activo:</b> Cada reserva se llena completa y se detiene en la pantalla final antes de confirmar.<br><span class="rs-version">v<span id="ver">${esc(d.version)}</span> · <span style="background:#10b981;color:#fff;padding:2px 6px;border-radius:4px;font-weight:bold;font-size:10px;">MODO SEGURO</span></span>`;
