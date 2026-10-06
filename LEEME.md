@@ -31,6 +31,11 @@ clave equivocada, por ejemplo), no vuelve a intentarlo, para no arriesgar la cue
 las filas de MSC quedan NO ENVIADA con el motivo: vuelve a armarlas más tarde. Cada error deja en la carpeta de la
 corrida su captura y lo que respondió el portal.
 
+Si CMA-CGM muestra «El acceso está restringido temporalmente», o su página no termina de cargar en 30 s (la portada,
+o la verificación del navegador que a veces muestra antes del deslizador), el programa deja CMA-CGM por esa corrida,
+sin reintentar ni recargar: sus filas quedan NO ENVIADA con el motivo, y sigue con las otras navieras. La captura y el
+HTML quedan en la carpeta de la corrida. El deslizador lo sigues pasando tú, como siempre.
+
 ## Modo seguro y emisión
 
 Con `Iniciar AQUASHIELD.bat` **nada se emite**: cada reserva se llena completa y se detiene antes del botón que

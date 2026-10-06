@@ -587,7 +587,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 617 pruebas al 2026-10-06 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 642 pruebas al 2026-10-06 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -620,7 +620,10 @@ segunda tardó 1.185 s (encargo 53).
   `SoloLee` de `test_evidencia`, de antes). Lo mismo con lo esperado: una página falsa que acepta cualquier acción sin
   anotarla deja pasar a un reservador que sigue cuando no debía (`PaginaHastaLaRuta` de `test_clics` anota, desde el
   encargo 42, cada acción de sus localizadores, de la página, del teclado y del mouse, y cada JavaScript, sin un
-  `__getattr__` general: lo que no tiene sigue fallando). Y una prueba no depende de lo que la máquina tenga instalado:
+  `__getattr__` general: lo que no tiene sigue fallando). Desde el encargo 54, la de DataDome
+  (`test_datadome.PaginaDataDome`) avanza un reloj falso con cada espera y corta a las 100: la espera del deslizador
+  cuenta con el reloj de verdad (hasta 180 s), y una mutación que la dejara seguir no queda colgada. Y una prueba no
+  depende de lo que la máquina tenga instalado:
   las del retiro usan una librería holidays falsa.
 - La sandbox de una clase es una sola: dos pruebas que nombran igual su carpeta escriben en el mismo log.txt, y un
   `assertIn` puede encontrar ahí la línea de otra prueba. Hasta el encargo 51, `login_falso` (test_clics) numeraba sus
@@ -688,7 +691,8 @@ línea cambian). De arriba hacia abajo:
    `NAVIERAS = {clave: (nombre, login)}`. COSCO tiene un validador tipo puzzle: se intenta resolver solo
    (`resolver_cosco_puzzle`) y, si no, se pausa hasta que el operador pulse «Ya lo resolví». CMA tiene DataDome (un
    deslizador): el programa espera a que el operador lo deslice (`_cma_esperar_desafio`, hasta 180 s);
-   `resolver_cma_slider`, que lo arrastraba solo, no se llama (encargo 53). Medido en las corridas
+   `resolver_cma_slider`, que lo arrastraba solo, no se llama (encargo 53). Si DataDome restringe el acceso o su
+   página no termina de cargar, la corrida de CMA se detiene (encargo 54, abajo). Medido en las corridas
    del 2026-09-21 al 26 (`CICLO-inicio-de-todas.md`) y decidido en `CICLO-cierre-de-frenos.md`:
    - ONE: después del login, `login_one` espera `ONE_TRAS_LOGIN`, www.one-line.com/one-ecom/…, donde terminaron los 4
      logins nuevos medidos. Hasta `4948e16` esperaba ecomm.one-line.com/one-ecom, que ya no aparece: la espera vencía a
@@ -722,7 +726,8 @@ línea cambian). De arriba hacia abajo:
        HTML del segundo intento llevan «_2» (`_msc_sufijo`).
      - Sin un error del portal (no llega ni la sesión ni el error: con la clave equivocada, por ejemplo) no reintenta,
        porque el portal podría bloquear la cuenta, y las filas quedan NO ENVIADA con `MSC_SIN_SESION` (`SIN_SESION`;
-       con las otras navieras, la fila sigue sin estado). Hasta el encargo 50, ante cualquier error iba una sola vez a
+       con las otras navieras, la fila sigue sin estado, salvo con CMA-CGM detenida: encargo 54). Hasta el encargo 50,
+       ante cualquier error iba una sola vez a
        eBooking (`MSC_EBOOKING`, desde `_msc_tras_el_error`, que salió): no dejó la sesión en ninguno de los 4 casos
        medidos.
      - **La evidencia del error** (decisión de Marcelo, encargo 50): `login_msc` escucha, sin tocar la página, las
@@ -765,6 +770,35 @@ línea cambian). De arriba hacia abajo:
      temporalmente» con otra, de otro registro regional, sin un cambio de red en el equipo. La causa no se confirmó:
      hace falta el portal. Cada página de DataDome muestra la IP con que el portal vio el pedido: se lee con OCR y no
      se copia.
+   - **CMA se detiene, sin reintentar ni recargar** (decisión de Marcelo, encargo 54,
+     `CICLO-cma-acceso-restringido.md`), si su portal restringe el acceso o su página no termina de cargar. Las filas de
+     CMA quedan NO ENVIADA con un motivo que lo dice (`CMA_DETENIDA`), con la captura y el HTML, y las otras navieras
+     siguen. El deslizador lo sigue pasando el operador.
+     - Qué muestra DataDome lo dice `_cma_datadome`, sin pulsar ni navegar ni esperar: «bloqueo» (algún marco dice
+       «restringido temporalmente»: `CMA_TEXTO_BLOQUEO`), «deslizador», «verificacion» (su marco `/interstitial/` o
+       «verificación del dispositivo»), «vacia» (un documento 403 sin el marco de DataDome, o su marco sin texto),
+       «otra» o «». Medido sin abrir el portal: el texto, con OCR en las 11 capturas de `logs/` (en `logs/` no hay
+       ningún HTML de DataDome); el código HTTP de cada navegación y sus marcos, en los archivos de sesión del perfil
+       (403 en las 4 navegaciones que guardan, todas del 06-10). El deslizador también dice «El bloqueo actual…»: por
+       eso el bloqueo se reconoce por «restringido temporalmente».
+     - `_cma_esperar_desafio`, antes de pedirle nada al operador: con el bloqueo, detiene; con la verificación o la
+       página vacía, espera hasta `CMA_ESPERA_PORTADA` s (30; hipótesis: unas 8 veces lo más largo que tardó la portada
+       en los 23 inicios de sesión de `logs/`, de 1,1 a 3,7 s) a que DataDome deje pasar o muestre el deslizador, y si
+       no, detiene; con el deslizador o con otra página, como antes. Si mientras espera al operador la página pasa al
+       bloqueo, también detiene. La portada tiene el mismo plazo para cargar (su `page.goto`).
+     - `_cma_es_robotcheck` da por DataDome a todo documento 403 (`_cma_http`), sin leer sus marcos: hasta el encargo
+       54, la página vacía de las 14:26:44 del 06-10 le parecía superada, y el login seguía en una página en blanco.
+     - La detención (`_cma_detener`) deja la línea «⛔ …», la captura con plazo (`CMA_CAPTURA_MS`), el HTML con plazo
+       (`_guardar_html_completo` con `plazo_ms`) y sin el usuario ni la clave, y el motivo en el Registro
+       (`_naviera_detenida`), y levanta `CmaDetenida`, que deriva de `BaseException`, como `ObjetivoNoEncontrado`.
+       La atajan el login (`_cma_login_se_detiene`: no hay sesión, y las filas toman el motivo por
+       `_motivo_sin_sesion`) y el reservador (`_cma_si_se_detuvo`: NO ENVIADA, y las filas de CMA que siguen en la
+       corrida, también, sin volver al portal).
+     - Todo lo que lee tiene plazo (`_evaluar_con_plazo`: un localizador de `:root` con `timeout`): `frame.evaluate`
+       no lo tiene, y con un marco que no responde no volvió en 40 s (medido sin red en Chrome 154). El detector de
+       antes todavía lee así las páginas que no son 403.
+     - Lo vigilan `tests/test_datadome.py`, con una página falsa de DataDome y un reloj falso, y, para las filas en el
+       panel y en la consola, `test_web` y `test_consola`.
 5. **Reserva por naviera** `reservar_<x>(page, reserva, creds, reg, on_pausa=None) -> (estado, detalle)`,
    registrados en `RESERVADORES`. Cada una trae sus helpers con prefijo (`_one_*`, `_msc_*`,
    `_cosco_*`, `_hmm_*`, `_mk_*` para MAERSK, `_cma_*`) y constantes JS inyectadas `_JS_<NAV>_*`.
@@ -780,7 +814,8 @@ línea cambian). De arriba hacia abajo:
    una nave o HYUNDAI no ofrece mantenerla (ver «Solo la nave que la fila pide»), o cuando a la fila con nave le falta
    el puerto de carga o el destino, o un ayudante de origen, destino o lugar de entrega no eligió ninguna sugerencia
    (ver «Antes de la guarda no hay clics a ciegas», encargo 42), cuando el login de MSC no deja la sesión iniciada
-   (encargo 45), o cuando New Booking de COSCO no muestra su formulario (encargo 48). `REVISAR`, entre otros (en MAERSK
+   (encargo 45), cuando New Booking de COSCO no muestra su formulario (encargo 48), o cuando CMA-CGM restringe el
+   acceso o su página no termina de cargar (encargo 54). `REVISAR`, entre otros (en MAERSK
    y en COSCO, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el motivo dice hasta qué fecha buscó (ver
    «Ampliar la búsqueda»). Después: `EMITIDA`, `ENVIADA – REVISAR EN PORTAL`,
    `NO ENVIADA`. El panel los pinta con
