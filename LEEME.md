@@ -8,7 +8,8 @@ cada fila y, si se emitió, su N° de reserva.
 
 1. Doble clic a **`Iniciar AQUASHIELD.bat`**. La primera vez instala Playwright, openpyxl y holidays (los feriados de
    Chile para la fecha de retiro de MAERSK) si faltan; sin red, holidays queda para otra vez y el panel abre igual.
-   Después abre el panel en el navegador (`http://127.0.0.1:8765`).
+   Después abre el panel en el navegador, en `http://127.0.0.1:8765` o, si ese puerto lo tiene otro programa, en el
+   siguiente libre, hasta el 8768: a ese programa no lo cierra, y el registro del panel lo dice.
 2. En **PLANILLA DE RESERVAS**, arrastra el `.xlsx` o haz clic para elegirlo.
 3. Elige la **Naviera** (la hoja de la planilla) y el **Operador**, y marca las filas que quieres correr
    (**todas** y **ninguna** ayudan).
@@ -38,6 +39,10 @@ Cada corrida dice al empezar, en el registro del panel y en su `log.txt`, en qu�
 panel abierto en el otro modo, el lanzador avisa y no abre nada: cierra ese panel con su botón rojo de apagar, arriba
 a la derecha, o cerrando su pestaña y esperando unos dos minutos, y vuelve a abrir el lanzador. Si ese panel está
 armando reservas, espera antes a que termine.
+
+Antes de armar las reservas, el panel vuelve a mirar en qué modo está: si no es el que muestra la página (por ejemplo,
+una pestaña que quedó abierta de un panel que se cerró, mientras se abría otro en el otro modo), no arma nada y te pide
+recargarla (F5).
 
 ## Credenciales y opciones
 

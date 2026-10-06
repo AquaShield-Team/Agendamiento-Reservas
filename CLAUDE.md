@@ -90,6 +90,18 @@ aviso («no se emite ninguna reserva») quedaba justo encima de «modo EMISIÓN�
 - `test_candado.test_llamadas_al_candado` fija quién llama a `es_modo_emision`: los reservadores y el panel. Por eso la
   línea de la corrida no lo llama: pregunta a `_llaves_abiertas`.
 - Hasta el encargo 51, log.txt no lo decía, y el panel lo pinta solo al cargar la página (`/api/config`).
+- **Antes de armar, el panel vuelve a leer su modo** (decisión de Marcelo, encargo 52,
+  `CICLO-puerto-libre-y-modo-al-armar.md`). La página guarda el modo con que pintó su aviso al cargar (`MODO_PAGINA`) y,
+  al pulsar armar, vuelve a leer `/api/config` (`mismoModo`): si no es el que muestra, o el panel no dice uno, no arma
+  y avisa que hay que recargarla (F5), antes de tocar la tabla. Además manda ese modo a `/api/correr`, y el servidor lo
+  compara con el suyo, con `_llaves_abiertas`, como la línea de cada corrida (`test_candado` no cambió): si no es el
+  mismo, o la página no lo manda (una pestaña de antes del encargo 52), contesta 409 y no arma (`_modo_de_la_pagina`).
+  - Así, una pestaña que quedó abierta mientras su panel se cerraba, y otro del otro modo se abría en el mismo puerto,
+    ya no arma reservas con el aviso de antes (sospecha 1 de la revisión del encargo 51). El aviso sigue sin repintarse
+    solo: lo hace la recarga.
+  - Lo vigilan `test_envio.TestLecturaDelPanel` (el JavaScript, en Node) y `test_web.TestPanelCorridas`. Los nombres de
+    los modos salen de `NOMBRE_DEL_MODO`, el mismo del aviso del lanzador; el JavaScript los repite, y su prueba los
+    compara.
 
 Al probar, nunca uses el lanzador de emisión ni ninguna de esas tres vías sin que Marcelo lo pida
 explícitamente. Cualquier cambio en un `reservar_*` tiene que conservar la rama
@@ -523,20 +535,36 @@ python -m playwright show-trace "logs\<carpeta>\traza.zip"
 ```
 
 - Los `.bat` lanzan con `pythonw` (sin consola): los `print` no se ven; todo queda en `logs\`.
-- Al arrancar, `lanzar_web` mira si en el puerto 8765 hay un panel de AQUASHIELD (`_panel_en`: su `/api/estado` y el
-  `modo_emision` de su `/api/config`). **Si está en el otro modo, o no dice en cuál, avisa y no corre** (decisión de
-  Marcelo, encargo 51, `CICLO-modo-y-lanzadores.md`): no se conecta a él, no lo cierra y no abre otro. El aviso va a la
-  consola y a una ventana (`_avisar_al_lanzar`, como el de `main()`) y dice cómo cerrar ese panel.
-  - Hasta ahí, medido sin red con el código de `aba1233`: a un panel ocupado lo abría en el navegador en el modo que
-    tuviera (también el lanzador de prueba a uno de emisión). A uno ocioso le pedía que se apagara y tomaba su puerto,
-    así que una pestaña suya que quedara abierta hablaba con un panel del otro modo, con el aviso de modo de antes.
-  - En el mismo modo, como antes: al ocupado lo abre en el navegador; al ocioso le pide que se apague.
-  - Si el puerto sigue ocupado y al arrancar nadie contestó como AQUASHIELD, antes de cerrar a quien lo tiene le
-    vuelve a preguntar, hasta `PANEL_ESPERA_LARGA` s (5; hipótesis): un panel del otro modo que tardó más de 1 s en
-    contestar, con la máquina cargada, no se cierra (`_ceder_al_previo` decide igual en las dos preguntas; revisión
-    del encargo 51). Si tampoco contesta, **mata con `taskkill` el proceso que lo escucha**, sea o no de AQUASHIELD
-    (otro programa, o un panel que no contestó en 5 s); después prueba 8766–8768.
-  - Solo mira el 8765: preguntarle a un puerto donde nadie escucha tarda 1 s en este equipo.
+- Al arrancar, `lanzar_web` busca su puerto desde el 8765, hasta el 8768 (`PUERTOS_DEL_PANEL`), y en cada uno pregunta
+  quién está (`_panel_en`: su `/api/estado` y el `modo_emision` de su `/api/config`): nadie (None), otro programa
+  (False: otro código HTTP, sin hablar HTTP, o un `/api/estado` sin «corriendo») o un panel de AQUASHIELD. Se queda con
+  el primero libre: preguntarle a un puerto donde nadie escucha tarda 1 s en este equipo, y lo paga una vez.
+  - **Un panel de AQUASHIELD se trata como hasta hoy en el base, en cualquiera de los cuatro** (decisión de Marcelo,
+    encargo 52, `CICLO-puerto-libre-y-modo-al-armar.md`). **Si está en el otro modo, o no dice en cuál, avisa y no
+    corre** (decisión de Marcelo, encargo 51, `CICLO-modo-y-lanzadores.md`): no se conecta a él, no lo cierra y no
+    abre otro. El aviso va a la consola y a una ventana (`_avisar_al_lanzar`, como el de `main()`) y dice cómo cerrar
+    ese panel. En el mismo modo: al ocupado lo abre en el navegador; al ocioso le pide que se apague y toma su puerto
+    cuando lo suelta, y lo espera hasta `PANEL_ESPERA_LARGA` s (sin carga lo suelta a los 0,52 s, medido 5 veces). Si
+    no lo suelta, no lo cierra: lo dice y prueba el siguiente.
+  - Hasta el encargo 51, medido sin red con el código de `aba1233`: a un panel ocupado lo abría en el navegador en el
+    modo que tuviera (también el lanzador de prueba a uno de emisión). A uno ocioso le pedía que se apagara y tomaba
+    su puerto, así que una pestaña suya que quedara abierta hablaba con un panel del otro modo, con el aviso de modo de
+    antes.
+  - **Al programa que no contesta como AQUASHIELD no lo cierra** (decisión de Marcelo, encargo 52): prueba el puerto
+    siguiente, y el registro del panel lo dice. Si contesta, no usa su puerto aunque pudiera enlazarlo: a un programa
+    que escucha en todas las direcciones (0.0.0.0) se le puede enlazar encima 127.0.0.1, y lo que llega por ahí pasa al
+    panel (medido en este Windows). Si no contesta en 1 s y el puerto sigue tomado, le vuelve a preguntar, hasta
+    `PANEL_ESPERA_LARGA` s (5; hipótesis): un panel del otro modo que tardó más, con la máquina cargada, avisa y no
+    corre (`_ceder_al_previo` decide igual en las dos preguntas; revisión del encargo 51); y si tampoco contesta,
+    prueba otra vez el puerto, por si se soltó mientras tanto.
+  - Hasta el encargo 52 solo miraba el 8765, y a quien no lo dejaba libre lo cerraba con `taskkill /F` (el pid que daba
+    netstat), fuera o no de AQUASHIELD. El 2026-10-05 escuchaba ahí `servidor_sync.py`, que no es de AQUASHIELD, y el
+    lanzador lo habría cerrado (medido sin red, con un servidor ajeno en su lugar).
+  - Con los cuatro tomados, `lanzar_web` falla y `main()` abre el panel Tkinter.
+  - En otro puerto, la página es otro origen para el navegador: el tema y el nombre de quien la usa, que guarda ahí
+    (`aq-tema`, `mars_reservas_usuario`), empiezan de nuevo, y un marcador al 8765 llevaría al otro programa. Ni los
+    `.bat`, ni `AQUASHIELD_EMISION.py`, ni las pruebas dependen del 8765; los manuales y el video tutorial, que salen de
+    los generadores (fuera del repo), lo nombran (encargo 52).
   - Tiene un watchdog que apaga el servidor tras 90 s sin sondeos de `/api/estado`.
 - Para depurar un portal sin correr toda la planilla: `AQUASHIELD_SOLO_PRIMERA=1` (solo en el modo
   consola `reservas`) y `AQUASHIELD_TRAZA=1`.
@@ -550,7 +578,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 598 pruebas al 2026-10-05 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 608 pruebas al 2026-10-05 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -561,12 +589,20 @@ python tests/correr.py --todo          # las dos cosas (más de una hora; el cen
 cd tests && python -m unittest test_planilla.TestLectorWeb.test_web_one    # una sola prueba
 ```
 
+El censo completo del 2026-10-06 (1.848 mutaciones, 2.252 pares) tardó unos 120 minutos, con otros programas cargando
+el equipo. En segundo plano, la herramienta Bash de Claude Code lo corta a las 2 horas: el primero se cortó ahí, y el
+segundo corrió aparte (encargo 52; el plan B está en el entorno de la máquina, `~/.claude/CLAUDE.md`). Mientras corre,
+no toques la raíz: al terminar compara la foto de los originales.
+
 - **Nunca importes `AQUASHIELD.py` desde la raíz en una prueba**: usa `soporte.cargar()`, que carga una
   COPIA en una sandbox del temporal. Desde la raíz, `BASE` apunta a la planilla, `config.json` y
   `perfiles/` reales. El arnés trae trampas (navegador, procesos, red externa, Playwright y, desde el encargo 51, la
   ventana de aviso de tkinter levantan `EfectoReal`) y exige las tres llaves del candado apagadas antes y después de
   cada prueba. La de la ventana evita que una prueba, o una mutación, se quede esperando un clic.
-- **Nunca uses el puerto 8765** en una prueba: `lanzar_web` cierra con `taskkill /F` a quien lo ocupe.
+- **Nunca uses el puerto 8765** en una prueba: es el del panel de verdad. Las pruebas del arranque usan
+  `puertos_seguidos` (del 20000 al 39999, con los cuatro seguidos libres): el lanzador prueba los puertos que siguen a
+  su base, y los que reparte el sistema (desde el 49152) vienen seguidos (29 de 29, medido el 2026-10-05), así que dos
+  pruebas en paralelo, como las del censo, quedarían en puertos vecinos (encargo 52).
 - Una página falsa no avisa de lo inesperado solo levantando una excepción: el programa se la traga en su `try`. Que lo
   anote, y que la prueba exija esa lista vacía (`PaginaRevision` y `PaginaShipper` de `test_clics`, del encargo 38, y
   `SoloLee` de `test_evidencia`, de antes). Lo mismo con lo esperado: una página falsa que acepta cualquier acción sin
@@ -945,7 +981,8 @@ línea cambian). De arriba hacia abajo:
    `_LOCK`, `_web_worker` en un hilo (un contexto de Playwright por naviera) y la API `/api/config`,
    `/api/credenciales`, `/api/planilla`, `/api/filas`, `/api/correr`, `/api/login`, `/api/estado`,
    `/api/continuar`, `/api/detener`, `/api/descargar`, `/api/apagar`. Una corrida sin filas elegidas no abre el
-   navegador ni entra a ningún portal, y lo avisa.
+   navegador ni entra a ningún portal, y lo avisa. `/api/correr` arma solo si la página manda el modo que muestra y es
+   el del panel (encargo 52; ver el candado).
 9. **Front-end embebido**: `HTML_INDEX`, `JS_INDEX`, `CSS_INDEX` y `CSS_FUENTES` son strings de
    Python servidos desde memoria (el `.exe` debe quedar autocontenido). `CSS_FUENTES` lleva fuentes
    woff2 en base64 en líneas gigantes: **el Read falla si el rango las incluye** (cerca del final,
