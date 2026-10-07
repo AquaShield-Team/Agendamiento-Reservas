@@ -273,6 +273,14 @@ cerrado:
   - Hasta `1e8d510` también le bastaban un placeholder o un «°C», y el guardado caía a un clic por JavaScript en
     cualquier cajón.
   - El detector de paneles es uno solo, `_JS_CMA_PANELES_VISIBLES`.
+- **CMA corta si no escribe sus comentarios** (decisión de Marcelo, encargo 56, `CICLO-pausa-sola-y-comentarios.md`):
+  si algo falla antes de escribirlos (el JavaScript que los busca y escribe, también si no vuelve en `CMA_PLAZO_MS`,
+  o el campo que vio el localizador), `_cma_comentarios` corta con lo que falló (`ObjetivoNoEncontrado`, con
+  `CMA_CAMPO_COMENTARIOS`), y la fila queda NO ENVIADA con la captura y el HTML del paso
+  (`cma_f<fila>_sin_objetivo`). Hasta ahí lo anotaba («comentarios err») y la reserva seguía sin ellos, «lista para
+  emitir»: con el candado abierto, se habría enviado sin ellos. En `logs/` no pasó nunca: los 14 los escribió el
+  JavaScript. Lo que falle después de escribirlos, como antes. El motivo dice «no encontré el campo…, porque el
+  programa falló al buscarlo o escribirlo (…)»: el texto de `_sin_clic_a_ciegas` empieza siempre por «no encontré».
 - **Ampliar la búsqueda** (decisiones de Marcelo, `CICLO-ampliar-la-busqueda.md` y `CICLO-ampliar-msc-y-cma.md`) trae
   clics nuevos antes de la guarda, cada uno por su texto: en MAERSK, el único botón con el nombre accesible
   «Search more sailing options» (`MK_BOTON_MAS`, exacto); en COSCO, el único campo «Sailing Within N Weeks» y su opción
@@ -589,7 +597,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 676 pruebas al 2026-10-06 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 698 pruebas al 2026-10-06 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -627,8 +635,10 @@ segunda tardó 1.185 s (encargo 53).
   cuenta con el reloj de verdad (hasta 180 s), y una mutación que la dejara seguir no queda colgada. Desde el encargo
   55, las páginas falsas leen por el localizador `:root`, como el programa (`soporte.RaizFalsa`: dice que la página
   responde, da su título y responde lo demás con el `evaluate` de la página, con el JavaScript desenvuelto), y las que
-  anotan cada JavaScript no anotan las dos lecturas con que CMA mira si DataDome está. Y una prueba no depende de lo
-  que la máquina tenga instalado: las del retiro usan una librería holidays falsa.
+  anotan cada JavaScript no anotan las dos lecturas con que CMA mira si DataDome está. Desde el encargo 56, la de
+  DataDome puede estar cerrada (sus lecturas fallan, como las de Playwright) y corre algo en cada espera
+  (`al_esperar`), y la pausa de verdad del panel web corre sobre ella con una espera falsa que la avanza. Y una prueba
+  no depende de lo que la máquina tenga instalado: las del retiro usan una librería holidays falsa.
 - La sandbox de una clase es una sola: dos pruebas que nombran igual su carpeta escriben en el mismo log.txt, y un
   `assertIn` puede encontrar ahí la línea de otra prueba. Hasta el encargo 51, `login_falso` (test_clics) numeraba sus
   corridas por prueba, y así pasaba; desde entonces, el contador es de la clase.
@@ -701,6 +711,14 @@ línea cambian). De arriba hacia abajo:
      en «Solo iniciar sesión», log.txt quedó 6 minutos sin escribir. «Detener» también suelta la pausa, y el panel
      decía «Continuando (paso manual resuelto)» igual; desde el encargo 55 se mira primero. Lo vigilan `test_consola`
      y `test_web`. Sin panel, en la consola, `pausa_manual` hace lo mismo que antes.
+   - **La pausa puede terminar sola** (decisión de Marcelo, encargo 56, `CICLO-pausa-sola-y-comentarios.md`): con
+     `hasta`, una función sin argumentos, el panel la mira mientras espera, después de cada espera de 2 s, y si
+     devuelve algo, la pausa termina con eso, y log.txt lo dice («▶ La pausa terminó a los N s: DataDome dejó pasar
+     la página.»). Solo la usa el deslizador de CMA (abajo). Con un botón ya pulsado no la llama, y «Detener» va
+     antes que lo que haya devuelto: lo que leyó mientras el panel cerraba el navegador no vale. Con ella, la pausa
+     del panel web vence a los 10 minutos de reloj, y no a las 300 vueltas, porque cada vuelta tarda lo que tarda en
+     leer. El panel Tkinter también la mira, cada 2 s, y apaga su «Ya lo resolví»; sus pruebas compilan suelto el
+     método de su clase `Panel` (`test_web.metodo_del_panel_tkinter`), porque el panel no se abre en una prueba.
 4. **Login por naviera** `login_<x>(page, creds, reg, on_pausa=None) -> bool`, registrados en
    `NAVIERAS = {clave: (nombre, login)}`. COSCO tiene un validador tipo puzzle: se intenta resolver solo
    (`resolver_cosco_puzzle`) y, si no, se pausa hasta que el operador pulse «Ya lo resolví». CMA tiene DataDome (un
@@ -799,9 +817,27 @@ línea cambian). De arriba hacia abajo:
        página vacía, espera hasta `CMA_ESPERA_PORTADA` s (30; hipótesis: unas 8 veces lo más largo que tardó la portada
        en los 23 inicios de sesión de `logs/`, de 1,1 a 3,7 s) a que DataDome deje pasar o muestre el deslizador, y si
        no, detiene; con el deslizador o con otra página, como antes. Si en la espera del deslizador la página pasa al
-       bloqueo, también detiene; en el panel, esa espera empieza cuando el operador pulsa «Ya lo resolví», y mientras la
-       pausa sigue el programa no mira la página (encargo 55: hasta ahí este archivo decía «mientras espera al
-       operador»). La portada tiene el mismo plazo para cargar (su `page.goto`).
+       bloqueo, también detiene; desde el encargo 56, también mientras dura la pausa del panel (abajo). La portada
+       tiene el mismo plazo para cargar (su `page.goto`).
+     - **La pausa del deslizador termina sola** (decisión de Marcelo, encargo 56, `CICLO-pausa-sola-y-comentarios.md`):
+       mientras espera al operador, el panel mira la página con lo mismo que mira la espera de después
+       (`_cma_como_quedo`, con plazo: `_cma_es_robotcheck` ya no ve a DataDome, o `_cma_datadome` ve el bloqueo). Si
+       DataDome dejó pasar la página, la corrida sigue sin «Ya lo resolví»; si la bloqueó, CMA-CGM se detiene, como
+       antes. Con «Ya lo resolví» o al vencer la pausa, la espera sigue como antes, hasta 180 s. Hasta ahí, en el
+       panel, mientras el operador no pulsaba «Ya lo resolví» el programa no miraba la página. En `logs/`, las 8
+       esperas que ese detector dio por superadas terminaron con la sesión iniciada (del pedido a «superada», de 7 a
+       92 s). Una página cerrada no cuenta como que DataDome la dejó pasar: hasta ahí, si el navegador se cerraba entre
+       la espera y la lectura, la espera la daba por superada (medido sin red, con páginas falsas). Mientras la pausa
+       sigue, el programa lee la página cada 2 s, como ya lo hacía la espera de después cada 1 s; si DataDome
+       reacciona a esas lecturas no está medido.
+     - **«Detener» corta la espera** (misma decisión): si la pausa terminó con «Detener», o el operador lo pulsa en la
+       espera de después, la corta sin volver a mirar la página (`_cma_si_pulso_detener`, que mira el «Detener» del
+       panel como `reservar_cosco`, y levanta `CmaCancelada`, que deriva de `CmaDetenida`). El login queda sin
+       sesión, y la fila, DETENIDO, «Cancelado por el operador», como las otras navieras. Hasta ahí, la espera volvía
+       a mirar la página que el panel cerraba: su espera fallaba con la página cerrada, o, si se cerraba entre la
+       espera y la lectura, la daba por superada (medido sin red, con páginas falsas, contra `a6159b3`). En «Solo
+       iniciar sesión», «Detener» no cierra el navegador ni detiene los inicios de sesión que siguen, como antes
+       (leído en el código): corta solo la espera.
      - `_cma_es_robotcheck` da por DataDome a todo documento 403 (`_cma_http`), sin leer sus marcos: hasta el encargo
        54, la página vacía de las 14:26:44 del 06-10 le parecía superada, y el login seguía en una página en blanco.
      - La detención (`_cma_detener`) deja la línea «⛔ …», la captura con plazo (`CMA_CAPTURA_MS`), el HTML con plazo
@@ -821,8 +857,8 @@ línea cambian). De arriba hacia abajo:
          (30 s), el mismo que ya tenían `text_content`, `input_value` e `is_disabled`; las que miran qué muestra
          DataDome (y el título de la verificación del dispositivo, en el login), con `CMA_LECTURA_MS` (1,5 s, encargo
          54). La primera versión del encargo 55 leía la reserva con 1,5 s, y una página ocupada un momento cambiaba lo
-         que el programa hacía, que antes la esperaba: si el JavaScript de los comentarios no vuelve, la reserva sigue
-         sin ellos (leído en el código; revisión propia).
+         que el programa hacía, que antes la esperaba: el JavaScript de los comentarios que no volvía dejaba la reserva
+         sin ellos (leído en el código; revisión propia; desde el encargo 56, corta).
        - El JavaScript va por `_cma_js` (con plazo, y levanta el error como `page.evaluate`, también el que pulsa o
          escribe), el título y el texto por `_cma_leer` (el aviso de mantenimiento, con `CMA_PLAZO_MS`), y `count()` e
          `is_visible()` detrás de una pregunta con plazo (`_cma_cuantos`, `_cma_se_ve`, `_cma_responde`).
@@ -844,7 +880,8 @@ línea cambian). De arriba hacia abajo:
        sin medir en el portal). `reservar_cma` lo mira entre los pasos y justo antes de la evidencia de la guarda, y su
        decorador cuando la reserva se corta o queda REVISAR (`_cma_datadome_a_mitad`, sin tocar nada): con el bloqueo,
        o con una verificación que no deja pasar en `CMA_ESPERA_PORTADA` s, detiene la corrida como en la portada; con
-       el deslizador, se lo pide al operador. Si DataDome deja pasar la página, la fila igual termina, NO ENVIADA con
+       el deslizador, se lo pide al operador (desde el encargo 56, su pausa termina sola, y con «Detener» la fila queda
+       DETENIDO). Si DataDome deja pasar la página, la fila igual termina, NO ENVIADA con
        `CMA_INTERRUMPIDA` y su evidencia (`cma_f<fila>_datadome`; `_cma_interrumpir`, `CmaInterrumpida`), sin volver a
        intentarla, y la corrida sigue con la fila que viene: lo llenado se pierde con la recarga. Al abrir el
        formulario, si el deslizador no se pasa en `CMA_ESPERA_DESLIZADOR` s, también (hasta ahí, la reserva seguía y se
@@ -868,8 +905,9 @@ línea cambian). De arriba hacia abajo:
    el puerto de carga o el destino, o un ayudante de origen, destino o lugar de entrega no eligió ninguna sugerencia
    (ver «Antes de la guarda no hay clics a ciegas», encargo 42), cuando el login de MSC no deja la sesión iniciada
    (encargo 45), cuando New Booking de COSCO no muestra su formulario (encargo 48), cuando CMA-CGM restringe el
-   acceso o su página no termina de cargar (encargo 54), o cuando DataDome interrumpe una reserva de CMA-CGM a mitad de
-   camino (encargo 55). `REVISAR`, entre otros (en MAERSK
+   acceso o su página no termina de cargar (encargo 54), cuando DataDome interrumpe una reserva de CMA-CGM a mitad de
+   camino (encargo 55), o cuando CMA-CGM no puede escribir sus comentarios (encargo 56). `DETENIDO`, con «Detener»: en
+   COSCO y, desde el encargo 56, en la espera del deslizador de CMA-CGM. `REVISAR`, entre otros (en MAERSK
    y en COSCO, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el motivo dice hasta qué fecha buscó (ver
    «Ampliar la búsqueda»). Después: `EMITIDA`, `ENVIADA – REVISAR EN PORTAL`,
    `NO ENVIADA`. El panel los pinta con

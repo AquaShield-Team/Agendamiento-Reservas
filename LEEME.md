@@ -15,7 +15,8 @@ cada fila y, si se emitió, su N° de reserva.
 3. Elige la **Naviera** (la hoja de la planilla) y el **Operador**, y marca las filas que quieres correr
    (**todas** y **ninguna** ayudan).
 4. Pulsa **ARMAR LAS RESERVAS**. El avance queda en el **Registro operativo detallado**.
-5. Si un portal pide resolver un validador (CMA o COSCO), resuélvelo en el navegador y pulsa **Ya lo resolví**.
+5. Si un portal pide resolver un validador (CMA o COSCO), resuélvelo en el navegador y pulsa **Ya lo resolví**. Con el
+   deslizador de CMA no hace falta pulsarlo: cuando el portal te deja pasar, el programa sigue solo.
 6. Al terminar, **DESCARGAR RESULTADOS** te da la planilla con el estado de cada fila.
 
 **SOLO INICIAR SESIÓN** entra a los portales y los deja abiertos para trabajar a mano. **DETENER** corta la
@@ -34,15 +35,21 @@ corrida su captura y lo que respondió el portal.
 Si CMA-CGM muestra «El acceso está restringido temporalmente», o su página no termina de cargar en 30 s (la portada,
 o la verificación del navegador que a veces muestra antes del deslizador), el programa deja CMA-CGM por esa corrida,
 sin reintentar ni recargar: sus filas quedan NO ENVIADA con el motivo, y sigue con las otras navieras. La captura y el
-HTML quedan en la carpeta de la corrida. El deslizador lo sigues pasando tú, como siempre.
+HTML quedan en la carpeta de la corrida. El deslizador lo sigues pasando tú, como siempre: cuando el portal te deja
+pasar, el programa sigue solo, sin esperar «Ya lo resolví», y si mientras tanto restringe el acceso, deja CMA-CGM
+igual. **DETENER** corta esa espera: si estaba armando una reserva, esa fila queda DETENIDO.
 
 Lo mismo a mitad de una reserva de CMA-CGM: si aparece el acceso restringido, o su verificación no deja pasar en 30 s,
 el programa deja CMA-CGM por esa corrida. Si a mitad de una reserva te pide deslizar la flecha, la deslizas tú; esa
 reserva igual queda NO ENVIADA, porque, según DataDome, al dejarte pasar la página se vuelve a cargar y se pierde lo
 que se había llenado, y el programa sigue con la fila siguiente.
 
+Si CMA-CGM no deja escribir los comentarios de una reserva, esa fila queda NO ENVIADA, con el motivo, la captura y el
+HTML del paso: no se arma sin ellos.
+
 Cuando el panel te pide resolver algo en el navegador («Te toca a ti»), `log.txt` anota cuándo empezó la pausa, por
-qué, y cuándo terminó: si pulsaste «Ya lo resolví» o «Detener», o si pasaron 10 minutos sin respuesta.
+qué, y cuándo terminó: si pulsaste «Ya lo resolví» o «Detener», si pasaron 10 minutos sin respuesta o, con el
+deslizador de CMA, si el portal te dejó pasar o restringió el acceso.
 
 ## Modo seguro y emisión
 
