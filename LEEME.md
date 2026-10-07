@@ -36,6 +36,14 @@ o la verificación del navegador que a veces muestra antes del deslizador), el p
 sin reintentar ni recargar: sus filas quedan NO ENVIADA con el motivo, y sigue con las otras navieras. La captura y el
 HTML quedan en la carpeta de la corrida. El deslizador lo sigues pasando tú, como siempre.
 
+Lo mismo a mitad de una reserva de CMA-CGM: si aparece el acceso restringido, o su verificación no deja pasar en 30 s,
+el programa deja CMA-CGM por esa corrida. Si a mitad de una reserva te pide deslizar la flecha, la deslizas tú; esa
+reserva igual queda NO ENVIADA, porque, según DataDome, al dejarte pasar la página se vuelve a cargar y se pierde lo
+que se había llenado, y el programa sigue con la fila siguiente.
+
+Cuando el panel te pide resolver algo en el navegador («Te toca a ti»), `log.txt` anota cuándo empezó la pausa, por
+qué, y cuándo terminó: si pulsaste «Ya lo resolví» o «Detener», o si pasaron 10 minutos sin respuesta.
+
 ## Modo seguro y emisión
 
 Con `Iniciar AQUASHIELD.bat` **nada se emite**: cada reserva se llena completa y se detiene antes del botón que
