@@ -1076,18 +1076,20 @@ PAUSA_DETENIDA = "el operador pulsó «Detener»"
 PAUSA_VENCIDA = "pasaron 10 minutos sin que el operador la resolviera"
 
 
-def _pausa_del_panel(reg, on_pausa, mensaje):
+def _pausa_del_panel(reg, on_pausa, mensaje, hasta=None):
     """La pausa del panel en log.txt (decisión de Marcelo, encargo 55, CICLO-pausa-plazos-y-datadome.md): cuándo empieza
     y por qué (el mensaje que ve el operador), y cuándo termina y cómo, o si se cortó; la hora la pone el Registro en
     cada línea. on_pausa es la del panel web (_web_pausa, que dice cómo terminó) o la del panel Tkinter (que no lo
     dice). Hasta el encargo 55, de la pausa del deslizador de CMA log.txt no decía nada, y de las de pausa_manual, solo
     «PAUSA: esperando acción manual del operador...», sin el porqué ni el final: el 2026-10-06, en «Solo iniciar
     sesión», log.txt quedó 6 minutos sin escribir. Si on_pausa falla, lo anota y deja pasar la falla. Devuelve lo que
-    devolvió."""
+    devolvió. Con 'hasta' (decisión de Marcelo, encargo 56, CICLO-pausa-sola-y-comentarios.md), una función sin
+    argumentos que el panel llama mientras espera: si devuelve algo, la pausa termina sola, y eso dice cómo (la del
+    deslizador de CMA, cuando DataDome deja pasar la página o la bloquea: _cma_como_quedo)."""
     reg.paso(f"⏸ PAUSA: espero al operador. Por qué: {' '.join(str(mensaje).split())}")
     t0 = time.time()
     try:
-        como = on_pausa(mensaje)
+        como = on_pausa(mensaje, hasta=hasta) if hasta else on_pausa(mensaje)
     except Exception as e:
         reg.paso(f"⛔ La pausa se cortó a los {round(time.time() - t0)} s: falló el panel ({_texto_error(e)}).")
         raise
@@ -1665,8 +1667,8 @@ CMA_LECTURA_MS = 1500
 # El plazo de las demás lecturas de la reserva y del login de CMA-CGM (decisión de Marcelo, encargo 55: toda lectura de
 # sus páginas, con plazo): el plazo por omisión de Playwright, el mismo que en la reserva ya tenían text_content,
 # input_value e is_disabled. Con CMA_LECTURA_MS, una página ocupada un momento cambiaba lo que el programa hacía, y
-# antes la esperaba: si el JavaScript de los comentarios no vuelve, la reserva sigue sin ellos (leído en el código).
-# Hipótesis: cuánto puede estar ocupada una página de CMA sin estar colgada no está medido.
+# antes la esperaba: si el JavaScript de los comentarios no volvía, la reserva seguía sin ellos (leído en el código;
+# desde el encargo 56, corta). Hipótesis: cuánto puede estar ocupada una página de CMA sin estar colgada no está medido.
 CMA_PLAZO_MS = 30000
 CMA_SIN_RESPUESTA = f"la página no contestó en {CMA_PLAZO_MS // 1000} s"
 # El plazo de la captura de la ventana de CMA detenida o en su verificación. Medido sin red en Chrome 154: tardó de 0,1
@@ -1684,6 +1686,10 @@ CMA_INTERRUMPIDA = ("DataDome interrumpió la reserva {donde} ({que}). La reserv
 CMA_PASO_LA_VERIFICACION = "dejó pasar la página después de su verificación"
 CMA_DESLIZADO = "el operador deslizó la flecha"
 CMA_SIN_DESLIZAR = "pidió deslizar la flecha, y no se deslizó en {seg} s"
+# Cómo termina sola la espera del deslizador (_cma_como_quedo; decisión de Marcelo, encargo 56): la pausa del panel lo
+# dice en log.txt.
+CMA_DEJO_PASAR = "DataDome dejó pasar la página"
+CMA_RESTRINGIO = "DataDome restringió el acceso"
 _JS_CMA_HTTP = "() => { const n = performance.getEntriesByType('navigation')[0]; return n ? n.responseStatus : null; }"
 _JS_CMA_TEXTO = "() => document.body ? document.body.innerText : ''"
 _JS_CMA_TITULO = "() => document.title"
@@ -1706,6 +1712,15 @@ class CmaInterrumpida(CmaDetenida):
     queda NO ENVIADA, sin volver a intentarla, y la corrida sigue con la que viene (_cma_interrumpir). Deriva de
     CmaDetenida: la atajan los mismos (_cma_si_se_detuvo). A diferencia de _cma_detener, no deja el motivo en el
     Registro (_naviera_detenida): las filas que siguen van al portal."""
+
+
+class CmaCancelada(CmaDetenida):
+    """El operador pulsó «Detener» en el panel mientras el programa esperaba que deslizara la flecha de DataDome
+    (decisión de Marcelo, encargo 56, CICLO-pausa-sola-y-comentarios.md): la espera se corta sin volver a mirar la
+    página, que el panel cierra (_cma_si_pulso_detener). Deriva de CmaDetenida: el login la ataja igual
+    (_cma_login_se_detiene: no hay sesión), y el reservador deja la fila DETENIDO, «Cancelado por el operador», como
+    las otras navieras con «Detener» (_cma_si_se_detuvo). No deja el motivo en el Registro: la corrida se detiene por
+    «Detener»."""
 
 
 def _cma_leer(alcance, js, plazo_ms=CMA_LECTURA_MS):
@@ -1882,7 +1897,9 @@ def _cma_si_se_detuvo(reservar):
     también la fila que DataDome interrumpió (CmaInterrumpida), y las que siguen van al portal; y si la reserva se corta
     (ObjetivoNoEncontrado) o queda REVISAR, antes de darla por terminada mira si DataDome está en la página
     (_cma_datadome_a_mitad): si está, eso decide. El corte no se traga: si DataDome no está, sigue su camino hasta
-    _sin_clic_a_ciegas, que va por fuera. Ni el corte ni REVISAR salen después de la guarda: ahí no mira nada."""
+    _sin_clic_a_ciegas, que va por fuera. Ni el corte ni REVISAR salen después de la guarda: ahí no mira nada. Desde el
+    encargo 56, si el operador pulsó «Detener» mientras el programa esperaba el deslizador (CmaCancelada), la fila
+    queda DETENIDO, «Cancelado por el operador», como las otras navieras con «Detener»."""
     def reservar_cma_detenible(page, reserva, creds, reg, on_pausa=None):
         motivo = _naviera_detenida(reg, "cma")
         if motivo:
@@ -1897,6 +1914,8 @@ def _cma_si_se_detuvo(reservar):
             if resultado and resultado[0] == "REVISAR":
                 _cma_datadome_a_mitad(page, reg, on_pausa, creds, "antes de quedar para revisar", fila)
             return resultado
+        except CmaCancelada as e:
+            return ("DETENIDO", e.motivo)
         except CmaDetenida as e:
             return _no_enviada(reg, e.motivo)
     reservar_cma_detenible.__name__ = reservar.__name__
@@ -2037,6 +2056,30 @@ def resolver_cma_slider(page, reg=None):
 CMA_ESPERA_DESLIZADOR = 180
 
 
+def _cma_como_quedo(page):
+    """Cómo quedó DataDome mientras el programa espera que el operador deslice la flecha: CMA_DEJO_PASAR si ya dejó
+    pasar la página (_cma_es_robotcheck ya no lo ve, y la página sigue abierta), CMA_RESTRINGIO si restringe el acceso
+    (_cma_datadome), o None. Es lo que miraba la espera del deslizador desde el encargo 54; desde el encargo 56 lo mira
+    también la pausa del panel, que termina sola con eso (decisión de Marcelo). En logs/, las 8 esperas que esto dio por
+    superadas terminaron con la sesión iniciada. Una página cerrada no dejó pasar nada: hasta ahí, si el navegador se
+    cerraba entre la espera y la lectura, la espera la daba por superada (leído en el código). Solo lee, con plazo, y
+    no levanta: lo que no puede leer cuenta como sin DataDome, como en _cma_es_robotcheck."""
+    if _cma_es_robotcheck(page):
+        return CMA_RESTRINGIO if _cma_datadome(page) == "bloqueo" else None
+    return None if page.is_closed() else CMA_DEJO_PASAR
+
+
+def _cma_si_pulso_detener(reg, como=None):
+    """«Detener» corta la espera del deslizador (decisión de Marcelo, encargo 56): si la pausa del panel terminó con él
+    ('como') o el operador lo pulsó en el panel web después (como lo mira reservar_cosco), lo dice y levanta
+    CmaCancelada, sin volver a mirar la página, que el panel cierra. Hasta ahí, la espera la volvía a mirar: con la
+    página cerrada, su espera fallaba, y si se cerraba entre la espera y la lectura, la daba por superada (leído en el
+    código)."""
+    if como == PAUSA_DETENIDA or (_WEB.get("detener") and _WEB["detener"].is_set()):
+        reg.paso("⛔ El operador pulsó «Detener»: corto la espera del deslizador sin volver a mirar la página.")
+        raise CmaCancelada("Cancelado por el operador")
+
+
 def _cma_esperar_desafio(page, reg, on_pausa=None, segundos=CMA_ESPERA_DESLIZADOR, creds=None):
     """Si CMA CGM muestra la verificación de DataDome (deslizar flecha a la derecha),
     alerta al operador y espera de forma reactiva a que deslice la flecha con el mouse (_cma_pedir_deslizador).
@@ -2056,10 +2099,13 @@ def _cma_pedir_deslizador(page, reg, on_pausa=None, segundos=CMA_ESPERA_DESLIZAD
                           nombre="cma_robot_desafio"):
     """Le pide al operador que deslice la flecha de DataDome, y espera de forma reactiva, hasta 'segundos', a que
     DataDome deje pasar la página. (No se debe arrastrar con eventos sintéticos porque DataDome bloquea temporalmente la
-    IP.) Con el panel, la pausa queda en log.txt (_pausa_del_panel; decisión de Marcelo, encargo 55). La espera empieza
-    cuando la pausa termina: en el panel, mientras el operador no pulsa «Ya lo resolví», el programa no mira la página.
-    Si en la espera la página pasa al acceso restringido, detiene la corrida de CMA (_cma_detener). True si DataDome
-    dejó pasar la página; False si no, al vencer el plazo. Deja la captura 'nombre', con plazo (CMA_CAPTURA_MS)."""
+    IP.) Con el panel, la pausa queda en log.txt (_pausa_del_panel; decisión de Marcelo, encargo 55), y desde el encargo
+    56 termina sola cuando DataDome deja pasar la página o la bloquea: el panel lo mira mientras espera
+    (_cma_como_quedo; decisión de Marcelo). Hasta ahí, mientras el operador no pulsaba «Ya lo resolví», el programa no
+    miraba la página. Si la pausa termina con «Ya lo resolví» o al vencer, la espera sigue como antes, hasta
+    'segundos'. Si la página pasa al acceso restringido, detiene la corrida de CMA (_cma_detener). «Detener» corta la
+    espera, sin volver a mirar la página (_cma_si_pulso_detener: CmaCancelada). True si DataDome dejó pasar la página;
+    False si no, al vencer el plazo. Deja la captura 'nombre', con plazo (CMA_CAPTURA_MS)."""
     reg.paso("CMA CGM muestra verificación de seguridad (DataDome: 'Desliza hacia la derecha').")
     reg.captura(page, nombre, plazo_ms=CMA_CAPTURA_MS)
     try:
@@ -2080,29 +2126,37 @@ def _cma_pedir_deslizador(page, reg, on_pausa=None, segundos=CMA_ESPERA_DESLIZAD
         "  El robot detectará el desbloqueo y continuará automáticamente.\n"
         "============================================================\n"
     )
+    como = None
     if on_pausa:
-        _pausa_del_panel(reg, on_pausa, "CMA CGM: desliza la flecha hacia la derecha en el navegador para continuar.")
+        como = _pausa_del_panel(reg, on_pausa, "CMA CGM: desliza la flecha hacia la derecha en el navegador para "
+                                "continuar.", hasta=lambda: _cma_como_quedo(page))
     else:
         print(aviso_msg)
 
     import time as _t
     t0 = _t.time()
     ultimo_aviso = 0
-    while _t.time() - t0 < segundos:
-        esperar(page, 1.0)
-        if not _cma_es_robotcheck(page):
-            reg.paso("Verificación de CMA CGM superada ✓; continúo automáticamente.")
-            esperar(page, 1.5)
-            return True
-        if _cma_datadome(page) == "bloqueo":
-            _cma_detener(page, reg, CMA_ACCESO_RESTRINGIDO, "cma_acceso_restringido", creds)
+    while como not in (CMA_DEJO_PASAR, CMA_RESTRINGIO):
+        _cma_si_pulso_detener(reg, como)
         seg_transcurridos = int(_t.time() - t0)
+        if seg_transcurridos >= segundos:
+            reg.paso("Tiempo de espera agotado para la verificación de CMA CGM.")
+            return False
         if seg_transcurridos - ultimo_aviso >= 5:
             ultimo_aviso = seg_transcurridos
             reg.info(f"esperando que deslices la flecha en Chrome... ({seg_transcurridos}s)")
-
-    reg.paso("Tiempo de espera agotado para la verificación de CMA CGM.")
-    return False
+        try:
+            esperar(page, 1.0)
+        except Exception:
+            _cma_si_pulso_detener(reg)          # «Detener» cerró el navegador mientras esperaba
+            raise
+        como = _cma_como_quedo(page)
+        _cma_si_pulso_detener(reg)              # y lo leído mientras lo cerraba no vale
+    if como == CMA_RESTRINGIO:
+        _cma_detener(page, reg, CMA_ACCESO_RESTRINGIDO, "cma_acceso_restringido", creds)
+    reg.paso("Verificación de CMA CGM superada ✓; continúo automáticamente.")
+    esperar(page, 1.5)
+    return True
 
 
 @_cma_login_se_detiene
@@ -11708,12 +11762,22 @@ def _cma_marcar_i_agree(page, reg):
     raise ObjetivoNoEncontrado("«I Agree» de CMA", "la casilla «I Agree» (por su texto)")
 
 
+# El campo de los comentarios de CMA, por lo que lo identifica (_cma_comentarios).
+CMA_CAMPO_COMENTARIOS = ("el campo de comentarios (por su placeholder «facilítenos», «comentario», «comment» o "
+                         "«remark», o su etiqueta «Comentarios» o «remark»)")
+
+
 def _cma_comentarios(page, reg):
     """Escribe la observación corporativa en el campo de Comentarios de forma limpia,
     sin doble clic ni selección azul del texto. El campo se busca por su placeholder o su etiqueta; si no está, no
     escribe en otro y corta la reserva (ObjetivoNoEncontrado). Hasta fb63271 escribía en el primer textarea visible
-    de la página (CICLO-cola-nueve-items.md)."""
+    de la página (CICLO-cola-nueve-items.md). Si algo falla antes de escribirlos (el JavaScript que los busca y escribe,
+    también si no vuelve en CMA_PLAZO_MS, o el campo que vio el localizador), también corta, con lo que falló: la
+    reserva no sigue sin ellos (decisión de Marcelo, encargo 56, CICLO-pausa-sola-y-comentarios.md). Hasta ahí, lo
+    anotaba («comentarios err») y la reserva seguía sin ellos; en logs/ no pasó nunca (los 14 los escribió el
+    JavaScript). Lo que falle después de escribirlos, como antes."""
     reg.paso("CMA · Ingresando comentarios adicionales...")
+    escritos = False
     try:
         # Esperar a que el drawer / overlay termine de cerrarse
         try:
@@ -11750,6 +11814,7 @@ def _cma_comentarios(page, reg):
         }""", COSCO_REMARK)
 
         if ok:
+            escritos = True
             reg.info(f"comentario: '{COSCO_REMARK}'")
             esperar(page, 0.8)
             return True
@@ -11759,6 +11824,7 @@ def _cma_comentarios(page, reg):
         if _cma_se_ve(page, ta):
             ta.scroll_into_view_if_needed(timeout=2500)
             ta.fill(COSCO_REMARK)
+            escritos = True
             try:
                 _cma_js(page, "() => { if (window.getSelection) window.getSelection().removeAllRanges(); }")
             except Exception:
@@ -11766,10 +11832,11 @@ def _cma_comentarios(page, reg):
             reg.info(f"comentario (vía locator): '{COSCO_REMARK}'")
             esperar(page, 0.8)
             return True
-        raise ObjetivoNoEncontrado("Comentarios de CMA", "el campo de comentarios (por su placeholder «facilítenos», "
-                                                         "«comentario», «comment» o «remark», o su etiqueta «Comentarios» "
-                                                         "o «remark»)")
+        raise ObjetivoNoEncontrado("Comentarios de CMA", CMA_CAMPO_COMENTARIOS)
     except Exception as e:
+        if not escritos:
+            raise ObjetivoNoEncontrado("Comentarios de CMA", f"{CMA_CAMPO_COMENTARIOS}, porque el programa falló al "
+                                                             f"buscarlo o escribirlo ({_texto_error(e)})")
         reg.info(f"comentarios err: {str(e)[:45]}")
         return False
 
@@ -12636,8 +12703,16 @@ def lanzar_panel():
             finally:
                 self.cola.put(("fin", None))
 
-        def _pausa(self, mensaje):
-            self.cola.put(("pausa", mensaje)); self.ev_pausa.wait()
+        def _pausa(self, mensaje, hasta=None):
+            # Con 'hasta', la pausa termina sola cuando devuelve algo (decisión de Marcelo, encargo 56: la del
+            # deslizador de CMA, cuando DataDome deja pasar la página o la bloquea): la mira cada 2 s mientras espera
+            # «Ya lo resolví», y lo dice por la cola, para apagar ese botón.
+            self.cola.put(("pausa", mensaje))
+            while not self.ev_pausa.wait(timeout=2):
+                sola = hasta() if hasta else None
+                if sola:
+                    self.cola.put(("pausa_sola", sola))
+                    return sola
 
         def _esperar_cierre(self):
             self.cola.put(("puede_cerrar", self.seg_visible))
@@ -12803,6 +12878,8 @@ def lanzar_panel():
                         self._log("\n***  ACCIÓN MANUAL REQUERIDA  ***"); self._log(dato)
                         self.btn_manual.configure(state="normal")
                         self.estado("Resuelve el paso en el navegador y pulsa «Ya lo resolví».")
+                    elif tipo == "pausa_sola":
+                        self.btn_manual.configure(state="disabled")
                     elif tipo == "puede_cerrar":
                         self.btn_cerrar.configure(state="normal")
                         self.estado(f"Terminó. El navegador se cierra solo en {dato}s "
@@ -13332,13 +13409,17 @@ def _web_worker_login(usuario, navieras):
             _westado("Sesiones abiertas.")
 
 
-def _web_pausa(mensaje):
+def _web_pausa(mensaje, hasta=None):
     """Los portales que piden una accion manual (la validacion de COSCO) avisan
     por aca. La pagina muestra un boton 'Ya lo resolvi' y el proceso sigue en
     cuanto el operador lo pulsa; no se queda esperando un tiempo fijo. Devuelve cómo terminó, para log.txt
     (_pausa_del_panel; decisión de Marcelo, encargo 55): PAUSA_RESUELTA, PAUSA_DETENIDA o PAUSA_VENCIDA. «Detener»
     también suelta la pausa, así que se mira primero: hasta el encargo 55, el registro del panel decía «Continuando
-    (paso manual resuelto)» también entonces."""
+    (paso manual resuelto)» también entonces. Con 'hasta' (decisión de Marcelo, encargo 56), la llama después de cada
+    espera de 2 s, salvo que un botón ya haya soltado la pausa («Detener» también la suelta: así no vuelve a leer la
+    página que el panel cierra), y si devuelve algo, la pausa termina sola con eso en la vuelta siguiente, después de
+    mirar «Detener» y «Ya lo resolví»: lo que 'hasta' leyó mientras «Detener» cerraba el navegador no vale. 'hasta' no
+    levanta."""
     ev = _th.Event()
     with _LOCK:
         _WEB["pausa"] = ev
@@ -13347,6 +13428,8 @@ def _web_pausa(mensaje):
     _wlog("*** ACCIÓN MANUAL REQUERIDA ***")
     _wlog(str(mensaje))
     como = PAUSA_VENCIDA
+    sola = None
+    fin = _time.time() + 600
     for _ in range(300):                    # hasta 10 minutos de margen
         if _WEB["detener"] and _WEB["detener"].is_set():
             como = PAUSA_DETENIDA
@@ -13355,7 +13438,13 @@ def _web_pausa(mensaje):
             _wlog("▸ Continuando (paso manual resuelto).")
             como = PAUSA_RESUELTA
             break
+        if sola:
+            como = sola
+            break
+        if _time.time() >= fin:             # con 'hasta', cada vuelta tarda lo que tarde en leer (encargo 56)
+            break
         _time.sleep(2)
+        sola = hasta() if hasta and not ev.is_set() else None
     with _LOCK:
         _WEB["pausa"] = None
         _WEB["pausa_msg"] = ""

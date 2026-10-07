@@ -2359,6 +2359,31 @@ class PaginaCma(soporte.PaginaFalsa):
         return next((r for marca, r in self.js.items() if marca in js), None)
 
 
+class PaginaCmaQueFalla(PaginaCma):
+    """La de CMA, con el JavaScript de los comentarios que falla con 'error' (encargo 56)."""
+
+    def __init__(self, error, **k):
+        super().__init__(**k)
+        self.error = error
+
+    def evaluate(self, js, *a):
+        if "allTa" in js:
+            raise self.error
+        return super().evaluate(js, *a)
+
+
+class LocQueNoEscribe(LocFalso):
+    def fill(self, v, **k):
+        raise RuntimeError("el campo no se deja escribir")
+
+
+class PaginaCmaQueNoEscribe(PaginaCma):
+    """La de CMA, con un campo que el localizador ve y no se deja escribir (encargo 56)."""
+
+    def locator(self, sel):
+        return soporte.RaizFalsa(self) if sel == ":root" else LocQueNoEscribe(self, sel)
+
+
 class TestCma(ConRegistro):
     SELECCIONAR = "input[placeholder*='Seleccionar' i]"
     OPCION = ".el-select-dropdown:visible li:visible"
@@ -2875,7 +2900,70 @@ console.log(JSON.stringify(f()));
     def test_comentarios_sin_su_campo_corta(self):
         pagina = PaginaCma(visibles={"textarea", ".el-textarea__inner"}, js={"allTa": False})
         e, _ = self.corta(self.mod._cma_comentarios, pagina)
-        self.assertEqual((e.paso, pagina.clics), ("Comentarios de CMA", []))
+        self.assertEqual((e.paso, e.buscaba, pagina.clics),
+                         ("Comentarios de CMA", "el campo de comentarios (por su placeholder «facilítenos», "
+                                                "«comentario», «comment» o «remark», o su etiqueta «Comentarios» o "
+                                                "«remark»)", []))
+
+    def test_comentarios_que_fallan_cortan(self):
+        # Si algo falla antes de escribirlos (el JavaScript que los busca y escribe, también si no vuelve en
+        # CMA_PLAZO_MS), la reserva corta ahí y no sigue sin ellos (decisión de Marcelo, encargo 56,
+        # CICLO-pausa-sola-y-comentarios.md): hasta ahí, lo anotaba («comentarios err») y seguía.
+        m = self.mod
+        for error in (RuntimeError("falla inventada del JavaScript"),
+                      m.PWTimeout("Locator.evaluate: Timeout 30000ms exceeded.")):
+            with self.subTest(error=type(error).__name__):
+                pagina = PaginaCmaQueFalla(error, visibles={"textarea", ".el-textarea__inner"})
+                e, log = self.corta(m._cma_comentarios, pagina)
+                self.assertEqual((e.paso, e.buscaba, pagina.clics),
+                                 ("Comentarios de CMA", f"{m.CMA_CAMPO_COMENTARIOS}, porque el programa falló al "
+                                                        f"buscarlo o escribirlo ({m._texto_error(error)})", []))
+                self.assertNotIn("comentarios err", log)
+
+    def test_comentarios_que_el_localizador_no_escribe_cortan(self):
+        # Sin el campo para el JavaScript, el del localizador; si no se deja escribir, también corta.
+        campo = "textarea[placeholder*='facilítenos' i], .el-form-item:has-text('Comentarios') textarea"
+        pagina = PaginaCmaQueNoEscribe(visibles={campo}, js={"allTa": False})
+        e, log = self.corta(self.mod._cma_comentarios, pagina)
+        self.assertEqual(e.buscaba, f"{self.mod.CMA_CAMPO_COMENTARIOS}, porque el programa falló al buscarlo o "
+                                    f"escribirlo (RuntimeError: el campo no se deja escribir)")
+        self.assertNotIn("comentarios err", log)
+
+    def test_lo_que_falla_despues_de_escribirlos_sigue_como_antes(self):
+        # Escritos los comentarios, lo que falle después (aquí, la espera que sigue) se anota y la reserva sigue, como
+        # antes: ya no le falta nada.
+        pagina = PaginaCma(js={"allTa": True})
+
+        def falla(ms):
+            raise RuntimeError("espera inventada que falla")
+        pagina.wait_for_timeout = falla
+        reg, _, log = self.corrida("comentarios_escritos")
+        self.assertIs(self.mod._cma_comentarios(pagina, reg), False)
+        texto = log.read_text(encoding="utf-8")
+        self.assertIn("    comentario: '", texto)
+        self.assertIn("    comentarios err: espera inventada que falla", texto)
+
+    def test_comentarios_que_fallan_dejan_la_fila_no_enviada_con_su_evidencia(self):
+        # Con los decoradores de reservar_cma, como en una corrida: NO ENVIADA con el motivo, la captura y el HTML del
+        # paso, y sin seguir al paso siguiente.
+        m = self.mod
+        html = {"html": "<!DOCTYPE html>\n<html><body>Click &amp; Book inventado</body></html>", "sombras": 0}
+        pagina = PaginaCmaQueFalla(RuntimeError("falla inventada del JavaScript"), js={"getHTML": html})
+        pasos = []
+
+        def cruda(page, reserva, creds, reg, on_pausa=None):
+            m._cma_comentarios(page, reg)
+            pasos.append("siguió sin los comentarios")
+            return ("OK-EJEMPLO", "armada sin los comentarios")
+        reg, _, log = self.corrida("comentarios_fila")
+        reservar = m._sin_clic_a_ciegas("cma", plazo_ms=m.CMA_PLAZO_MS)(m._cma_si_se_detuvo(cruda))
+        motivo = (f"Comentarios de CMA: no encontré {m.CMA_CAMPO_COMENTARIOS}, porque el programa falló al buscarlo o "
+                  f"escribirlo (RuntimeError: falla inventada del JavaScript), así que no pulsé nada. La reserva no se "
+                  f"envió; revisa ese paso en el portal.")
+        self.assertEqual((reservar(pagina, {"fila": 9}, {}, reg), pasos), (("NO ENVIADA", motivo), []))
+        self.assertEqual(pagina.capturas, [("cma_f9_sin_objetivo.png", False)])
+        guardado = (log.parent / "cma_f9_sin_objetivo.html").read_text(encoding="utf-8")
+        self.assertIn("Click &amp; Book inventado", guardado)
 
     def test_i_agree_solo_por_su_texto(self):
         pagina = PaginaCma(visibles={"input[type='checkbox']"})

@@ -1996,7 +1996,7 @@ MUTACIONES += [
          viejo='.el-form-item:has-text(\'Comentarios\') textarea").first',
          nuevo='.el-form-item:has-text(\'Comentarios\') textarea, textarea").first'),
     dict(id='textarea-cma-no-corta', pruebas=[C1 + "test_comentarios_sin_su_campo_corta"],
-         viejo='        raise ObjetivoNoEncontrado("Comentarios de CMA", "el campo de comentarios (por su placeholder «facilítenos», "\n                                                         "«comentario», «comment» o «remark», o su etiqueta «Comentarios» "\n                                                         "o «remark»)")\n',
+         viejo='        raise ObjetivoNoEncontrado("Comentarios de CMA", CMA_CAMPO_COMENTARIOS)\n',
          nuevo='        return False\n'),
     dict(id='cosco-sin-decorador', pruebas=[SC + "test_cada_reservador_que_corta_esta_decorado"],
          viejo='@_sin_clic_a_ciegas("cosco")\n',
@@ -6773,10 +6773,14 @@ MUTACIONES += [
          viejo=PRIMERO, nuevo=""),
     dict(id="e54-desafio-sin-volver-a-mirar", pruebas=[SD + "test_lo_que_solo_ve_el_detector_viejo_va_al_operador"],
          viejo=PRIMERO, nuevo=PRIMERO.replace(' and not _cma_es_robotcheck(page)', "")),
-    dict(id="e54-desafio-sin-bloqueo-en-la-espera", pruebas=[SD + "test_bloqueo_mientras_espera_al_operador"],
-         viejo=('        if _cma_datadome(page) == "bloqueo":\n'
-                '            _cma_detener(page, reg, CMA_ACCESO_RESTRINGIDO, "cma_acceso_restringido", creds)\n'),
-         nuevo=""),
+    # Reescrita en el encargo 56: el bloqueo en la espera del deslizador lo ve _cma_como_quedo, que mira también la
+    # pausa del panel.
+    dict(id="e54-desafio-sin-bloqueo-en-la-espera",
+         pruebas=[SD + "test_bloqueo_mientras_espera_al_operador",
+                  "test_datadome.TestPausaQueTerminaSola.test_termina_sola_cuando_datadome_bloquea",
+                  "test_datadome.TestPausaQueTerminaSola.test_pagina_cerrada_no_dejo_pasar"],
+         viejo='        return CMA_RESTRINGIO if _cma_datadome(page) == "bloqueo" else None\n',
+         nuevo="        return None\n"),
     # El login: la portada sin plazo o sin detenerse, sin el decorador, el decorador que no ataja la detención o que
     # se traga todo, o sin las credenciales para la evidencia.
     dict(id="e54-login-sin-plazo-en-la-portada", pruebas=[PORTADA_MUDA], viejo=PORTADA_GOTO,
@@ -6874,8 +6878,9 @@ VUELTA_PANEL = ('        if _WEB["detener"] and _WEB["detener"].is_set():\n'
                 '            como = PAUSA_RESUELTA\n'
                 '            break\n')
 ENVUELTA = '    return alcance.locator(":root").evaluate(f"(_raiz, arg) => ({js}\\n)(arg)", arg, timeout=plazo_ms)\n'
-DESLIZADOR_PAUSA = ('        _pausa_del_panel(reg, on_pausa, "CMA CGM: desliza la flecha hacia la derecha en el '
-                    'navegador para continuar.")\n')
+# Reescrita en el encargo 56: la pausa del deslizador devuelve cómo terminó, y le pasa al panel qué mirar (hasta).
+DESLIZADOR_PAUSA = ('        como = _pausa_del_panel(reg, on_pausa, "CMA CGM: desliza la flecha hacia la derecha en el '
+                    'navegador para "\n')
 CORTE_DD = ('            except ObjetivoNoEncontrado:\n'
             '                _cma_datadome_a_mitad(page, reg, on_pausa, creds, '
             '"en un paso que no encontró su objetivo", fila)\n'
@@ -7048,9 +7053,12 @@ MUTACIONES += [
          pruebas=[AM + "test_verificacion_que_no_deja_pasar_detiene_al_plazo", BLOQUEO_A_MITAD],
          viejo="    que = _cma_sin_bloqueo_ni_espera(page, reg, creds)\n    if que in (\"deslizador\", \"otra\"):\n",
          nuevo="    que = _cma_datadome(page)\n    if que in (\"deslizador\", \"otra\"):\n"),
-    dict(id="e55-a-mitad-sin-bloqueo-en-la-espera", pruebas=[AM + "test_deslizador_que_pasa_al_bloqueo_detiene"],
-         viejo=('        if _cma_datadome(page) == "bloqueo":\n'
-                '            _cma_detener(page, reg, CMA_ACCESO_RESTRINGIDO, "cma_acceso_restringido", creds)\n'),
+    # Reescrita en el encargo 56: con el bloqueo, la espera del deslizador ya no lo detiene ahí, y la da por superada.
+    dict(id="e55-a-mitad-sin-bloqueo-en-la-espera",
+         pruebas=[AM + "test_deslizador_que_pasa_al_bloqueo_detiene",
+                  "test_datadome.TestPausaQueTerminaSola.test_termina_sola_cuando_datadome_bloquea"],
+         viejo=('    if como == CMA_RESTRINGIO:\n'
+                '        _cma_detener(page, reg, CMA_ACCESO_RESTRINGIDO, "cma_acceso_restringido", creds)\n'),
          nuevo=""),
     dict(id="e55-deslizador-captura-sin-plazo", pruebas=[COMO_ANTES, DESLIZA],
          viejo="    reg.captura(page, nombre, plazo_ms=CMA_CAPTURA_MS)\n", nuevo="    reg.captura(page, nombre)\n"),
@@ -7136,4 +7144,135 @@ MUTACIONES += [
     dict(id="e55-leer-con-el-plazo-de-la-reserva", pruebas=[PLAZOS, DETECTOR],
          viejo="def _cma_leer(alcance, js, plazo_ms=CMA_LECTURA_MS):\n",
          nuevo="def _cma_leer(alcance, js, plazo_ms=CMA_PLAZO_MS):\n"),
+]
+
+# --- Encargo 56 (CICLO-pausa-sola-y-comentarios.md): los comentarios de CMA-CGM que fallan cortan la reserva, la pausa
+# del deslizador termina sola cuando DataDome deja pasar la página o la bloquea, y «Detener» corta la espera. ---
+PS = "test_datadome.TestPausaQueTerminaSola."
+TK = "test_web.TestPausaDelPanelTkinter."
+DEJA_PASAR = PS + "test_termina_sola_cuando_datadome_deja_pasar"
+BLOQUEA = PS + "test_termina_sola_cuando_datadome_bloquea"
+DETENER_PAUSA = PS + "test_detener_corta_la_espera_sin_volver_a_mirar_la_pagina"
+RESUELTO_Y_DETENER = PS + "test_ya_lo_resolvi_y_despues_detener"
+YA_CERRADO = PS + "test_detener_con_el_navegador_ya_cerrado"
+SIN_CAMBIOS = PS + "test_sin_botones_ni_cambios_sigue_esperando"
+A_MITAD_SOLA = PS + "test_a_mitad_de_la_reserva"
+PAUSA_DICE_DETENER = PS + "test_la_pausa_que_dice_detener_corta"
+DETENIDO_CMA = PS + "test_detener_deja_la_fila_detenido_y_el_login_sin_sesion"
+CERRADA = PS + "test_pagina_cerrada_no_dejo_pasar"
+MEDIDO_56 = PS + "test_lo_medido"
+QUE_DETIENE = "test_datadome.TestReservaCma.test_lo_que_detiene_no_corre_despues_de_la_guarda"
+COMENTARIOS_FALLAN = C1 + "test_comentarios_que_fallan_cortan"
+NO_ESCRIBE = C1 + "test_comentarios_que_el_localizador_no_escribe_cortan"
+ESCRITOS = C1 + "test_lo_que_falla_despues_de_escribirlos_sigue_como_antes"
+FILA_COMENTARIOS = C1 + "test_comentarios_que_fallan_dejan_la_fila_no_enviada_con_su_evidencia"
+SOLA = '        if sola:\n            como = sola\n            break\n'
+MIRA = "        sola = hasta() if hasta and not ev.is_set() else None\n"
+MIRA_TK = "                sola = hasta() if hasta else None\n"
+CANCELA = '        raise CmaCancelada("Cancelado por el operador")\n'
+CORTA_COMENTARIOS = ('        if not escritos:\n'
+                     '            raise ObjetivoNoEncontrado("Comentarios de CMA", f"{CMA_CAMPO_COMENTARIOS}, porque '
+                     'el programa falló al "\n')
+
+MUTACIONES += [
+    # Los comentarios: lo que falla antes de escribirlos no corta, o corta también después; el localizador da por
+    # escritos los que no escribió; el motivo sin la falla, el paso con otro nombre, o el campo con otro texto.
+    dict(id="e56-comentarios-falla-sigue", pruebas=[COMENTARIOS_FALLAN, NO_ESCRIBE, FILA_COMENTARIOS],
+         viejo=CORTA_COMENTARIOS, nuevo=CORTA_COMENTARIOS.replace("if not escritos:", "if False:")),
+    dict(id="e56-comentarios-escritos-cortan", pruebas=[ESCRITOS],
+         viejo="            escritos = True\n            reg.info(f\"comentario: '{COSCO_REMARK}'\")\n",
+         nuevo="            reg.info(f\"comentario: '{COSCO_REMARK}'\")\n"),
+    dict(id="e56-comentarios-localizador-escritos-antes", pruebas=[NO_ESCRIBE],
+         viejo="            ta.fill(COSCO_REMARK)\n            escritos = True\n",
+         nuevo="            escritos = True\n            ta.fill(COSCO_REMARK)\n"),
+    dict(id="e56-comentarios-motivo-sin-la-falla", pruebas=[COMENTARIOS_FALLAN, NO_ESCRIBE, FILA_COMENTARIOS],
+         viejo='f"buscarlo o escribirlo ({_texto_error(e)})")', nuevo='"buscarlo o escribirlo")'),
+    dict(id="e56-comentarios-otro-paso", pruebas=[COMENTARIOS_FALLAN, FILA_COMENTARIOS],
+         viejo=CORTA_COMENTARIOS,
+         nuevo=CORTA_COMENTARIOS.replace('("Comentarios de CMA",', '("Comentarios",')),
+    dict(id="e56-comentarios-campo-otro", pruebas=[C1 + "test_comentarios_sin_su_campo_corta"],
+         viejo='CMA_CAMPO_COMENTARIOS = ("el campo de comentarios (por su placeholder «facilítenos», «comentario», '
+               '«comment» o "\n',
+         nuevo='CMA_CAMPO_COMENTARIOS = ("el campo de comentarios (por su placeholder «comentario», «comment» o "\n'),
+    # La pausa del deslizador: sin mirar la página, sin usar lo que dice, el panel sin pasarle qué mirar, la flecha
+    # como si hubiera pasado, la página cerrada como si hubiera pasado, y la pausa vencida sin la espera de después.
+    dict(id="e56-deslizador-sin-vigia", pruebas=[DEJA_PASAR, BLOQUEA, A_MITAD_SOLA],
+         viejo='                                "continuar.", hasta=lambda: _cma_como_quedo(page))\n',
+         nuevo='                                "continuar.")\n'),
+    dict(id="e56-deslizador-sin-lo-que-dice-la-pausa", pruebas=[DEJA_PASAR, BLOQUEA],
+         viejo="        como = _pausa_del_panel(reg, on_pausa, ", nuevo="        _pausa_del_panel(reg, on_pausa, "),
+    dict(id="e56-pausa-del-panel-sin-hasta", pruebas=[DEJA_PASAR, BLOQUEA],
+         viejo="        como = on_pausa(mensaje, hasta=hasta) if hasta else on_pausa(mensaje)\n",
+         nuevo="        como = on_pausa(mensaje)\n"),
+    dict(id="e56-vigia-deslizador-como-pasado", pruebas=[SIN_CAMBIOS, CERRADA],
+         viejo='        return CMA_RESTRINGIO if _cma_datadome(page) == "bloqueo" else None\n',
+         nuevo='        return CMA_RESTRINGIO if _cma_datadome(page) == "bloqueo" else CMA_DEJO_PASAR\n'),
+    dict(id="e56-cerrada-deja-pasar", pruebas=[CERRADA],
+         viejo="    return None if page.is_closed() else CMA_DEJO_PASAR\n", nuevo="    return CMA_DEJO_PASAR\n"),
+    dict(id="e56-vencida-sin-la-espera-de-despues", pruebas=[SIN_CAMBIOS],
+         viejo="    while como not in (CMA_DEJO_PASAR, CMA_RESTRINGIO):\n",
+         nuevo="    while como not in (CMA_DEJO_PASAR, CMA_RESTRINGIO, PAUSA_VENCIDA):\n"),
+    dict(id="e56-dejo-pasar-otro-texto", pruebas=[MEDIDO_56, DEJA_PASAR],
+         viejo='CMA_DEJO_PASAR = "DataDome dejó pasar la página"\n', nuevo='CMA_DEJO_PASAR = "pasó"\n'),
+    dict(id="e56-restringio-otro-texto", pruebas=[MEDIDO_56, BLOQUEA],
+         viejo='CMA_RESTRINGIO = "DataDome restringió el acceso"\n', nuevo='CMA_RESTRINGIO = "bloqueó"\n'),
+    # «Detener»: sin lo que dice la pausa, sin mirar después de leer ni cuando la espera falla, sin mirar el panel, sin
+    # cortar, otra cosa en vez de CmaCancelada, sin decirlo, la fila NO ENVIADA, y CmaCancelada sin ser CmaDetenida.
+    dict(id="e56-detener-sin-lo-que-dice-la-pausa", pruebas=[PAUSA_DICE_DETENER],
+         viejo="        _cma_si_pulso_detener(reg, como)\n", nuevo="        _cma_si_pulso_detener(reg)\n"),
+    dict(id="e56-detener-sin-mirar-tras-leer", pruebas=[RESUELTO_Y_DETENER],
+         viejo="        _cma_si_pulso_detener(reg)              # y lo leído mientras lo cerraba no vale\n", nuevo=""),
+    dict(id="e56-detener-sin-mirar-si-la-espera-falla", pruebas=[YA_CERRADO],
+         viejo="            _cma_si_pulso_detener(reg)          # «Detener» cerró el navegador mientras esperaba\n",
+         nuevo=""),
+    dict(id="e56-detener-sin-mirar-el-panel", pruebas=[RESUELTO_Y_DETENER, YA_CERRADO],
+         viejo='    if como == PAUSA_DETENIDA or (_WEB.get("detener") and _WEB["detener"].is_set()):\n',
+         nuevo="    if como == PAUSA_DETENIDA:\n"),
+    dict(id="e56-detener-no-corta", pruebas=[DETENER_PAUSA, PAUSA_DICE_DETENER], viejo=CANCELA,
+         nuevo="        pass\n"),
+    dict(id="e56-detener-levanta-otra-cosa", pruebas=[DETENER_PAUSA, QUE_DETIENE], viejo=CANCELA,
+         nuevo='        raise RuntimeError("Cancelado por el operador")\n'),
+    dict(id="e56-detener-otro-motivo", pruebas=[DETENER_PAUSA], viejo=CANCELA,
+         nuevo='        raise CmaCancelada("Detenido")\n'),
+    dict(id="e56-detener-sin-decirlo", pruebas=[DETENER_PAUSA],
+         viejo=('        reg.paso("⛔ El operador pulsó «Detener»: corto la espera del deslizador sin volver a mirar la '
+                'página.")\n'),
+         nuevo=""),
+    dict(id="e56-cancelada-como-no-enviada", pruebas=[DETENIDO_CMA],
+         viejo='        except CmaCancelada as e:\n            return ("DETENIDO", e.motivo)\n', nuevo=""),
+    dict(id="e56-cancelada-otro-estado", pruebas=[DETENIDO_CMA],
+         viejo='            return ("DETENIDO", e.motivo)\n', nuevo='            return ("NO ENVIADA", e.motivo)\n'),
+    dict(id="e56-cancelada-de-baseexception", pruebas=[DETENIDO_CMA, MEDIDO_56],
+         viejo="class CmaCancelada(CmaDetenida):\n",
+         nuevo='class CmaCancelada(BaseException):\n    motivo = "Cancelado por el operador"\n'),
+    # La pausa del panel web: sin mirar, mirando con un botón ya pulsado, lo visto antes que «Detener», sin terminar
+    # con lo visto, sin el tope de reloj o con otro.
+    dict(id="e56-web-pausa-no-mira", pruebas=[PW + "test_termina_sola_con_lo_que_dice_hasta", DEJA_PASAR],
+         viejo=MIRA, nuevo="        sola = None\n"),
+    dict(id="e56-web-pausa-mira-con-un-boton", pruebas=[PW + "test_con_un_boton_pulsado_no_mira", DETENER_PAUSA],
+         viejo=MIRA, nuevo="        sola = hasta() if hasta else None\n"),
+    dict(id="e56-web-pausa-lo-visto-antes-que-detener", pruebas=[PW + "test_detener_antes_que_lo_que_vio"],
+         viejo=VUELTA_PANEL + SOLA, nuevo=SOLA + VUELTA_PANEL),
+    dict(id="e56-web-pausa-no-termina-con-lo-visto", pruebas=[PW + "test_termina_sola_con_lo_que_dice_hasta"],
+         viejo=SOLA, nuevo=""),
+    dict(id="e56-web-pausa-sin-tope-de-reloj", pruebas=[PW + "test_con_hasta_vence_a_los_diez_minutos_de_reloj"],
+         viejo=("        if _time.time() >= fin:             # con 'hasta', cada vuelta tarda lo que tarde en leer "
+                "(encargo 56)\n            break\n"),
+         nuevo=""),
+    dict(id="e56-web-pausa-otro-tope-de-reloj", pruebas=[PW + "test_con_hasta_vence_a_los_diez_minutos_de_reloj"],
+         viejo="    fin = _time.time() + 600\n", nuevo="    fin = _time.time() + 1200\n"),
+    # La pausa del panel Tkinter: sin mirar, terminando sin 'hasta', sin avisar ni apagar el botón, o mirando cada 20 s.
+    dict(id="e56-tk-pausa-no-mira", pruebas=[TK + "test_termina_sola_con_lo_que_dice_hasta"],
+         viejo=MIRA_TK, nuevo="                sola = None\n"),
+    dict(id="e56-tk-pausa-termina-sin-hasta", pruebas=[TK + "test_ya_lo_resolvi_como_antes"],
+         viejo=MIRA_TK, nuevo='                sola = hasta() if hasta else "sola"\n'),
+    dict(id="e56-tk-pausa-no-avisa", pruebas=[TK + "test_termina_sola_con_lo_que_dice_hasta"],
+         viejo='                    self.cola.put(("pausa_sola", sola))\n', nuevo=""),
+    dict(id="e56-tk-boton-sigue-encendido", pruebas=[TK + "test_la_cola_apaga_el_boton"],
+         viejo=('                    elif tipo == "pausa_sola":\n'
+                '                        self.btn_manual.configure(state="disabled")\n'),
+         nuevo='                    elif tipo == "pausa_sola":\n                        pass\n'),
+    dict(id="e56-tk-pausa-mira-cada-20-s", pruebas=[TK + "test_termina_sola_con_lo_que_dice_hasta"],
+         viejo="            while not self.ev_pausa.wait(timeout=2):\n",
+         nuevo="            while not self.ev_pausa.wait(timeout=20):\n"),
 ]

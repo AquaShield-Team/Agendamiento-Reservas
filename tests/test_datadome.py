@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """CMA-CGM se detiene, sin reintentar ni recargar, cuando su portal restringe el acceso o su página no termina de cargar
 (decisión de Marcelo, encargo 54, CICLO-cma-acceso-restringido.md); y desde el encargo 55
-(CICLO-pausa-plazos-y-datadome.md), también a mitad de una reserva, con todas sus lecturas con plazo.
+(CICLO-pausa-plazos-y-datadome.md), también a mitad de una reserva, con todas sus lecturas con plazo. Desde el encargo
+56 (CICLO-pausa-sola-y-comentarios.md), la pausa del deslizador termina sola cuando DataDome deja pasar la página o la
+bloquea, y «Detener» corta la espera.
 
 Lo que se fotografía: qué muestra DataDome (_cma_datadome), leído solo con plazo; la espera de su verificación o de su
 página vacía, hasta CMA_ESPERA_PORTADA s, con un reloj falso; la detención (_cma_detener: la línea, la captura y el
@@ -10,6 +12,7 @@ reservador de CMA. Las páginas son falsas, con las frases que el OCR leyó en l
 ni ID) y relleno inventado; ninguna prueba abre un navegador ni toca un portal.
 """
 import ast
+import threading
 import types
 import unittest
 from pathlib import Path
@@ -27,6 +30,11 @@ DESLIZADOR = ("CMA CGM\nNos aseguramos de que nos dirigimos a usted, y no a un r
               "asegurar tu acceso\nEl bloqueo actual puede ser el resultado de otra cosa.")
 VERIFICACION = "CMA CGM\nVerificación del dispositivo ...\nEl contenido solicitado estará disponible después."
 CREDS = {"usuario": "usuario.inventado@ejemplo.invalid", "clave": "ClaveInventada-123"}
+
+
+class NavegadorCerrado(Exception):
+    """Lo que levanta Playwright con la página o el navegador cerrados: así terminaron en logs/ dos esperas del
+    deslizador del 06-10 («Page.wait_for_timeout: Target page, context or browser has been closed»)."""
 
 
 class Raiz:
@@ -75,6 +83,8 @@ class Alcance:
 
     def con_plazo(self, js, timeout):
         self.pagina.plazos.append(timeout)
+        if self.pagina.cerrada:
+            raise NavegadorCerrado("Locator.evaluate: Target page, context or browser has been closed")
         if not self.responde:
             raise self.pagina.mod.PWTimeout(f"Locator.evaluate: Timeout {timeout}ms exceeded.")
         return self._responder(js)
@@ -98,13 +108,15 @@ class PaginaDataDome:
     el último se queda. Anota las esperas, las capturas con su plazo, los plazos de cada lectura, lo leído sin plazo y
     las navegaciones; no tiene recarga, clics ni teclado: si el programa los usara, la prueba caería. Más de TOPE
     esperas también la hacen caer: el programa seguía esperando (la espera del deslizador cuenta con el reloj de
-    verdad, hasta 180 s)."""
+    verdad, hasta 180 s). Desde el encargo 56, puede estar cerrada (sus lecturas fallan, como las de Playwright), y
+    'al_esperar(pagina)' corre en cada espera, antes de pasar de estado (ahí el operador pulsa «Detener»)."""
     TOPE = 100
 
     def __init__(self, mod, estados, reloj=None, goto=None):
         self.mod, self.estados, self.reloj, self.i = mod, list(estados), reloj, 0
         self.esperas, self.capturas, self.plazos, self.sin_plazo, self.visitas, self.selectores = [], [], [], [], [], []
         self.al_navegar = goto
+        self.cerrada, self.al_esperar = False, None
         self._alcances = {}
 
     def _de_este_estado(self):
@@ -153,7 +165,12 @@ class PaginaDataDome:
             raise AssertionError(f"la página siguió esperando: {len(self.esperas)} esperas")
         if self.reloj:
             self.reloj.t += ms / 1000
+        if self.al_esperar:
+            self.al_esperar(self)
         self.i += 1
+
+    def is_closed(self):
+        return self.cerrada
 
     def bring_to_front(self):
         pass
@@ -261,10 +278,14 @@ class TestCmaSeDetiene(ConCorrida):
         reloj = reloj or Reloj()
         pagina = PaginaDataDome(self.mod, estados, reloj)
         pausas = []
+
+        def on_pausa(m, hasta=None):              # una pausa falsa que no dice cómo terminó (como la del Tkinter)
+            pausas.append(m)
+
         with mock.patch.object(self.mod, "time", reloj), mock.patch("winsound.MessageBeep"):
             reg, vistas, carpeta = self.corrida(nombre)
             try:
-                r = self.mod._cma_esperar_desafio(pagina, reg, pausas.append, creds=CREDS)
+                r = self.mod._cma_esperar_desafio(pagina, reg, on_pausa, creds=CREDS)
             except self.mod.CmaDetenida as e:
                 r = e
         return r, pagina, pausas, vistas, carpeta, reg
@@ -444,7 +465,7 @@ class TestReservaCma(ConCorrida):
         tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
         funcs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
         detienen = {n for n, f in funcs.items() for s in ast.walk(f) if isinstance(s, ast.Raise)
-                    and any(x in ast.unparse(s) for x in ("CmaDetenida", "CmaInterrumpida"))}
+                    and any(x in ast.unparse(s) for x in ("CmaDetenida", "CmaInterrumpida", "CmaCancelada"))}
         cambio = True
         while cambio:
             nuevos = {n for n, f in funcs.items() if n not in detienen and any(
@@ -458,7 +479,9 @@ class TestReservaCma(ConCorrida):
                         and getattr(c.func, "id", "") in detienen and c.lineno < guarda})
         despues = [c.func.id for c in ast.walk(f) if isinstance(c, ast.Call)
                    and getattr(c.func, "id", "") in detienen and c.lineno > guarda]
-        # Desde el encargo 55, también DataDome a mitad de la reserva y la fila interrumpida.
+        # Desde el encargo 55, también DataDome a mitad de la reserva y la fila interrumpida; desde el 56, «Detener» en
+        # la espera del deslizador (CmaCancelada), que corre dentro de las dos primeras.
+        self.assertTrue({"_cma_si_pulso_detener", "_cma_pedir_deslizador"} <= detienen)
         self.assertEqual((antes, despues), (["_cma_datadome_a_mitad", "_cma_esperar_desafio", "_cma_interrumpir"], []))
 
 
@@ -673,9 +696,10 @@ class TestLecturasConPlazo(ConCorrida):
     def test_los_plazos_de_la_reserva_y_de_datadome(self):
         # Las lecturas de la reserva y del login van con CMA_PLAZO_MS, el plazo por omisión de Playwright, el mismo que
         # ya tenían text_content, input_value e is_disabled: con CMA_LECTURA_MS, una página ocupada un momento cambiaba
-        # lo que el programa hacía (el JavaScript de los comentarios que no vuelve deja la reserva sin ellos), y antes
-        # la esperaba. Las que miran qué muestra DataDome siguen con CMA_LECTURA_MS (encargo 54). El aviso de
-        # mantenimiento, con CMA_PLAZO_MS: con el otro, el de una página que todavía carga no se vería.
+        # lo que el programa hacía (el JavaScript de los comentarios que no volvía dejaba la reserva sin ellos; desde el
+        # encargo 56, corta), y antes la esperaba. Las que miran qué muestra DataDome siguen con CMA_LECTURA_MS
+        # (encargo 54). El aviso de mantenimiento, con CMA_PLAZO_MS: con el otro, el de una página que todavía carga no
+        # se vería.
         m = self.mod
         self.assertEqual((m.CMA_PLAZO_MS, m.CMA_SIN_RESPUESTA), (30000, "la página no contestó en 30 s"))
         texto = "Inicio\nWe are improving the eBusiness area"
@@ -830,7 +854,7 @@ class TestDataDomeAMitad(ConCorrida):
         pagina.TOPE = tope or pagina.TOPE
         pausas = []
 
-        def on_pausa(m):
+        def on_pausa(m, hasta=None):
             pausas.append(m)
             return self.mod.PAUSA_RESUELTA
 
@@ -941,7 +965,8 @@ class TestReservaConDataDome(ConCorrida):
                 mock.patch("winsound.MessageBeep"):
             reg, vistas, carpeta = self.corrida(nombre)
             r = [self.decorada(cruda)(p, dict(self.RESERVA, fila=9 + k), dict(CREDS), reg,
-                                      on_pausa=lambda m: self.mod.PAUSA_RESUELTA) for k, p in enumerate(paginas)]
+                                      on_pausa=lambda m, hasta=None: self.mod.PAUSA_RESUELTA)
+                 for k, p in enumerate(paginas)]
         return r, paginas, vistas, carpeta, reg
 
     def corta(self):
@@ -1057,12 +1082,203 @@ class TestReservaConDataDome(ConCorrida):
                 mock.patch("winsound.MessageBeep"):
             reg, vistas, _ = self.corrida("sin_deslizar_al_abrir")
             r = self.mod.reservar_cma(pagina, dict(self.RESERVA), dict(CREDS), reg,
-                                      on_pausa=lambda m: self.mod.PAUSA_RESUELTA)
+                                      on_pausa=lambda m, hasta=None: self.mod.PAUSA_RESUELTA)
         que = self.mod.CMA_SIN_DESLIZAR.format(seg=self.mod.CMA_ESPERA_DESLIZADOR)
         motivo = self.mod.CMA_INTERRUMPIDA.format(donde="al abrir el formulario", que=que)
         self.assertEqual((r, len(pagina.visitas), self.mod._naviera_detenida(reg, "cma")),
                          (("NO ENVIADA", motivo), 1, ""))
         self.assertEqual(pagina.capturas[-1], ("cma_f9_datadome.png", self.mod.CMA_CAPTURA_MS))
+
+
+# --- Encargo 56: la pausa del deslizador termina sola, y «Detener» corta la espera ---
+class TestPausaQueTerminaSola(ConCorrida):
+    """La pausa del deslizador termina sola cuando DataDome deja pasar la página (la corrida sigue) o la bloquea
+    (CMA-CGM se detiene, como antes), y «Detener» corta la espera sin volver a mirar la página (decisión de Marcelo,
+    encargo 56, CICLO-pausa-sola-y-comentarios.md). Con la pausa de verdad del panel web (_web_pausa): cada espera suya
+    de 2 s pasa la página falsa al estado siguiente, como el tiempo que corre mientras el operador desliza la flecha."""
+
+    def setUp(self):
+        super().setUp()
+        m = self.mod
+        with m._LOCK:
+            m._WEB.update(detener=threading.Event(), log=[], base=0, pausa=None, pausa_msg="")
+        self.addCleanup(lambda: m._WEB.update(detener=None, log=[], base=0, pausa=None, pausa_msg=""))
+
+    def detener(self, pagina):
+        """«Detener», como lo pulsa el panel (/api/detener): marca la detención, suelta la pausa y cierra el
+        navegador."""
+        self.mod._WEB["detener"].set()
+        if self.mod._WEB["pausa"]:
+            self.mod._WEB["pausa"].set()
+        pagina.cerrada = True
+
+    def ya_lo_resolvi(self, k, pagina):
+        if k == 0:
+            self.mod._WEB["pausa"].set()
+
+    def con_el_panel(self, nombre, estados, en_la_pausa=None, al_esperar=None, a_mitad=False, tope=None):
+        """La espera del deslizador (en la portada, o a mitad de la reserva) con la pausa del panel web. 'en_la_pausa(k,
+        pagina)' corre en la espera k de la pausa (0, 1…), y 'al_esperar(pagina)' en cada espera de la página: ahí el
+        operador pulsa un botón. Devuelve (el resultado o la CmaDetenida, la página, lo que se vio, cómo quedó el panel,
+        las esperas de la pausa, el Registro)."""
+        m = self.mod
+        reloj = Reloj()
+        pagina = PaginaDataDome(m, estados, reloj)
+        pagina.al_esperar, pagina.TOPE = al_esperar, tope or pagina.TOPE
+        dormidas = []
+
+        def dormir(s):
+            dormidas.append(s)
+            reloj.t += s
+            if en_la_pausa:
+                en_la_pausa(len(dormidas) - 1, pagina)
+            pagina.i += 1
+
+        with mock.patch.object(m, "time", reloj), mock.patch("time.time", reloj.time), \
+                mock.patch.object(m, "_time", types.SimpleNamespace(sleep=dormir, time=reloj.time)), \
+                mock.patch("winsound.MessageBeep"):
+            reg, vistas, _ = self.corrida(nombre)
+            try:
+                if a_mitad:
+                    r = m._cma_datadome_a_mitad(pagina, reg, m._web_pausa, CREDS, "tras el origen", 9)
+                else:
+                    r = m._cma_esperar_desafio(pagina, reg, m._web_pausa, creds=CREDS)
+            except m.CmaDetenida as e:
+                r = e
+        return r, pagina, vistas, (m._WEB["pausa"], m._WEB["pausa_msg"]), dormidas, reg
+
+    def test_termina_sola_cuando_datadome_deja_pasar(self):
+        r, pagina, vistas, panel, dormidas, _ = self.con_el_panel(
+            "deja_pasar", [CON_DESLIZADOR, CON_DESLIZADOR, CON_DESLIZADOR, NORMAL])
+        self.assertIs(r, True)
+        # Sin «Ya lo resolví»: tres esperas de 2 s de la pausa, y la espera de después no corrió (la página esperó solo
+        # el segundo y medio de siempre tras darla por superada). El panel ya no muestra la pausa.
+        self.assertEqual((dormidas, pagina.esperas, panel), ([2, 2, 2], [1500], (None, "")))
+        texto = "\n".join(vistas)
+        self.assertIn("· ▶ La pausa terminó a los 6 s: DataDome dejó pasar la página.", texto)
+        self.assertIn("· Verificación de CMA CGM superada ✓; continúo automáticamente.", texto)
+        self.assertNotIn("esperando que deslices", texto)
+        # Solo lee, con el plazo de lo que mira DataDome: sin navegar ni leer sin plazo.
+        self.assertEqual((pagina.visitas, pagina.sin_plazo, set(pagina.plazos)), ([], [], {self.mod.CMA_LECTURA_MS}))
+
+    def test_termina_sola_cuando_datadome_bloquea(self):
+        r, pagina, vistas, panel, dormidas, reg = self.con_el_panel("bloquea",
+                                                                   [CON_DESLIZADOR, CON_DESLIZADOR, BLOQUEADA])
+        motivo = self.motivo(self.mod.CMA_ACCESO_RESTRINGIDO)
+        self.assertIs(type(r), self.mod.CmaDetenida)
+        self.assertEqual((r.motivo, self.mod._naviera_detenida(reg, "cma")), (motivo, motivo))
+        self.assertEqual((dormidas, pagina.esperas, panel), ([2, 2], [], (None, "")))
+        self.assertEqual(pagina.capturas[-1], ("cma_acceso_restringido.png", self.mod.CMA_CAPTURA_MS))
+        self.assertIn("· ▶ La pausa terminó a los 4 s: DataDome restringió el acceso.", "\n".join(vistas))
+
+    def test_detener_corta_la_espera_sin_volver_a_mirar_la_pagina(self):
+        lecturas = []
+
+        def pulsa_detener(k, pagina):
+            if k == 1:
+                self.detener(pagina)
+                lecturas.append(len(pagina.plazos))
+        r, pagina, vistas, panel, dormidas, reg = self.con_el_panel("detener", [CON_DESLIZADOR] * 5,
+                                                                   en_la_pausa=pulsa_detener)
+        self.assertIs(type(r), self.mod.CmaCancelada)
+        self.assertEqual((r.motivo, self.mod._naviera_detenida(reg, "cma")), ("Cancelado por el operador", ""))
+        # Desde «Detener», ni una lectura más ni una espera de la página; la pausa, suelta.
+        self.assertEqual((len(pagina.plazos), pagina.esperas, dormidas, panel), (lecturas[0], [], [2, 2], (None, "")))
+        texto = "\n".join(vistas)
+        self.assertIn("· ⛔ La pausa se cortó a los 4 s: el operador pulsó «Detener».", texto)
+        self.assertIn("· ⛔ El operador pulsó «Detener»: corto la espera del deslizador sin volver a mirar la página.",
+                      texto)
+        self.assertNotIn("superada", texto)
+
+    def test_ya_lo_resolvi_y_despues_detener(self):
+        # «Ya lo resolví» con la flecha todavía a la vista: la espera de después sigue, como antes. Si ahí el operador
+        # pulsa «Detener», la corta, aunque la página que se leyó en ese momento ya no muestre a DataDome: el panel la
+        # estaba cerrando, y lo leído no vale.
+        r, pagina, vistas, _, dormidas, _ = self.con_el_panel(
+            "resuelto_y_detener", [CON_DESLIZADOR, CON_DESLIZADOR, NORMAL], en_la_pausa=self.ya_lo_resolvi,
+            al_esperar=lambda p: self.mod._WEB["detener"].set())
+        self.assertIs(type(r), self.mod.CmaCancelada)
+        self.assertEqual((dormidas, pagina.esperas), ([2], [1000]))
+        texto = "\n".join(vistas)
+        self.assertIn("· ▶ La pausa terminó a los 2 s: el operador pulsó «Ya lo resolví».", texto)
+        self.assertNotIn("superada", texto)
+
+    def test_detener_con_el_navegador_ya_cerrado(self):
+        # Si «Detener» cierra el navegador mientras la espera de después espera, esa espera falla (como en logs/ el
+        # 06-10): corta igual, por «Detener», y no con la falla de la página.
+        def cierra(p):
+            self.detener(p)
+            raise NavegadorCerrado("Page.wait_for_timeout: Target page, context or browser has been closed")
+        r, pagina, vistas, _, _, _ = self.con_el_panel("cerrado", [CON_DESLIZADOR] * 3,
+                                                       en_la_pausa=self.ya_lo_resolvi, al_esperar=cierra)
+        self.assertIs(type(r), self.mod.CmaCancelada)
+        self.assertEqual(pagina.esperas, [1000])
+
+    def test_sin_botones_ni_cambios_sigue_esperando(self):
+        # Mientras DataDome muestra la flecha y nadie pulsa nada, la pausa no termina: aquí vence a los 10 minutos, y
+        # la espera de después sigue como antes, hasta sus 180 s.
+        r, pagina, vistas, _, dormidas, _ = self.con_el_panel("sin_cambios", [CON_DESLIZADOR], tope=400)
+        self.assertEqual((r, len(dormidas)), (False, 300))
+        texto = "\n".join(vistas)
+        self.assertIn("· ⛔ La pausa se cortó a los 600 s: pasaron 10 minutos sin que el operador la resolviera.", texto)
+        self.assertIn("· Tiempo de espera agotado para la verificación de CMA CGM.", texto)
+
+    def test_a_mitad_de_la_reserva(self):
+        # A mitad de una reserva, igual: si DataDome deja pasar la página durante la pausa, la fila termina NO ENVIADA
+        # (encargo 55) y la corrida sigue; con «Detener», CmaCancelada.
+        r, pagina, vistas, _, dormidas, reg = self.con_el_panel(
+            "a_mitad", [DESLIZADOR_ENCIMA, DESLIZADOR_ENCIMA, FORMULARIO], a_mitad=True)
+        self.assertIs(type(r), self.mod.CmaInterrumpida)
+        self.assertEqual((r.motivo, self.mod._naviera_detenida(reg, "cma")),
+                         (self.mod.CMA_INTERRUMPIDA.format(donde="tras el origen", que=self.mod.CMA_DESLIZADO), ""))
+        self.assertIn("· ▶ La pausa terminó a los 4 s: DataDome dejó pasar la página.", "\n".join(vistas))
+        r, *_ = self.con_el_panel("a_mitad_detener", [DESLIZADOR_ENCIMA] * 3, a_mitad=True,
+                                  en_la_pausa=lambda k, p: self.detener(p))
+        self.assertIs(type(r), self.mod.CmaCancelada)
+
+    def test_la_pausa_que_dice_detener_corta(self):
+        # Lo que dice la pausa basta (aquí, una pausa falsa, sin el «Detener» del panel web): si terminó con «Detener»,
+        # la espera se corta sin leer la página ni esperarla.
+        m = self.mod
+        reloj = Reloj()
+        pagina = PaginaDataDome(m, [CON_DESLIZADOR], reloj)
+        with mock.patch.object(m, "time", reloj), mock.patch("time.time", reloj.time), \
+                mock.patch("winsound.MessageBeep"):
+            reg, _, _ = self.corrida("la_pausa_dice_detener")
+            with self.assertRaises(m.CmaCancelada):
+                m._cma_pedir_deslizador(pagina, reg, lambda msg, hasta=None: m.PAUSA_DETENIDA, creds=CREDS)
+        self.assertEqual((pagina.esperas, pagina.plazos), ([], []))
+
+    def test_detener_deja_la_fila_detenido_y_el_login_sin_sesion(self):
+        # Como las otras navieras con «Detener»: la fila, DETENIDO, «Cancelado por el operador»; el login, sin sesión.
+        # No deja el motivo en el Registro: lo que detiene la corrida es «Detener», por el panel.
+        m = self.mod
+
+        def cancelada(*a, **k):
+            raise m.CmaCancelada("Cancelado por el operador")
+        reg, _, _ = self.corrida("decoradores")
+        pagina = PaginaDataDome(m, [FORMULARIO])
+        self.assertEqual(m._cma_si_se_detuvo(cancelada)(pagina, dict(TestReservaCma.RESERVA), dict(CREDS), reg),
+                         ("DETENIDO", "Cancelado por el operador"))
+        self.assertIs(m._cma_login_se_detiene(cancelada)(pagina, CREDS, reg), False)
+        self.assertEqual((m._naviera_detenida(reg, "cma"), pagina.plazos, pagina.capturas), ("", [], []))
+
+    def test_pagina_cerrada_no_dejo_pasar(self):
+        # Con la página cerrada nada se lee, y _cma_es_robotcheck no ve a DataDome: eso no es que haya dejado pasar.
+        m = self.mod
+        casos = ((estado(http=200), True, None), (estado(http=200), False, m.CMA_DEJO_PASAR),
+                 (BLOQUEADA, False, m.CMA_RESTRINGIO), (CON_DESLIZADOR, False, None), (VERIFICANDO, False, None))
+        for k, (e, cerrada, esperado) in enumerate(casos):
+            with self.subTest(caso=k):
+                pagina = PaginaDataDome(m, [e])
+                pagina.cerrada = cerrada
+                self.assertEqual(m._cma_como_quedo(pagina), esperado)
+
+    def test_lo_medido(self):
+        m = self.mod
+        self.assertEqual((m.CMA_DEJO_PASAR, m.CMA_RESTRINGIO),
+                         ("DataDome dejó pasar la página", "DataDome restringió el acceso"))
+        self.assertTrue(issubclass(m.CmaCancelada, m.CmaDetenida))
 
 
 if __name__ == "__main__":

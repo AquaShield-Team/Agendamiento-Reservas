@@ -13,6 +13,7 @@ import http.server
 import io
 import json
 import os
+import queue
 import random
 import re
 import socket
@@ -822,15 +823,17 @@ class TestPanelCorridas(PanelBase):
 
 class TestPausaDelPanel(soporte.CasoAQ):
     """Cómo termina la pausa del panel web (_web_pausa), para que quede en log.txt (decisión de Marcelo, encargo 55,
-    CICLO-pausa-plazos-y-datadome.md): con «Ya lo resolví», con «Detener», o a los 10 minutos sin respuesta."""
+    CICLO-pausa-plazos-y-datadome.md): con «Ya lo resolví», con «Detener», o a los 10 minutos sin respuesta. Desde el
+    encargo 56 (CICLO-pausa-sola-y-comentarios.md), también sola, con lo que dice 'hasta' (la del deslizador de CMA)."""
 
-    def pausa(self, dormir):
+    def pausa(self, dormir, hasta=None, reloj=time.time):
         m = self.mod
         with m._LOCK:
             m._WEB.update(detener=threading.Event(), log=[], base=0)
         try:
-            with mock.patch.object(m, "_time", types.SimpleNamespace(sleep=dormir, time=time.time)):
-                como = m._web_pausa("resuelve el paso de prueba")
+            with mock.patch.object(m, "_time", types.SimpleNamespace(sleep=dormir, time=reloj)):
+                como = (m._web_pausa("resuelve el paso de prueba", hasta=hasta) if hasta
+                        else m._web_pausa("resuelve el paso de prueba"))
             with m._LOCK:
                 return como, list(m._WEB["log"]), (m._WEB["pausa"], m._WEB["pausa_msg"])
         finally:
@@ -859,6 +862,118 @@ class TestPausaDelPanel(soporte.CasoAQ):
         dormidas = []
         como, _, quedo = self.pausa(dormidas.append)
         self.assertEqual((como, len(dormidas), sum(dormidas), quedo), (self.mod.PAUSA_VENCIDA, 300, 600, (None, "")))
+
+    def test_termina_sola_con_lo_que_dice_hasta(self):
+        # Después de cada espera mira 'hasta', y en la vuelta siguiente termina sola con lo que dijo, sin «Continuando».
+        respuestas = [None, None, "DataDome dejó pasar la página"]
+        dormidas = []
+        como, log, quedo = self.pausa(dormidas.append, hasta=lambda: respuestas.pop(0))
+        self.assertEqual((como, dormidas, respuestas, quedo), ("DataDome dejó pasar la página", [2, 2, 2], [],
+                                                               (None, "")))
+        self.assertNotIn("▸ Continuando (paso manual resuelto).", log)
+
+    def test_con_un_boton_pulsado_no_mira(self):
+        # Si un botón soltó la pausa durante la espera («Detener» también la suelta, y el panel cierra el navegador), no
+        # vuelve a mirar: la vuelta siguiente decide con el botón.
+        m = self.mod
+        for detener, esperado in ((True, m.PAUSA_DETENIDA), (False, m.PAUSA_RESUELTA)):
+            with self.subTest(detener=detener):
+                miradas = []
+
+                def dormir(s):
+                    if detener:
+                        m._WEB["detener"].set()
+                    m._WEB["pausa"].set()
+                como, _, quedo = self.pausa(dormir, hasta=lambda: miradas.append(1) or "lo que vio")
+                self.assertEqual((como, miradas, quedo), (esperado, [], (None, "")))
+
+    def test_detener_antes_que_lo_que_vio(self):
+        # Si «Detener» llega mientras 'hasta' mira (el panel está cerrando el navegador), lo que vio no vale.
+        m = self.mod
+
+        def mira_mientras_detiene():
+            m._WEB["detener"].set()
+            m._WEB["pausa"].set()
+            return "DataDome dejó pasar la página"
+        como, _, _ = self.pausa(lambda s: None, hasta=mira_mientras_detiene)
+        self.assertEqual(como, m.PAUSA_DETENIDA)
+
+    def test_con_hasta_vence_a_los_diez_minutos_de_reloj(self):
+        # Mirar tarda: la pausa vence a los 10 minutos de reloj, y no a las 300 vueltas (aquí, cada mirada tarda 10 s,
+        # y cada vuelta 12: vence en la vuelta 50).
+        reloj = types.SimpleNamespace(t=0.0)
+        dormidas = []
+
+        def dormir(s):
+            dormidas.append(s)
+            reloj.t += s
+
+        def mira():
+            reloj.t += 10
+        como, _, quedo = self.pausa(dormir, hasta=mira, reloj=lambda: reloj.t)
+        self.assertEqual((como, len(dormidas), reloj.t, quedo), (self.mod.PAUSA_VENCIDA, 50, 600, (None, "")))
+
+
+def metodo_del_panel_tkinter(mod, nombre):
+    """Un método de la clase Panel del panel Tkinter (dentro de lanzar_panel), compilado suelto desde las fuentes del
+    programa: el panel no se puede abrir en una prueba (encargo 56)."""
+    tree = ast.parse(Path(mod.__file__).read_text(encoding="utf-8"))
+    lanzar = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "lanzar_panel")
+    panel = next(n for n in ast.walk(lanzar) if isinstance(n, ast.ClassDef) and n.name == "Panel")
+    f = next(n for n in panel.body if isinstance(n, ast.FunctionDef) and n.name == nombre)
+    espacio = {"queue": queue}
+    exec(compile(ast.Module(body=[f], type_ignores=[]), str(mod.__file__), "exec"), espacio)
+    return espacio[nombre]
+
+
+class EventoTkinter:
+    """El ev_pausa del panel Tkinter: «Ya lo resolví» llega en la espera 'pulsa' (0, 1…; None: nunca). Más de TOPE
+    esperas hacen caer la prueba: la pausa seguía esperando."""
+    TOPE = 50
+
+    def __init__(self, pulsa=None):
+        self.pulsa, self.esperas = pulsa, []
+
+    def wait(self, timeout=None):
+        self.esperas.append(timeout)
+        if len(self.esperas) > self.TOPE:
+            raise AssertionError(f"la pausa siguió esperando: {len(self.esperas)} esperas")
+        return self.pulsa is not None and len(self.esperas) > self.pulsa
+
+
+class TestPausaDelPanelTkinter(soporte.CasoAQ):
+    """La pausa del panel Tkinter también termina sola con lo que dice 'hasta' (decisión de Marcelo, encargo 56: la del
+    deslizador de CMA), y apaga su «Ya lo resolví». Sin 'hasta', espera el botón como antes."""
+
+    def test_termina_sola_con_lo_que_dice_hasta(self):
+        pausa = metodo_del_panel_tkinter(self.mod, "_pausa")
+        yo = types.SimpleNamespace(cola=queue.Queue(), ev_pausa=EventoTkinter())
+        respuestas = [None, "DataDome dejó pasar la página"]
+        self.assertEqual(pausa(yo, "desliza la flecha", hasta=lambda: respuestas.pop(0)),
+                         "DataDome dejó pasar la página")
+        self.assertEqual((list(yo.cola.queue), yo.ev_pausa.esperas),
+                         ([("pausa", "desliza la flecha"), ("pausa_sola", "DataDome dejó pasar la página")], [2, 2]))
+
+    def test_ya_lo_resolvi_como_antes(self):
+        pausa = metodo_del_panel_tkinter(self.mod, "_pausa")
+        for con_hasta in (True, False):
+            with self.subTest(con_hasta=con_hasta):
+                miradas = []
+                yo = types.SimpleNamespace(cola=queue.Queue(), ev_pausa=EventoTkinter(pulsa=2))
+                r = pausa(yo, "resuelve el paso", hasta=lambda: miradas.append(1)) if con_hasta else pausa(yo, "x")
+                self.assertIsNone(r)
+                self.assertEqual((len(miradas), len(yo.ev_pausa.esperas), list(yo.cola.queue)[1:]),
+                                 (2 if con_hasta else 0, 3, []))
+
+    def test_la_cola_apaga_el_boton(self):
+        procesar = metodo_del_panel_tkinter(self.mod, "procesar_cola")
+        hechos = []
+        yo = types.SimpleNamespace(cola=queue.Queue(), procesar_cola=None,
+                                   btn_manual=types.SimpleNamespace(configure=lambda **k: hechos.append(("boton", k))),
+                                   root=types.SimpleNamespace(after=lambda ms, f: hechos.append(("after", ms))))
+        yo.cola.put(("pausa_sola", "DataDome dejó pasar la página"))
+        procesar(yo)
+        self.assertEqual(hechos, [("boton", {"state": "disabled"}), ("after", 100)])
 
 
 def puertos_seguidos(n=4, intentos=200):
