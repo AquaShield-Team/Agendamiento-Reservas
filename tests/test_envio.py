@@ -342,9 +342,9 @@ class TestReservadores(soporte.CasoAQ):
     def test_cma_decide_con_lo_que_vio(self):
         self.envio("reservar_cma",
                    """_pulsar_boton(page, "button:has-text('Enviar el booking'), button:has-text('Send booking'), "
-                                          "button:has-text('Submit booking')")""",
+                                          "button:has-text('Submit booking')", plazo_ms=CMA_PLAZO_MS)""",
                    """_resultado_envio(page, reg, "cma", "CMA", f"cma_f{f}_6_confirmado", "Enviar el booking", pulsado,
-                                       error)""")
+                                       error, plazo_ms=CMA_PLAZO_MS)""")
         self.assertNotIn("cma", self.mod.FORMA_BOOKING)       # sin forma medida: nunca EMITIDA
 
     def test_cosco_decide_con_lo_que_vio(self):

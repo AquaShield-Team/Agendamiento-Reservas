@@ -255,13 +255,34 @@ def _texto_error(e):
     return f"{type(e).__name__}: {' '.join(str(e).split())[:150]}"
 
 
-def _evaluar_con_plazo(alcance, js, plazo_ms):
+# Lo que _evaluar_con_plazo recibe cuando 'js' no lleva argumento (None también es un argumento).
+_SIN_ARGUMENTO = object()
+
+
+def _evaluar_con_plazo(alcance, js, plazo_ms, arg=_SIN_ARGUMENTO):
     """Corre 'js' en la página o en un marco, con plazo: con un localizador de su documento (':root'), cuyo evaluate se
     rinde a los 'plazo_ms' con el TimeoutError de Playwright, que levanta. frame.evaluate no tiene plazo: en un marco
     que no responde, no vuelve. Medido sin red en Chrome 154, con un marco de otro sitio ocupado en un bucle sin fin:
     frame.evaluate seguía esperando a los 40 s, y esta lectura se rindió a los 1,5 s (encargo 54,
-    CICLO-cma-acceso-restringido.md)."""
-    return alcance.locator(":root").evaluate(js, timeout=plazo_ms)
+    CICLO-cma-acceso-restringido.md). Con la página ocupada, o con una navegación que no termina, tampoco vuelven
+    page.evaluate, title, content, count, is_visible ni evaluate_all, y esta lectura se rindió a los 1,5 s (encargo 55,
+    CICLO-pausa-plazos-y-datadome.md).
+    El plazo es el de encontrar el documento: un JavaScript que ya empezó no se corta (medido: uno de 4 s volvió a los
+    4,1 s con su valor). Con 'arg', se lo pasa a 'js' como page.evaluate(js, arg): el localizador le da primero su
+    elemento, así que 'js' va envuelto, con un salto de línea antes del cierre por si termina en un comentario."""
+    if arg is _SIN_ARGUMENTO:
+        return alcance.locator(":root").evaluate(js, timeout=plazo_ms)
+    return alcance.locator(":root").evaluate(f"(_raiz, arg) => ({js}\n)(arg)", arg, timeout=plazo_ms)
+
+
+def _responde(alcance, plazo_ms):
+    """¿La página (o el marco) contesta una lectura con plazo? count() e is_visible() de Playwright no tienen plazo: con
+    la página ocupada, o con una navegación que no termina, no volvieron en más de 40 s (medido sin red en Chrome 154,
+    encargo 55). Quien los usa con plazo pregunta antes con esto, que se rinde a los 'plazo_ms'. Solo lee."""
+    try:
+        return _evaluar_con_plazo(alcance, "() => true", plazo_ms) is True
+    except Exception:
+        return False
 
 
 def _guardar_html_completo(page, reg, nombre, momento, sin=(), plazo_ms=None):
@@ -317,13 +338,14 @@ def _textos_de_la_cuenta(creds):
     return tuple(sorted(textos))
 
 
-def _guardar_evidencia(page, reg, nombre):
+def _guardar_evidencia(page, reg, nombre, plazo_ms=None):
     """Lo que muestra la pantalla después del envío, para poder medirlo: la captura y el HTML
     completo de la página y de cada marco (con sus raíces shadow abiertas), en la carpeta de la
     corrida (logs/, fuera del repo). Solo lee: ni clics ni navegación. Si un HTML no se puede
-    guardar, se avisa en el log y el resultado de la reserva no cambia."""
+    guardar, se avisa en el log y el resultado de la reserva no cambia. Con 'plazo_ms', cada HTML se lee con ese plazo
+    (_guardar_html_completo; encargo 55, CMA-CGM)."""
     reg.captura(page, nombre, full=True)
-    guardados, total, sin_shadow = _guardar_html_completo(page, reg, nombre, "tras el envío")
+    guardados, total, sin_shadow = _guardar_html_completo(page, reg, nombre, "tras el envío", plazo_ms=plazo_ms)
     reg.info(f"evidencia del envío: {nombre}.png y {guardados} de {total} HTML "
              f"(la página y {total - 1} marco(s); {sin_shadow} sin raíces shadow)")
 
@@ -333,7 +355,7 @@ _EVIDENCIA_SIGUE = ("La reserva sigue igual; si necesitas medir esta pantalla, v
                     "candado cerrado.")
 
 
-def _evidencia_antes_de_la_guarda(page, reg, nombre, momento="en la guarda", completa=True):
+def _evidencia_antes_de_la_guarda(page, reg, nombre, momento="en la guarda", completa=True, plazo_ms=None):
     """Lo que muestra la pantalla antes de la guarda del candado, para medir con el candado cerrado lo que
     hoy no se ve (CICLO-evidencia-en-la-guarda.md): la captura y el HTML completo de la página y de cada
     marco, con sus raíces shadow, en la carpeta de la corrida (logs/, fuera del repo).
@@ -385,10 +407,11 @@ def _evidencia_antes_de_la_guarda(page, reg, nombre, momento="en la guarda", com
       (_evidencia_sin_sugerencia; decisión de Marcelo, encargo 42, CICLO-maersk-y-fila-sin-ruta.md).
     Sin clics, sin navegación y sin esperas. La captura de página completa dispara en la página un evento
     «resize» que no le cambia el tamaño (medido en Chrome 153). Nunca corta el flujo: si algo falla, lo
-    avisa en pantalla y en log.txt, y la reserva sigue igual."""
+    avisa en pantalla y en log.txt, y la reserva sigue igual. Con 'plazo_ms', cada HTML se lee con ese plazo
+    (_guardar_html_completo; encargo 55: CMA-CGM, cuyas lecturas tienen todas plazo)."""
     try:
         png = reg.captura(page, nombre, pagina_entera=completa)
-        guardados, total, sin_shadow = _guardar_html_completo(page, reg, nombre, momento)
+        guardados, total, sin_shadow = _guardar_html_completo(page, reg, nombre, momento, plazo_ms=plazo_ms)
     except Exception as e:
         reg.paso(f"⚠ No pude guardar la evidencia {momento} ({nombre}): {_texto_error(e)}. {_EVIDENCIA_SIGUE}")
         return
@@ -428,41 +451,50 @@ def _avisar_lista_distinta(reg, etiqueta, evidencia, vista, pulsada, pendiente):
                  f"«{vista}», y pulsé «{pulsada}»")
 
 
-def _evidencia_sin_sugerencia(page, reg, nombre, etiqueta):
+def _evidencia_sin_sugerencia(page, reg, nombre, etiqueta, plazo_ms=None):
     """La evidencia de la lista cuando el ayudante de origen, de destino o del lugar de entrega no ve ninguna sugerencia
     que elegir, con el mismo nombre que cuando la ve (decisión de Marcelo, encargo 42, CICLO-maersk-y-fila-sin-ruta.md):
     la captura de la ventana y el HTML de la página y de sus marcos, al terminar la espera que el ayudante ya tenía, sin
     clics ni esperas nuevas. Mide qué mostraba el portal: si no había lista, o si ninguna calzaba. Después el ayudante
     sigue como antes: corta él mismo (ONE, MSC y el puerto de CMA), o devuelve que no eligió y corta quien lo llama
-    (encargo 42)."""
-    _evidencia_antes_de_la_guarda(page, reg, nombre, f"sin una sugerencia que elegir en {etiqueta}", completa=False)
+    (encargo 42). Con 'plazo_ms', con ese plazo (_evidencia_antes_de_la_guarda; encargo 55, CMA-CGM)."""
+    _evidencia_antes_de_la_guarda(page, reg, nombre, f"sin una sugerencia que elegir en {etiqueta}", completa=False,
+                                  plazo_ms=plazo_ms)
 
 
-def _pulsar_boton(alcance, selector, js=None, arg=None):
+def _pulsar_boton(alcance, selector, js=None, arg=None, plazo_ms=None):
     """Pulsa el botón de envío: el primero de 'selector' si está visible; si no, el que pulse
-    'js' (devuelve true solo si pulsó). True si lo pulsó; False si el botón no estaba."""
+    'js' (devuelve true solo si pulsó). True si lo pulsó; False si el botón no estaba. Con 'plazo_ms' (CMA-CGM, encargo
+    55), antes de mirar el botón le pregunta a la página si responde, con ese plazo (_responde: count() e is_visible()
+    no tienen plazo), y si no responde no pulsa nada: False; y el JavaScript corre con ese plazo."""
     btn = alcance.locator(selector).first
+    if plazo_ms and not _responde(alcance, plazo_ms):
+        return False
     if btn.count() and btn.is_visible():
         btn.click()
         return True
     if js is None:
         return False
+    if plazo_ms:
+        return bool(_evaluar_con_plazo(alcance, js, plazo_ms) if arg is None
+                    else _evaluar_con_plazo(alcance, js, plazo_ms, arg))
     return bool(alcance.evaluate(js) if arg is None else alcance.evaluate(js, arg))
 
 
 def _resultado_envio(page, reg, naviera, nombre, evidencia, boton, pulsado, error=None, campos=(),
-                     error_portal=""):
+                     error_portal="", plazo_ms=None):
     """Estado de una reserva después de la guarda del candado, según lo que el programa vio.
     pulsado: True (se pulsó 'boton'), False (no estaba) o None (el programa falló al pulsarlo:
     el clic pudo haber salido). campos: errores de validación que marcó el portal. Antes de
-    decidir guarda la captura y el HTML de la pantalla (_guardar_evidencia)."""
+    decidir guarda la captura y el HTML de la pantalla (_guardar_evidencia; con 'plazo_ms', con ese plazo: encargo 55,
+    CMA-CGM)."""
     if error is not None:
         reg.info(f"falla del programa durante el envío: {_texto_error(error)}")
     rechazo = [str(c) for c in (campos or [])]
     bkg = ""
     if pulsado is not False and not rechazo and not error_portal:
         bkg = numero_tras_envio(page, naviera)
-    _guardar_evidencia(page, reg, evidencia)
+    _guardar_evidencia(page, reg, evidencia, plazo_ms=plazo_ms)
     if pulsado is False:
         return _no_enviada(reg, f"{nombre}: no se pulsó «{boton}» porque no estaba en la pantalla. "
                                 f"La reserva no se envió.")
@@ -507,18 +539,19 @@ class ObjetivoNoEncontrado(BaseException):
         self.paso, self.buscaba, self.pide = paso, buscaba, pide
 
 
-def _sin_clic_a_ciegas(prefijo):
+def _sin_clic_a_ciegas(prefijo, plazo_ms=None):
     """Decorador de un reservador: si un paso no encuentra su objetivo, no se pulsa nada; el paso y lo que
     buscaba quedan en pantalla y en log.txt, con una captura «<prefijo>_f<fila>_sin_objetivo» y el HTML
     completo de esa pantalla (_evidencia_antes_de_la_guarda), y la reserva queda NO ENVIADA con ese motivo. Si el
-    portal pedía algo en esa pantalla (ObjetivoNoEncontrado.pide), el motivo empieza por eso: «el portal pide: …»."""
+    portal pedía algo en esa pantalla (ObjetivoNoEncontrado.pide), el motivo empieza por eso: «el portal pide: …». Con
+    'plazo_ms', ese HTML se lee con plazo (encargo 55: CMA-CGM)."""
     def envolver(reservar):
         def reservar_sin_clic_a_ciegas(page, reserva, creds, reg, on_pausa=None):
             try:
                 return reservar(page, reserva, creds, reg, on_pausa=on_pausa)
             except ObjetivoNoEncontrado as e:
                 _evidencia_antes_de_la_guarda(page, reg, f"{prefijo}_f{(reserva or {}).get('fila')}_sin_objetivo",
-                                              "en el paso sin objetivo", completa=False)
+                                              "en el paso sin objetivo", completa=False, plazo_ms=plazo_ms)
                 pide = f"el portal pide: {e.pide}. No encontré" if e.pide else "no encontré"
                 return _no_enviada(reg, f"{e.paso}: {pide} {e.buscaba}, así que no pulsé nada. La reserva "
                                         f"no se envió; revisa ese paso en el portal.")
@@ -967,11 +1000,12 @@ def _css_simple(selector):
     return not any(x in s for x in ("role=", ":has-text", ">>", "text="))
 
 
-def click_si_existe(page, selector, timeout_ms=2500, reg=None):
+def click_si_existe(page, selector, timeout_ms=2500, reg=None, plazo_ms=None):
     """Clic sobre algo OPCIONAL. Antes de esperar, comprueba de forma instantanea
     si el elemento siquiera existe: en algunos portales la espera de Playwright
     se estira mucho mas alla del tiempo pedido cuando la pagina esta ocupada
-    (medido: 30 s en MSC para un elemento que no existia)."""
+    (medido: 30 s en MSC para un elemento que no existia). Con 'plazo_ms', esa consulta tiene plazo
+    (_evaluar_con_plazo; encargo 55, el login de CMA-CGM)."""
     t = time.time()
     _JS_ESTADO = """(s)=>{
                 const e=document.querySelector(s);
@@ -983,7 +1017,8 @@ def click_si_existe(page, selector, timeout_ms=2500, reg=None):
         estado, err = None, ""
         for intento in range(2):
             try:
-                estado = int(page.evaluate(_JS_ESTADO, selector)); err = ""; break
+                estado = int(_evaluar_con_plazo(page, _JS_ESTADO, plazo_ms, selector) if plazo_ms
+                             else page.evaluate(_JS_ESTADO, selector)); err = ""; break
             except Exception as e:
                 err = str(e)[:40]
                 try: page.wait_for_timeout(600)
@@ -1034,10 +1069,40 @@ def texto_pagina(page):
         return ""
 
 
+# Cómo terminó la pausa del panel web (_web_pausa), para log.txt (decisión de Marcelo, encargo 55): con su botón «Ya lo
+# resolví», con «Detener», o sin respuesta, al vencer su plazo (300 vueltas de 2 s).
+PAUSA_RESUELTA = "el operador pulsó «Ya lo resolví»"
+PAUSA_DETENIDA = "el operador pulsó «Detener»"
+PAUSA_VENCIDA = "pasaron 10 minutos sin que el operador la resolviera"
+
+
+def _pausa_del_panel(reg, on_pausa, mensaje):
+    """La pausa del panel en log.txt (decisión de Marcelo, encargo 55, CICLO-pausa-plazos-y-datadome.md): cuándo empieza
+    y por qué (el mensaje que ve el operador), y cuándo termina y cómo, o si se cortó; la hora la pone el Registro en
+    cada línea. on_pausa es la del panel web (_web_pausa, que dice cómo terminó) o la del panel Tkinter (que no lo
+    dice). Hasta el encargo 55, de la pausa del deslizador de CMA log.txt no decía nada, y de las de pausa_manual, solo
+    «PAUSA: esperando acción manual del operador...», sin el porqué ni el final: el 2026-10-06, en «Solo iniciar
+    sesión», log.txt quedó 6 minutos sin escribir. Si on_pausa falla, lo anota y deja pasar la falla. Devuelve lo que
+    devolvió."""
+    reg.paso(f"⏸ PAUSA: espero al operador. Por qué: {' '.join(str(mensaje).split())}")
+    t0 = time.time()
+    try:
+        como = on_pausa(mensaje)
+    except Exception as e:
+        reg.paso(f"⛔ La pausa se cortó a los {round(time.time() - t0)} s: falló el panel ({_texto_error(e)}).")
+        raise
+    seg = round(time.time() - t0)
+    if como in (PAUSA_DETENIDA, PAUSA_VENCIDA):
+        reg.paso(f"⛔ La pausa se cortó a los {seg} s: {como}.")
+    else:
+        reg.paso(f"▶ La pausa terminó a los {seg} s" + (f": {como}." if como else "."))
+    return como
+
+
 def pausa_manual(reg, on_pausa, mensaje):
-    reg.paso("PAUSA: esperando acción manual del operador...")
     if on_pausa:
-        on_pausa(mensaje); return
+        return _pausa_del_panel(reg, on_pausa, mensaje)
+    reg.paso("PAUSA: esperando acción manual del operador...")
     # Sin panel: si hay consola interactiva, esperar ENTER; si no, esperar un lapso y seguir
     try:
         interactiva = sys.stdin is not None and sys.stdin.isatty()
@@ -1594,9 +1659,16 @@ CMA_TEXTO_VERIFICACION = "verificación del dispositivo"
 # logs/ (de «Abriendo cma-cgm.com...» al fin de su carga: de 1,1 a 3,7 s, mediana 2,0), y 6 veces lo que tardó la
 # verificación en recargar la página (5 s, la única medida). Es también el plazo que Playwright le daba a la portada.
 CMA_ESPERA_PORTADA = 30
-# El plazo de cada lectura de la página o de un marco (_cma_leer). Medido sin red en Chrome 154: cada una tardó de 0,01
-# a 0,15 s.
+# El plazo de cada lectura con que se mira qué muestra DataDome (_cma_leer), y de la evidencia de CMA detenida o
+# interrumpida. Medido sin red en Chrome 154: cada una tardó de 0,01 a 0,15 s.
 CMA_LECTURA_MS = 1500
+# El plazo de las demás lecturas de la reserva y del login de CMA-CGM (decisión de Marcelo, encargo 55: toda lectura de
+# sus páginas, con plazo): el plazo por omisión de Playwright, el mismo que en la reserva ya tenían text_content,
+# input_value e is_disabled. Con CMA_LECTURA_MS, una página ocupada un momento cambiaba lo que el programa hacía, y
+# antes la esperaba: si el JavaScript de los comentarios no vuelve, la reserva sigue sin ellos (leído en el código).
+# Hipótesis: cuánto puede estar ocupada una página de CMA sin estar colgada no está medido.
+CMA_PLAZO_MS = 30000
+CMA_SIN_RESPUESTA = f"la página no contestó en {CMA_PLAZO_MS // 1000} s"
 # El plazo de la captura de la ventana de CMA detenida o en su verificación. Medido sin red en Chrome 154: tardó de 0,1
 # a 0,2 s; con un marco que no responde, Playwright esperaba sus 30 s, y con la portada que no contesta, 25 s.
 CMA_CAPTURA_MS = 5000
@@ -1605,8 +1677,16 @@ CMA_SIN_CARGAR = "la página de CMA-CGM no terminó de cargar en {seg} s ({que})
 # El motivo de las filas de CMA-CGM detenida, en la planilla, en el panel y en log.txt.
 CMA_DETENIDA = ("{causa}. La reserva no se envió, y el programa se detuvo sin reintentar ni recargar la página (la "
                 "captura y el HTML, en la carpeta de la corrida)")
+# El motivo de la fila de CMA-CGM que DataDome interrumpió a mitad de la reserva, cuando la corrida sigue (encargo 55):
+# dónde apareció y cómo terminó.
+CMA_INTERRUMPIDA = ("DataDome interrumpió la reserva {donde} ({que}). La reserva no se envió y no se volvió a "
+                    "intentar (la captura y el HTML, en la carpeta de la corrida)")
+CMA_PASO_LA_VERIFICACION = "dejó pasar la página después de su verificación"
+CMA_DESLIZADO = "el operador deslizó la flecha"
+CMA_SIN_DESLIZAR = "pidió deslizar la flecha, y no se deslizó en {seg} s"
 _JS_CMA_HTTP = "() => { const n = performance.getEntriesByType('navigation')[0]; return n ? n.responseStatus : null; }"
 _JS_CMA_TEXTO = "() => document.body ? document.body.innerText : ''"
+_JS_CMA_TITULO = "() => document.title"
 
 
 class CmaDetenida(BaseException):
@@ -1620,12 +1700,49 @@ class CmaDetenida(BaseException):
         self.motivo = motivo
 
 
-def _cma_leer(alcance, js):
-    """'js' en la página o en un marco, con plazo (_evaluar_con_plazo, CMA_LECTURA_MS); si no se puede leer, None."""
+class CmaInterrumpida(CmaDetenida):
+    """DataDome interrumpió la reserva de CMA-CGM de una fila, a mitad de camino (decisión de Marcelo, encargo 55): la
+    dejó pasar (su verificación terminó, o el operador deslizó la flecha), o el operador no deslizó la flecha. Esa fila
+    queda NO ENVIADA, sin volver a intentarla, y la corrida sigue con la que viene (_cma_interrumpir). Deriva de
+    CmaDetenida: la atajan los mismos (_cma_si_se_detuvo). A diferencia de _cma_detener, no deja el motivo en el
+    Registro (_naviera_detenida): las filas que siguen van al portal."""
+
+
+def _cma_leer(alcance, js, plazo_ms=CMA_LECTURA_MS):
+    """'js' en la página o en un marco, con plazo (_evaluar_con_plazo: CMA_LECTURA_MS, o 'plazo_ms'); si no se puede
+    leer, None."""
     try:
-        return _evaluar_con_plazo(alcance, js, CMA_LECTURA_MS)
+        return _evaluar_con_plazo(alcance, js, plazo_ms)
     except Exception:
         return None
+
+
+def _cma_js(alcance, js, arg=_SIN_ARGUMENTO):
+    """'js' en la página de CMA-CGM o en un marco, con plazo (_evaluar_con_plazo, CMA_PLAZO_MS), en vez de
+    page.evaluate, que no lo tiene (decisión de Marcelo, encargo 55: toda lectura de las páginas de CMA-CGM, con plazo;
+    también el JavaScript que pulsa o escribe, que es la misma llamada). Si no puede, levanta el error, como
+    page.evaluate: quien la llama lo ataja como antes."""
+    return _evaluar_con_plazo(alcance, js, CMA_PLAZO_MS, arg)
+
+
+def _cma_responde(page):
+    """¿La página de CMA-CGM contesta una lectura de CMA_PLAZO_MS? (_responde)."""
+    return _responde(page, CMA_PLAZO_MS)
+
+
+def _cma_cuantos(page, loc, si_no_responde=0):
+    """loc.count(), solo si la página responde (_cma_responde): count() no tiene plazo (encargo 55). Si no responde,
+    'si_no_responde': 0, como si no hubiera ninguno; o None donde contar 0 cambiaría qué se elige (la sugerencia con
+    «ramp» del lugar de entrega, la opción de «Tamaño y tipo»), y quien la llama no elige con esa lectura."""
+    return loc.count() if _cma_responde(page) else si_no_responde
+
+
+def _cma_se_ve(page, loc, si_no_responde=False):
+    """loc.is_visible(), solo si la página responde (_cma_responde): is_visible() no tiene plazo (encargo 55). Si no
+    responde, 'si_no_responde': False; o True donde no verlo haría pulsar algo («Añadir dirección de entrega», que se
+    pulsa si su campo no se ve). De un localizador .first, «count() and is_visible()» es lo mismo que is_visible():
+    falso si no hay ninguno."""
+    return loc.is_visible() if _cma_responde(page) else si_no_responde
 
 
 def _cma_http(page):
@@ -1672,13 +1789,20 @@ def _cma_detener(page, reg, causa, nombre, creds=None):
     motivo = CMA_DETENIDA.format(causa=causa)
     vars(reg).setdefault("detenida", {})["cma"] = motivo
     reg.paso(f"⛔ {causa[:1].upper()}{causa[1:]}. Me detengo sin reintentar ni recargar la página.")
+    _cma_evidencia(page, reg, nombre, "detenida", creds)
+    raise CmaDetenida(motivo)
+
+
+def _cma_evidencia(page, reg, nombre, como, creds=None):
+    """La evidencia de CMA-CGM detenida o interrumpida ('como'): la dirección sin su consulta, la captura de la ventana
+    y el HTML de la página y de cada marco, con plazo (CMA_CAPTURA_MS, CMA_LECTURA_MS) y sin el que traiga el usuario
+    o la clave (_textos_de_la_cuenta), y una línea que dice qué quedó. Solo lee."""
     reg.url(page)
     png = reg.captura(page, nombre, plazo_ms=CMA_CAPTURA_MS)
-    guardados, total, _ = _guardar_html_completo(page, reg, nombre, "con CMA-CGM detenida",
+    guardados, total, _ = _guardar_html_completo(page, reg, nombre, f"con CMA-CGM {como}",
                                                  sin=_textos_de_la_cuenta(creds), plazo_ms=CMA_LECTURA_MS)
-    reg.info(f"evidencia de CMA-CGM detenida: {f'{nombre}.png' if png else 'sin la captura'} y {guardados} de "
+    reg.info(f"evidencia de CMA-CGM {como}: {f'{nombre}.png' if png else 'sin la captura'} y {guardados} de "
              f"{total} HTML (la página y {total - 1} marco(s))")
-    raise CmaDetenida(motivo)
 
 
 def _cma_sin_bloqueo_ni_espera(page, reg, creds=None):
@@ -1704,6 +1828,39 @@ def _cma_sin_bloqueo_ni_espera(page, reg, creds=None):
     return que
 
 
+def _cma_interrumpir(page, reg, donde, que, fila, creds=None):
+    """La fila de CMA-CGM que DataDome interrumpió a mitad de la reserva (decisión de Marcelo, encargo 55): lo dice en
+    pantalla y en log.txt, deja su evidencia (_cma_evidencia: «cma_f<fila>_datadome») y levanta CmaInterrumpida. No
+    deja el motivo en el Registro: la corrida sigue con la fila que viene. Solo lee: ni clics, ni navegación, ni otro
+    intento."""
+    motivo = CMA_INTERRUMPIDA.format(donde=donde, que=que)
+    reg.paso(f"⛔ {motivo}.")
+    _cma_evidencia(page, reg, f"cma_f{fila}_datadome", "interrumpida", creds)
+    raise CmaInterrumpida(motivo)
+
+
+def _cma_datadome_a_mitad(page, reg, on_pausa, creds, donde, fila):
+    """DataDome a mitad de una reserva de CMA-CGM (decisión de Marcelo, encargo 55, CICLO-pausa-plazos-y-datadome.md).
+    Las páginas de Click & Book cargan la etiqueta de DataDome con «ajaxListenerPath: true» (las 60 de logs/ que la
+    traen): según su documentación, si DataDome bloquea un pedido de la página, la etiqueta muestra su desafío (el
+    deslizador, la verificación del dispositivo o el bloqueo), y al dejarla pasar recarga la página, salvo que se le
+    diga otra cosa, y CMA no se lo dice. Lo mira con _cma_datadome, sin tocar nada; sin DataDome, no hace nada. Con él,
+    igual que en la portada: con el acceso restringido, o con su verificación o una página vacía que no terminan en
+    CMA_ESPERA_PORTADA s, detiene la corrida de CMA (_cma_detener); con el deslizador, se lo pide al operador
+    (_cma_pedir_deslizador). Si DataDome deja pasar la página, la reserva de esta fila igual termina: lo que se había
+    llenado se pierde con la recarga, y seguir sería volver a intentarla. Queda NO ENVIADA con su evidencia
+    (_cma_interrumpir), y la corrida sigue con la fila que viene. Solo lee y espera."""
+    if not _cma_datadome(page):
+        return
+    reg.paso(f"DataDome apareció a mitad de la reserva de CMA-CGM, {donde}.")
+    que = _cma_sin_bloqueo_ni_espera(page, reg, creds)
+    if que in ("deslizador", "otra"):
+        deslizo = _cma_pedir_deslizador(page, reg, on_pausa, creds=creds, nombre=f"cma_f{fila}_robot_desafio")
+        _cma_interrumpir(page, reg, donde, CMA_DESLIZADO if deslizo
+                         else CMA_SIN_DESLIZAR.format(seg=CMA_ESPERA_DESLIZADOR), fila, creds)
+    _cma_interrumpir(page, reg, donde, CMA_PASO_LA_VERIFICACION, fila, creds)
+
+
 def _cma_login_se_detiene(login):
     """Decorador del login de CMA (decisión de Marcelo, encargo 54): si se detuvo (CmaDetenida, _cma_detener), no hay
     sesión, y las filas de CMA quedan NO ENVIADA con el motivo (_motivo_sin_sesion). Sin él, CmaDetenida, que deriva de
@@ -1721,13 +1878,25 @@ def _cma_login_se_detiene(login):
 def _cma_si_se_detuvo(reservar):
     """Decorador del reservador de CMA (decisión de Marcelo, encargo 54): si CMA-CGM ya se detuvo en esta corrida (en
     el login o en una fila anterior: _naviera_detenida), la fila queda NO ENVIADA con ese motivo, sin volver al portal;
-    y si se detiene en esta (CmaDetenida), también. Así, ninguna fila de CMA vuelve a intentarlo."""
+    y si se detiene en esta (CmaDetenida), también. Así, ninguna fila de CMA vuelve a intentarlo. Desde el encargo 55,
+    también la fila que DataDome interrumpió (CmaInterrumpida), y las que siguen van al portal; y si la reserva se corta
+    (ObjetivoNoEncontrado) o queda REVISAR, antes de darla por terminada mira si DataDome está en la página
+    (_cma_datadome_a_mitad): si está, eso decide. El corte no se traga: si DataDome no está, sigue su camino hasta
+    _sin_clic_a_ciegas, que va por fuera. Ni el corte ni REVISAR salen después de la guarda: ahí no mira nada."""
     def reservar_cma_detenible(page, reserva, creds, reg, on_pausa=None):
         motivo = _naviera_detenida(reg, "cma")
         if motivo:
             return _no_enviada(reg, motivo)
+        fila = (reserva or {}).get("fila")
         try:
-            return reservar(page, reserva, creds, reg, on_pausa=on_pausa)
+            try:
+                resultado = reservar(page, reserva, creds, reg, on_pausa=on_pausa)
+            except ObjetivoNoEncontrado:
+                _cma_datadome_a_mitad(page, reg, on_pausa, creds, "en un paso que no encontró su objetivo", fila)
+                raise
+            if resultado and resultado[0] == "REVISAR":
+                _cma_datadome_a_mitad(page, reg, on_pausa, creds, "antes de quedar para revisar", fila)
+            return resultado
         except CmaDetenida as e:
             return _no_enviada(reg, e.motivo)
     reservar_cma_detenible.__name__ = reservar.__name__
@@ -1738,7 +1907,8 @@ def _cma_si_se_detuvo(reservar):
 def _cma_es_robotcheck(page):
     """Detecta el captcha o verificación anti-bot (DataDome / captcha-delivery) en CMA CGM. Desde el encargo 54,
     también un documento que respondió 403, como las páginas de DataDome del 2026-10-06, también la que quedó vacía,
-    sin su marco (_cma_http, con plazo): con eso basta, sin leer los marcos."""
+    sin su marco (_cma_http, con plazo): con eso basta, sin leer los marcos. Desde el encargo 55, todo lo que lee tiene
+    plazo (_cma_leer): lo que no se puede leer cuenta como sin texto."""
     try:
         if _cma_http(page) == 403:
             return True
@@ -1748,27 +1918,27 @@ def _cma_es_robotcheck(page):
             if "captcha-delivery.com" in u or "datadome" in u:
                 return True
             try:
-                ftit = (fr.title() or "").lower()
+                ftit = str(_cma_leer(fr, _JS_CMA_TITULO) or "").lower()
                 if any(k in ftit for k in ["bloqueado", "blocked", "captcha", "verification"]):
                     return True
-                ftxt = (fr.evaluate("() => document.body ? document.body.innerText : ''") or "").lower()
+                ftxt = str(_cma_leer(fr, _JS_CMA_TEXTO) or "").lower()
                 if any(k in ftxt for k in ["no a un robot", "not a robot", "desliza", "slide", "restring", "restricted", "temporarily restricted"]):
                     return True
             except Exception:
                 pass
 
         # 2. Chequear elementos iframe en el documento principal
-        hay_ifr = bool(page.evaluate("""() => {
+        hay_ifr = bool(_cma_leer(page, """() => {
             return !!document.querySelector('iframe[src*="captcha-delivery"], iframe[src*="datadome"], iframe[src*="challenge"], iframe[src*="captcha"]');
         }"""))
         if hay_ifr:
             return True
 
         # 3. Chequear texto o título del documento principal
-        tit = (page.title() or "").lower()
+        tit = str(_cma_leer(page, _JS_CMA_TITULO) or "").lower()
         if any(k in tit for k in ["bloqueado", "blocked", "verificaci", "verification"]):
             return True
-        t = (page.evaluate("() => document.body ? document.body.innerText : ''") or "").lower()
+        t = str(_cma_leer(page, _JS_CMA_TEXTO) or "").lower()
         if any(k in t for k in ["no a un robot", "not a robot", "desliza", "slide", "restring", "restricted"]):
             return True
     except Exception:
@@ -1863,22 +2033,35 @@ def resolver_cma_slider(page, reg=None):
     return not _cma_es_robotcheck(page)
 
 
-def _cma_esperar_desafio(page, reg, on_pausa=None, segundos=180, creds=None):
+# Cuántos segundos espera el programa a que el operador deslice la flecha de DataDome (_cma_pedir_deslizador).
+CMA_ESPERA_DESLIZADOR = 180
+
+
+def _cma_esperar_desafio(page, reg, on_pausa=None, segundos=CMA_ESPERA_DESLIZADOR, creds=None):
     """Si CMA CGM muestra la verificación de DataDome (deslizar flecha a la derecha),
-    alerta al operador y espera de forma reactiva a que deslice la flecha con el mouse.
-    (No se debe arrastrar con eventos sintéticos porque DataDome bloquea temporalmente la IP).
+    alerta al operador y espera de forma reactiva a que deslice la flecha con el mouse (_cma_pedir_deslizador).
     Desde el encargo 54 (decisión de Marcelo), antes mira qué muestra DataDome (_cma_sin_bloqueo_ni_espera): con el
     acceso restringido, o con su verificación o su página vacía que no terminan de cargar en CMA_ESPERA_PORTADA s,
-    detiene la corrida de CMA (_cma_detener: CmaDetenida), sin reintentar ni recargar; y mientras espera al operador,
+    detiene la corrida de CMA (_cma_detener: CmaDetenida), sin reintentar ni recargar; y mientras espera que deslice,
     si la página pasa al acceso restringido, también. Con el deslizador, como antes."""
     if not _cma_es_robotcheck(page):
         return True
     if _cma_sin_bloqueo_ni_espera(page, reg, creds) == "" and not _cma_es_robotcheck(page):
         reg.paso("DataDome dejó pasar la página; sigo.")
         return True
+    return _cma_pedir_deslizador(page, reg, on_pausa, segundos, creds)
 
+
+def _cma_pedir_deslizador(page, reg, on_pausa=None, segundos=CMA_ESPERA_DESLIZADOR, creds=None,
+                          nombre="cma_robot_desafio"):
+    """Le pide al operador que deslice la flecha de DataDome, y espera de forma reactiva, hasta 'segundos', a que
+    DataDome deje pasar la página. (No se debe arrastrar con eventos sintéticos porque DataDome bloquea temporalmente la
+    IP.) Con el panel, la pausa queda en log.txt (_pausa_del_panel; decisión de Marcelo, encargo 55). La espera empieza
+    cuando la pausa termina: en el panel, mientras el operador no pulsa «Ya lo resolví», el programa no mira la página.
+    Si en la espera la página pasa al acceso restringido, detiene la corrida de CMA (_cma_detener). True si DataDome
+    dejó pasar la página; False si no, al vencer el plazo. Deja la captura 'nombre', con plazo (CMA_CAPTURA_MS)."""
     reg.paso("CMA CGM muestra verificación de seguridad (DataDome: 'Desliza hacia la derecha').")
-    reg.captura(page, "cma_robot_desafio")
+    reg.captura(page, nombre, plazo_ms=CMA_CAPTURA_MS)
     try:
         page.bring_to_front()
     except Exception:
@@ -1898,7 +2081,7 @@ def _cma_esperar_desafio(page, reg, on_pausa=None, segundos=180, creds=None):
         "============================================================\n"
     )
     if on_pausa:
-        on_pausa("CMA CGM: desliza la flecha hacia la derecha en el navegador para continuar.")
+        _pausa_del_panel(reg, on_pausa, "CMA CGM: desliza la flecha hacia la derecha en el navegador para continuar.")
     else:
         print(aviso_msg)
 
@@ -1937,8 +2120,7 @@ def login_cma(page, creds, reg, on_pausa=None):
 
     # Esperar verificación de dispositivo
     for i in range(20):
-        try: titulo = (page.title() or "").lower()
-        except Exception: titulo = ""
+        titulo = str(_cma_leer(page, _JS_CMA_TITULO) or "").lower()       # con plazo (encargo 55)
         if "verificaci" not in titulo and "verification" not in titulo:
             if i: reg.info(f"home lista tras ~{i}s")
             break
@@ -1961,12 +2143,12 @@ def login_cma(page, creds, reg, on_pausa=None):
                 return False
 
         try:
-            ab = page.evaluate(_JS_CMA_MENU); reg.info(f"intento {intento+1}: menú {'abierto' if ab else 'no encontrado'}")
+            ab = _cma_js(page, _JS_CMA_MENU); reg.info(f"intento {intento+1}: menú {'abierto' if ab else 'no encontrado'}")
         except Exception as e:
             reg.info(f"intento {intento+1}: error menú: {e}")
         esperar(page, 1.3)
         try:
-            cl = page.evaluate(_JS_CMA_LOGIN); reg.info(f"intento {intento+1}: login {'pulsado' if cl else 'no encontrado'}")
+            cl = _cma_js(page, _JS_CMA_LOGIN); reg.info(f"intento {intento+1}: login {'pulsado' if cl else 'no encontrado'}")
         except Exception as e:
             reg.info(f"intento {intento+1}: error login: {e}")
 
@@ -2010,8 +2192,8 @@ def login_cma(page, creds, reg, on_pausa=None):
     reg.paso("Ingresando credenciales...")
     rellenar(page, "input[placeholder='Enter your email'], input[type='email']", creds["usuario"], 15000, reg)
     rellenar(page, "input[placeholder='Enter your password'], input[type='password']", creds["clave"], 15000, reg)
-    if not click_si_existe(page, "role=button[name='Log in']", 5000, reg):
-        click_si_existe(page, "button[type='submit']", 5000, reg)
+    if not click_si_existe(page, "role=button[name='Log in']", 5000, reg, plazo_ms=CMA_PLAZO_MS):
+        click_si_existe(page, "button[type='submit']", 5000, reg, plazo_ms=CMA_PLAZO_MS)
 
     try: page.wait_for_url("**cma-cgm.com/ebusiness/**", timeout=30000)
     except Exception: reg.info("no confirmé redirect en 30s")
@@ -10726,12 +10908,12 @@ def _cma_puerto(page, sel, texto, reg, etiqueta, evidencia=""):
             esperar(page, 0.5)
             try:
                 li = page.locator(".el-autocomplete-suggestion:visible li:visible").filter(has_text=rx)
-                if li.count():
+                if _cma_cuantos(page, li):
                     vista = ""
                     if pendiente:
                         vista = " ".join((li.first.text_content() or "").split())
                         _evidencia_antes_de_la_guarda(page, reg, evidencia, f"con las sugerencias de {etiqueta}",
-                                                      completa=False)
+                                                      completa=False, plazo_ms=CMA_PLAZO_MS)
                         pendiente = False
                     pulsada = " ".join((li.first.text_content() or "").split())
                     li.first.click(timeout=3000)
@@ -10740,7 +10922,7 @@ def _cma_puerto(page, sel, texto, reg, etiqueta, evidencia=""):
             except Exception:
                 pass
         if pendiente:
-            _evidencia_sin_sugerencia(page, reg, evidencia, etiqueta)
+            _evidencia_sin_sugerencia(page, reg, evidencia, etiqueta, plazo_ms=CMA_PLAZO_MS)
         val = _valor()
     except Exception as e:
         reg.info(f"{etiqueta}: clic err ({str(e)[:45]})")
@@ -10781,7 +10963,9 @@ def _cma_entrega(page, texto, reg, evidencia=""):
     pref = _prefijo_de_la_lista(ciudad)
     sel = "input[placeholder*='entrega' i], input[placeholder*='delivery' i]"
     try:
-        if not page.locator(sel).first.is_visible():
+        # Si la página no contesta, su campo cuenta como visto: no se pulsa «Añadir dirección de entrega» sin saber si
+        # hace falta, y si el campo no está, el paso no lo encuentra y la reserva se corta (encargo 55).
+        if not _cma_se_ve(page, page.locator(sel).first, si_no_responde=True):
             page.get_by_text("Añadir dirección de entrega", exact=False).first.click(timeout=4000)
             esperar(page, 1.5)
     except Exception:
@@ -10804,19 +10988,22 @@ def _cma_entrega(page, texto, reg, evidencia=""):
 
     def la_de_la_regla(li):
         ramp = li.filter(has_text=rx_ramp)
-        return ramp.first if ramp.count() else li.first
+        n = _cma_cuantos(page, ramp, si_no_responde=None)
+        if n is None:          # la página no contestó: con esa lectura no se elige, y la vuelta se repite (encargo 55)
+            raise TimeoutError(CMA_SIN_RESPUESTA)
+        return ramp.first if n else li.first
 
     pendiente = bool(evidencia)
     for _ in range(14):
         esperar(page, 0.5)
         try:
             li = page.locator(".el-autocomplete-suggestion:visible li:visible").filter(has_text=rx)
-            if li.count():
+            if _cma_cuantos(page, li):
                 vista = ""
                 if pendiente:
                     vista = " ".join((la_de_la_regla(li).text_content() or "").split())
                     _evidencia_antes_de_la_guarda(page, reg, evidencia, "con las sugerencias del lugar de entrega",
-                                                  completa=False)
+                                                  completa=False, plazo_ms=CMA_PLAZO_MS)
                     pendiente = False
                 target = la_de_la_regla(li)
                 bruto = target.text_content() or ""
@@ -10833,14 +11020,14 @@ def _cma_entrega(page, texto, reg, evidencia=""):
         except Exception:
             pass
     if pendiente:
-        _evidencia_sin_sugerencia(page, reg, evidencia, "el lugar de entrega")
+        _evidencia_sin_sugerencia(page, reg, evidencia, "el lugar de entrega", plazo_ms=CMA_PLAZO_MS)
     reg.info("lugar de entrega: sin sugerencia")
     return ""
 
 
 def _cma_aviso(page):
     try:
-        return str(page.evaluate(r"""()=>{
+        return str(_cma_js(page, r"""()=>{
           const vis=e=>{const r=e.getBoundingClientRect();return e.offsetParent!==null&&r.width>0&&r.height>0;};
           const el=[...document.querySelectorAll('*')].filter(e=>vis(e)
              && /no matching|quotation *:/i.test(e.textContent||'')
@@ -10878,7 +11065,7 @@ def _cma_esperar_resultado(page, seg, reg, minimo=1.5):
             reg.info(f"el portal responde ({_t.time() - t0:.1f}s)")
             return "aviso"
         try:
-            if page.locator("[class*=itinerar]:visible, [class*=route-result]:visible").count():
+            if _cma_cuantos(page, page.locator("[class*=itinerar]:visible, [class*=route-result]:visible")):
                 reg.info(f"itinerarios en pantalla ({_t.time() - t0:.1f}s)")
                 return "itinerarios"
         except Exception:
@@ -10909,7 +11096,7 @@ def _cma_completar_info_extra(page, reserva, reg):
         ]:
             try:
                 el = page.locator(s).first
-                if el.count() and el.is_visible():
+                if _cma_se_ve(page, el):
                     el.scroll_into_view_if_needed(timeout=2500)
                     el.click(timeout=2500)
                     abierto = True
@@ -10923,7 +11110,7 @@ def _cma_completar_info_extra(page, reserva, reg):
         esperar(page, 1.0)
 
         # Ahora seleccionamos '40\' Reefer High Cube'
-        sel_ok = False
+        sel_ok = sin_respuesta = False
         import re as _r
         rx_hc = _r.compile(r"40.*(?:high\s*cube|reefer\s*high\s*cube)", _r.I)
         for opt_sel in [
@@ -10934,9 +11121,14 @@ def _cma_completar_info_extra(page, reserva, reg):
         ]:
             try:
                 op = page.locator(opt_sel).filter(has_text=rx_hc)
-                if not op.count():
+                n = _cma_cuantos(page, op, si_no_responde=None)
+                if n == 0:
                     op = page.locator(opt_sel).filter(has_text="40' Reefer High Cube")
-                if op.count():
+                    n = _cma_cuantos(page, op, si_no_responde=None)
+                if n is None:      # la página no contestó: con esa lectura no se elige (encargo 55)
+                    sin_respuesta = True
+                    break
+                if n:
                     txt_sel = (op.first.text_content() or "").strip()
                     op.first.click(timeout=2500)
                     reg.info(f"tamaño y tipo: {txt_sel} seleccionado")
@@ -10945,8 +11137,8 @@ def _cma_completar_info_extra(page, reserva, reg):
             except Exception:
                 continue
 
-        if not sel_ok:
-            txt = page.evaluate(r"""() => {
+        if not sel_ok and not sin_respuesta:
+            txt = _cma_js(page, r"""() => {
                 const items = [...document.querySelectorAll('.el-select-dropdown__item, li')].filter(e => {
                     const r = e.getBoundingClientRect();
                     return e.offsetParent !== null && r.width > 0 && r.height > 0 && /40.*high.*cube|40.*reefer.*high/i.test(e.textContent || '');
@@ -10965,7 +11157,8 @@ def _cma_completar_info_extra(page, reserva, reg):
             # Hasta fb63271 elegía con el teclado (dos veces flecha abajo y Enter) la opción que quedara ahí, fuera
             # cual fuera (CICLO-cola-nueve-items.md).
             raise ObjetivoNoEncontrado("Tamaño y tipo de CMA", "la opción «40' Reefer High Cube» en el desplegable "
-                                                               "(por su texto)")
+                                                               "(por su texto)" + (f", porque {CMA_SIN_RESPUESTA}"
+                                                                                   if sin_respuesta else ""))
 
         esperar(page, 0.8)
     except Exception as e:
@@ -10975,7 +11168,7 @@ def _cma_completar_info_extra(page, reserva, reg):
     cant = str(reserva.get("cant", 1) or 1)
     try:
         inp_cant = page.locator(".el-input-number input, input[role='spinbutton'], input[placeholder*='Cantidad' i]").first
-        if inp_cant.count() and inp_cant.is_visible():
+        if _cma_se_ve(page, inp_cant):
             val_actual = (inp_cant.input_value() or "").strip()
             if val_actual != cant:
                 inp_cant.fill(cant)
@@ -10987,7 +11180,7 @@ def _cma_completar_info_extra(page, reserva, reg):
     try:
         peso_ok = False
         peso_kg = _peso_reefer()
-        focused = page.evaluate(r"""() => {
+        focused = _cma_js(page, r"""() => {
             const allInp = [...document.querySelectorAll('input')].filter(e => {
                 const r = e.getBoundingClientRect();
                 return e.offsetParent !== null && r.width > 0 && r.height > 0;
@@ -11015,7 +11208,7 @@ def _cma_completar_info_extra(page, reserva, reg):
             ]:
                 try:
                     inp_peso = page.locator(s).first
-                    if inp_peso.count() and inp_peso.is_visible():
+                    if _cma_se_ve(page, inp_peso):
                         inp_peso.scroll_into_view_if_needed(timeout=2000)
                         inp_peso.click(timeout=2000)
                         inp_peso.fill(peso_kg)
@@ -11045,7 +11238,7 @@ def _cma_completar_info_extra(page, reserva, reg):
         ]:
             try:
                 loc = page.locator(sel_hs).first
-                if loc.count() and loc.is_visible():
+                if _cma_se_ve(page, loc):
                     hs_input = loc
                     break
             except Exception:
@@ -11062,7 +11255,7 @@ def _cma_completar_info_extra(page, reserva, reg):
         for _ in range(14):
             esperar(page, 0.5)
             sugg = page.locator(".el-autocomplete-suggestion:visible li:visible, ul[class*='suggestion'] li:visible, li:visible").filter(has_text="030313")
-            if sugg.count():
+            if _cma_cuantos(page, sugg):
                 txt = (sugg.first.text_content() or "").strip()[:50]
                 sugg.first.click(timeout=3000)
                 reg.info(f"mercancía seleccionada: {txt}")
@@ -11232,7 +11425,7 @@ def _cma_fecha_tarjeta(texto):
 def _cma_fechas(page):
     """Las salidas de todas las tarjetas de «Route choices» (_JS_CMA_FECHAS), como datetime.date o None."""
     try:
-        return [_cma_fecha_tarjeta(t) for t in page.evaluate(_JS_CMA_FECHAS) or []]
+        return [_cma_fecha_tarjeta(t) for t in _cma_js(page, _JS_CMA_FECHAS) or []]
     except Exception:
         return []
 
@@ -11240,7 +11433,7 @@ def _cma_fechas(page):
 def _cma_contar_rutas(page):
     """Cuántas rutas hay en «Route choices» (_JS_CMA_CONTAR), o 0 si no se pueden contar."""
     try:
-        return int(page.evaluate(_JS_CMA_CONTAR) or 0)
+        return int(_cma_js(page, _JS_CMA_CONTAR) or 0)
     except Exception:
         return 0
 
@@ -11250,7 +11443,7 @@ def _cma_enlace_mas(page):
     CMA_CARGAR_MAS. Devuelve (el localizador, o None si no hay uno solo, y cuántos hay a la vista)."""
     e = page.locator("a, button, [role=link], [role=button]").filter(
         has_text=_re_mk.compile(CMA_CARGAR_MAS, _re_mk.I))
-    vistos = [e.nth(j) for j in range(e.count()) if e.nth(j).is_visible()]
+    vistos = [e.nth(j) for j in range(_cma_cuantos(page, e)) if _cma_se_ve(page, e.nth(j))]
     return (vistos[0] if len(vistos) == 1 else None, len(vistos))
 
 
@@ -11306,7 +11499,9 @@ def _cma_seleccionar_itinerario(page, reserva, reg):
     esperar_btn = False
     for _ in range(15):
         try:
-            if page.locator("button:has-text('Seleccionar'), button:has-text('Select'), button:has-text('Deseleccionar'), button:has-text('Deselect')").count():
+            botones = page.locator("button:has-text('Seleccionar'), button:has-text('Select'), "
+                                   "button:has-text('Deseleccionar'), button:has-text('Deselect')")
+            if _cma_cuantos(page, botones):
                 esperar_btn = True
                 break
         except Exception:
@@ -11322,9 +11517,10 @@ def _cma_seleccionar_itinerario(page, reserva, reg):
         # captura de la ventana y su HTML, sin clics ni esperas (decisión de Marcelo, CICLO-cola-siete-items.md).
         sufijo = "" if not cargas else "_mas" if cargas == 1 else f"_mas{cargas}"
         nombre = f"cma_f{reserva.get('fila', '')}_rutas" + sufijo
-        _evidencia_antes_de_la_guarda(page, reg, nombre, "en la lista de rutas", completa=False)
+        _evidencia_antes_de_la_guarda(page, reg, nombre, "en la lista de rutas", completa=False,
+                                      plazo_ms=CMA_PLAZO_MS)
         try:
-            res = page.evaluate(_JS_CMA_RUTAS, {"toks": toks})
+            res = _cma_js(page, _JS_CMA_RUTAS, {"toks": toks})
             ultimo_resultado = res or {}
             if res.get("ok"):
                 reg.info(f"itinerario CMA: {res.get('msg')}")
@@ -11438,7 +11634,7 @@ def _cma_ajustes_reefer(page, reserva, reg):
         ):
             try:
                 btn = page.locator(selector).first
-                if btn.count() and btn.is_visible():
+                if _cma_se_ve(page, btn):
                     btn.scroll_into_view_if_needed(timeout=2500)
                     btn.click(timeout=3000)
                     abierto = True
@@ -11453,10 +11649,11 @@ def _cma_ajustes_reefer(page, reserva, reg):
             reg.captura(page, f"cma_f{f}_4b_reefer_drawer", full=True)
         except Exception:
             pass
-        _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_reefer_panel", "en el panel Reefer", completa=False)
+        _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_reefer_panel", "en el panel Reefer", completa=False,
+                                      plazo_ms=CMA_PLAZO_MS)
 
         # 2. La temperatura, solo dentro del panel Reefer visible (ver _JS_CMA_REEFER_TEMPERATURA)
-        donde = page.evaluate(_JS_CMA_REEFER_TEMPERATURA, temp)
+        donde = _cma_js(page, _JS_CMA_REEFER_TEMPERATURA, temp)
         if donde != "ok":
             raise ObjetivoNoEncontrado("Temperatura Reefer de CMA", _CMA_TEMPERATURA_NO_HALLADA.get(
                 donde, _CMA_TEMPERATURA_NO_HALLADA["sin-campo"]))
@@ -11472,13 +11669,13 @@ def _cma_ajustes_reefer(page, reserva, reg):
         import re as _r
         btn_g = page.locator(".el-drawer button, [class*='drawer'] button").filter(
             has_text=_r.compile(r"^\s*Guardar\s*$", _r.I), visible=True)
-        if btn_g.count() != 1 or not btn_g.evaluate(_JS_CMA_REEFER_GUARDAR):
+        if _cma_cuantos(page, btn_g) != 1 or not btn_g.evaluate(_JS_CMA_REEFER_GUARDAR, timeout=CMA_PLAZO_MS):
             raise ObjetivoNoEncontrado("Guardar los ajustes Reefer de CMA", "el botón «Guardar» del panel Reefer visible")
         btn_g.click(timeout=4000)
         reg.info("ajustes reefer guardados")
         esperar(page, 1.5)
         _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_reefer_guardado", "tras guardar el panel Reefer",
-                                      completa=False)
+                                      completa=False, plazo_ms=CMA_PLAZO_MS)
         # Asegurar que no quede ningún modal ni popup abierto
         try:
             page.keyboard.press("Escape")
@@ -11501,7 +11698,7 @@ def _cma_marcar_i_agree(page, reg):
     ]:
         try:
             chk = page.locator(s).first
-            if chk.count() and chk.is_visible():
+            if _cma_se_ve(page, chk):
                 chk.scroll_into_view_if_needed(timeout=2000)
                 chk.click(timeout=2000)
                 reg.info("marcado 'I Agree'")
@@ -11526,12 +11723,12 @@ def _cma_comentarios(page, reg):
 
         # Deseleccionar cualquier texto resaltado en la página para evitar que se vea azul
         try:
-            page.evaluate("() => { if (window.getSelection) window.getSelection().removeAllRanges(); }")
+            _cma_js(page, "() => { if (window.getSelection) window.getSelection().removeAllRanges(); }")
         except Exception:
             pass
 
         # Ubicar y llenar directamente vía setter de DOM (evita clics accidentales o selección azul)
-        ok = page.evaluate(r"""(val) => {
+        ok = _cma_js(page, r"""(val) => {
             try { if (window.getSelection) window.getSelection().removeAllRanges(); } catch(e){}
             const allTa = [...document.querySelectorAll('textarea')].filter(e => e.offsetParent !== null);
             const ta = allTa.find(e => {
@@ -11559,11 +11756,11 @@ def _cma_comentarios(page, reg):
 
         # Fallback vía locator solo si JS no encontró el textarea
         ta = page.locator("textarea[placeholder*='facilítenos' i], .el-form-item:has-text('Comentarios') textarea").first
-        if ta.count() and ta.is_visible():
+        if _cma_se_ve(page, ta):
             ta.scroll_into_view_if_needed(timeout=2500)
             ta.fill(COSCO_REMARK)
             try:
-                page.evaluate("() => { if (window.getSelection) window.getSelection().removeAllRanges(); }")
+                _cma_js(page, "() => { if (window.getSelection) window.getSelection().removeAllRanges(); }")
             except Exception:
                 pass
             reg.info(f"comentario (vía locator): '{COSCO_REMARK}'")
@@ -11588,13 +11785,15 @@ CMA_MANTENIMIENTO = "el portal de CMA está en mantenimiento"
 def _cma_en_mantenimiento(page):
     """True si el texto a la vista de la página trae el aviso de mantenimiento de CMA («We are improving the eBusiness
     area»), sin distinguir mayúsculas ni saltos de línea. Solo lee: ni clics ni esperas. Si no puede leer la página,
-    False."""
-    return "we are improving the ebusiness area" in " ".join(texto_pagina(page).split())
+    False. Lee con plazo (_cma_leer, CMA_PLAZO_MS; encargo 55): hasta ahí, con texto_pagina, que no lo tiene; con el de
+    DataDome, el aviso de una página que todavía carga no se vería."""
+    texto = _cma_leer(page, _JS_CMA_TEXTO, CMA_PLAZO_MS)
+    return "we are improving the ebusiness area" in " ".join(str(texto or "").lower().split())
 
 
 @_con_la_nave_de_la_fila
 @_con_la_ruta_de_la_fila
-@_sin_clic_a_ciegas("cma")
+@_sin_clic_a_ciegas("cma", plazo_ms=CMA_PLAZO_MS)
 @_cma_si_se_detuvo
 def reservar_cma(page, reserva, creds, reg, on_pausa=None):
     """CMA-CGM (Click & Book): ruta + cotización, carga reefer, itinerario, ajustes
@@ -11616,7 +11815,11 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
         try:
             page.goto("https://www.cma-cgm.com/ebusiness/shipment/request",
                       wait_until="domcontentloaded")
-            _cma_esperar_desafio(page, reg, on_pausa, creds=creds)
+            # Si DataDome pide deslizar la flecha y nadie la desliza, la reserva no sigue (encargo 55): hasta ahí se
+            # cortaba en el origen, y al mirar DataDome en ese corte se lo volvía a pedir al operador.
+            if not _cma_esperar_desafio(page, reg, on_pausa, creds=creds):
+                _cma_interrumpir(page, reg, "al abrir el formulario",
+                                 CMA_SIN_DESLIZAR.format(seg=CMA_ESPERA_DESLIZADOR), f, creds)
             esperar_hasta(page, "#pol", 8, reg, "cargar Click & Book", asentar=1.2)
         except Exception as e:
             reg.info(f"goto: {str(e)[:45]}")
@@ -11697,6 +11900,9 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
             raise ObjetivoNoEncontrado("Origen de CMA", _sugerencia_que_elegir(reserva["pol"]))
         det.append("POL")
         esperar(page, 0.8)
+        # DataDome a mitad de la reserva (decisión de Marcelo, encargo 55): se mira entre un paso y otro, y antes de la
+        # guarda, sin tocar nada (_cma_datadome_a_mitad).
+        _cma_datadome_a_mitad(page, reg, on_pausa, creds, "tras el origen", f)
 
         if modo == "ramp_separado":
             if not _cma_puerto(page, "#pod", dest_orig, reg, "POD", evidencia=f"cma_f{f}_destino_{modo}"):
@@ -11725,6 +11931,7 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
                 aviso = f" (con el puerto, CMA avisó: «{ultimo_aviso}»)" if ultimo_aviso else ""
                 raise ObjetivoNoEncontrado("Lugar de entrega de CMA", _sugerencia_que_elegir(dest_p) + aviso)
             det.append("entrega=" + ent)
+        _cma_datadome_a_mitad(page, reg, on_pausa, creds, "tras el destino", f)
 
         _fecha()
         if _cotizacion():
@@ -11744,7 +11951,8 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
         # Lo que dejó «Validar ruta» al terminar la espera que ya existe, respondiera o no el portal: la captura de la
         # ventana y el HTML, sin clics, teclas, esperas ni navegación. Va después de leer el aviso, para que esa lectura,
         # que decide el camino, siga en el mismo instante (decisión de Marcelo, CICLO-cola-tres-items.md).
-        _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_validar_{modo}", "tras «Validar ruta»", completa=False)
+        _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_validar_{modo}", "tras «Validar ruta»", completa=False,
+                                      plazo_ms=CMA_PLAZO_MS)
         if ultimo_aviso and "no matching" in ultimo_aviso.lower():
             reg.paso("CMA rechaza la combinacion: " + ultimo_aviso)
             if modo == "puerto":
@@ -11752,6 +11960,7 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
             return ("REVISAR",
                     f"CMA: la cotizacion {contrato or '(sin contrato)'} no cubre "
                     f"{reserva['pol']} -> {dest_display}. Portal: {ultimo_aviso}")
+        _cma_datadome_a_mitad(page, reg, on_pausa, creds, "tras «Validar ruta»", f)
 
         # RUTA ACEPTADA (o sin respuesta del portal): continuar con el flujo completo mapeado de la grabación
         _cma_anunciar_ruta(reg, estado)
@@ -11759,7 +11968,8 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
 
         # 1. Información extra si aparece el modal/formulario
         try:
-            if page.locator("text=/extra information|Tamaño y tipo/i").count() or page.get_by_placeholder("Enter HS code").count():
+            if (_cma_cuantos(page, page.locator("text=/extra information|Tamaño y tipo/i"))
+                    or _cma_cuantos(page, page.get_by_placeholder("Enter HS code"))):
                 ok_info = _cma_completar_info_extra(page, reserva, reg)
                 if not ok_info:
                     reg.info("reintentando información extra de carga...")
@@ -11768,6 +11978,7 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
             reg.info(f"info extra: {str(e)[:40]}")
 
         # 2. Selección de itinerario (Route choices)
+        _cma_datadome_a_mitad(page, reg, on_pausa, creds, "tras la información de la carga", f)
         ok_itin, detalle_itin = _cma_seleccionar_itinerario(page, reserva, reg)
         reg.captura(page, f"cma_f{f}_4_itinerario", full=True)
         if not ok_itin:
@@ -11775,9 +11986,11 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
             return ("REVISAR", detalle_itin)
 
         # 3. Ajustes Reefer (-20°C)
+        _cma_datadome_a_mitad(page, reg, on_pausa, creds, "tras elegir la ruta", f)
         _cma_ajustes_reefer(page, reserva, reg)
 
         # 4. Comentarios corporativos
+        _cma_datadome_a_mitad(page, reg, on_pausa, creds, "tras el panel Reefer", f)
         _cma_comentarios(page, reg)
 
         # 5. Llegar a la pantalla 'Envío de la reserva'
@@ -11785,7 +11998,7 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
         try:
             page.keyboard.press("Escape")
             esperar(page, 0.5)
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            _cma_js(page, "() => window.scrollTo(0, document.body.scrollHeight)")
             esperar(page, 1.5)
             _cma_marcar_i_agree(page, reg)
             esperar(page, 1.0)
@@ -11793,7 +12006,8 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
             reg.info(f"check agree err: {str(e)[:40]}")
 
         reg.captura(page, f"cma_f{f}_5_review", full=True)
-        _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_guarda")
+        _cma_datadome_a_mitad(page, reg, on_pausa, creds, "en «Envío de la reserva»", f)
+        _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_guarda", plazo_ms=CMA_PLAZO_MS)
         if not es_modo_emision():
             reg.paso("Me DETENGO en 'Envío de la reserva' antes de emitir (NO se pulsa Enviar el booking).")
             return ("OK-EJEMPLO", f"CMA armada hasta Envío de la reserva (nave: {reserva['nave']}); SIN emitir")
@@ -11803,7 +12017,7 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
             pulsado, error = None, None
             try:
                 pulsado = _pulsar_boton(page, "button:has-text('Enviar el booking'), button:has-text('Send booking'), "
-                                              "button:has-text('Submit booking')")
+                                              "button:has-text('Submit booking')", plazo_ms=CMA_PLAZO_MS)
                 if pulsado:
                     esperar(page, 4.0)
                 esperar(page, 5.0)
@@ -11812,7 +12026,7 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
             # CMA no tiene forma medida (sus capturas tras el envío no muestran confirmación): no
             # llega a EMITIDA hasta que se mida (CICLO-numero-booking.md).
             return _resultado_envio(page, reg, "cma", "CMA", f"cma_f{f}_6_confirmado", "Enviar el booking", pulsado,
-                                    error)
+                                    error, plazo_ms=CMA_PLAZO_MS)
 
     return ("REVISAR", f"CMA: no logre validar la ruta. Ultimo aviso: {ultimo_aviso or 'sin aviso'}")
 
@@ -13121,7 +13335,10 @@ def _web_worker_login(usuario, navieras):
 def _web_pausa(mensaje):
     """Los portales que piden una accion manual (la validacion de COSCO) avisan
     por aca. La pagina muestra un boton 'Ya lo resolvi' y el proceso sigue en
-    cuanto el operador lo pulsa; no se queda esperando un tiempo fijo."""
+    cuanto el operador lo pulsa; no se queda esperando un tiempo fijo. Devuelve cómo terminó, para log.txt
+    (_pausa_del_panel; decisión de Marcelo, encargo 55): PAUSA_RESUELTA, PAUSA_DETENIDA o PAUSA_VENCIDA. «Detener»
+    también suelta la pausa, así que se mira primero: hasta el encargo 55, el registro del panel decía «Continuando
+    (paso manual resuelto)» también entonces."""
     ev = _th.Event()
     with _LOCK:
         _WEB["pausa"] = ev
@@ -13129,16 +13346,20 @@ def _web_pausa(mensaje):
     _westado("Te toca a ti: resuelve el paso en el navegador")
     _wlog("*** ACCIÓN MANUAL REQUERIDA ***")
     _wlog(str(mensaje))
+    como = PAUSA_VENCIDA
     for _ in range(300):                    # hasta 10 minutos de margen
+        if _WEB["detener"] and _WEB["detener"].is_set():
+            como = PAUSA_DETENIDA
+            break
         if ev.is_set():
             _wlog("▸ Continuando (paso manual resuelto).")
-            break
-        if _WEB["detener"] and _WEB["detener"].is_set():
+            como = PAUSA_RESUELTA
             break
         _time.sleep(2)
     with _LOCK:
         _WEB["pausa"] = None
         _WEB["pausa_msg"] = ""
+    return como
 
 
 # ------------------------------------------------------------

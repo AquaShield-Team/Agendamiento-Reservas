@@ -848,6 +848,43 @@ class TestUtilitarios(soporte.CasoAQ):
         self.assertEqual(esperas, [25, 3])
         reg.cerrar()
 
+    def test_pausa_del_panel_en_log(self):
+        # Decisión de Marcelo, encargo 55 (CICLO-pausa-plazos-y-datadome.md): la pausa del panel queda en log.txt,
+        # cuándo empieza (la hora de la línea) y por qué, y cuándo termina y cómo, o si se cortó. Hasta ahí solo la
+        # veía el registro del panel: el 2026-10-06, log.txt quedó 6 minutos sin escribir.
+        m = self.mod
+        reloj = types.SimpleNamespace(t=100.0)
+        reloj.time = lambda: reloj.t
+        casos = [(m.PAUSA_RESUELTA, 12, "· ▶ La pausa terminó a los 12 s: el operador pulsó «Ya lo resolví»."),
+                 (m.PAUSA_DETENIDA, 3, "· ⛔ La pausa se cortó a los 3 s: el operador pulsó «Detener»."),
+                 (m.PAUSA_VENCIDA, 600, "· ⛔ La pausa se cortó a los 600 s: pasaron 10 minutos sin que el operador la "
+                                        "resolviera."),
+                 (None, 7, "· ▶ La pausa terminó a los 7 s.")]          # el panel Tkinter no dice cómo terminó
+        for como, seg, fin in casos:
+            with self.subTest(como=como):
+                vistas = []
+                reg = m.Registro(self.sb / "pausa_panel" / "log.txt", on_log=vistas.append)
+                self.addCleanup(reg.cerrar)
+
+                def on_pausa(mensaje, como=como, seg=seg):
+                    reloj.t += seg
+                    return como
+                with mock.patch.object(m, "time", reloj):
+                    self.assertEqual(m.pausa_manual(reg, on_pausa, "MSC pide una validación.\nResuélvela."), como)
+                self.assertEqual([v.split("] ", 1)[1] for v in vistas],
+                                 ["· ⏸ PAUSA: espero al operador. Por qué: MSC pide una validación. Resuélvela.", fin])
+        # Si el panel falla, lo anota y la falla sigue su camino.
+        vistas = []
+        reg = m.Registro(self.sb / "pausa_panel" / "log.txt", on_log=vistas.append)
+        self.addCleanup(reg.cerrar)
+
+        def rompe(mensaje):
+            raise RuntimeError("el panel se cerró")
+        with mock.patch.object(m, "time", reloj), self.assertRaises(RuntimeError):
+            m.pausa_manual(reg, rompe, "x")
+        self.assertEqual(vistas[-1].split("] ", 1)[1],
+                         "· ⛔ La pausa se cortó a los 0 s: falló el panel (RuntimeError: el panel se cerró).")
+
     def test_argumentos_de_chrome(self):
         base = ["--start-maximized", "--disable-blink-features=AutomationControlled"]
         casos = {None: base + ["--force-device-scale-factor=0.65", "--high-dpi-support=1"],

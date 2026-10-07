@@ -232,6 +232,30 @@ class CasoAQ(unittest.TestCase):
 
 
 # --- Playwright y página falsos ---
+# El envoltorio con que _evaluar_con_plazo le pasa su argumento a un JavaScript (encargo 55).
+_ENVUELTO = ("(_raiz, arg) => (", "\n)(arg)")
+
+
+class RaizFalsa:
+    """El localizador ':root' de una página o un marco falsos: por él lee el programa con plazo (_evaluar_con_plazo,
+    encargos 54 y 55). La pregunta de si la página responde («() => true») dice que sí; el título es el de la página
+    (title); lo demás lo responde el evaluate de la página, con su JavaScript desenvuelto si traía argumento, y queda
+    anotado donde ella lo anote. Así, una página falsa de antes lee igual con plazo que sin él."""
+
+    def __init__(self, alcance):
+        self.alcance = alcance
+
+    def evaluate(self, js, *a, timeout=None):
+        if js == "() => true":
+            return True
+        if js == "() => document.title" and hasattr(self.alcance, "title"):
+            return self.alcance.title()
+        abre, cierra = _ENVUELTO
+        if js.startswith(abre) and js.endswith(cierra):
+            return self.alcance.evaluate(js[len(abre):-len(cierra)], *a)
+        return self.alcance.evaluate(js)
+
+
 class PaginaFalsa:
     def __init__(self, texto="", url="about:blank", titulo="", frames=None):
         self.texto, self.url, self._titulo = texto, url, titulo
@@ -241,6 +265,12 @@ class PaginaFalsa:
 
     def evaluate(self, js, *a):
         return self.texto(js, *a) if callable(self.texto) else self.texto
+
+    def locator(self, sel):
+        """Solo ':root' (RaizFalsa): lo que el programa lee con plazo. Ningún otro, como antes."""
+        if sel == ":root":
+            return RaizFalsa(self)
+        raise AttributeError(f"PaginaFalsa no tiene locator({sel!r})")
 
     def title(self):
         return self._titulo

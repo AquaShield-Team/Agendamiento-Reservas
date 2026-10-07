@@ -21,6 +21,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
 from io import BytesIO
 from pathlib import Path
@@ -759,8 +760,10 @@ class TestPanelCorridas(PanelBase):
         self.assertEqual(n.pw.contextos[0].pages[0].capturas, [("error_cosco_rsv_1.png", False)])
 
     def test_pausa_y_continuar(self):
+        comos = []
+
         def respuesta(nav, rsv, on_pausa):
-            on_pausa("resuelve el paso de prueba")
+            comos.append(on_pausa("resuelve el paso de prueba"))
             return ("OK-EJEMPLO", "siguió tras la pausa")
         with Navieras(self.mod, respuesta=respuesta):
             self.srv.json("/api/correr", {"hoja": "HYUNDAI", "usuario": "op_prueba", "filas": [5], "modo": False})
@@ -776,10 +779,14 @@ class TestPanelCorridas(PanelBase):
             e = self.srv.esperar_fin()
         self.assertEqual(e["resultados"]["5"]["detalle"], "siguió tras la pausa")
         self.assertFalse(e["pausa"])
+        # La pausa dice cómo terminó, para log.txt (encargo 55).
+        self.assertEqual(comos, [self.mod.PAUSA_RESUELTA])
 
     def test_detener(self):
+        comos = []
+
         def respuesta(nav, rsv, on_pausa):
-            on_pausa("esperando para detener")
+            comos.append(on_pausa("esperando para detener"))
             return ("OK-EJEMPLO", "fila tras detener")
         with Navieras(self.mod, respuesta=respuesta) as n:
             self.srv.json("/api/correr", {"hoja": "MAERSK", "usuario": "op_prueba", "filas": [5, 6],
@@ -794,6 +801,9 @@ class TestPanelCorridas(PanelBase):
         self.assertEqual([r[1] for r in n.reservas], [5])            # la fila 6 ya no se procesa
         self.assertTrue(n.pw.contextos[0].cerrado)
         self.assertTrue(any("Detenido por el operador" in l for l in e["lineas"]))
+        # «Detener» corta la pausa, y ella lo dice, para log.txt (encargo 55); el panel ya no dice «Continuando».
+        self.assertEqual(comos, [self.mod.PAUSA_DETENIDA])
+        self.assertFalse(any("Continuando (paso manual resuelto)" in l for l in e["lineas"]))
 
     def test_modo_login(self):
         self.assertEqual(self.srv.json("/api/login", {"usuario": "op_prueba", "navieras": ["xx"]}),
@@ -808,6 +818,47 @@ class TestPanelCorridas(PanelBase):
         self.assertEqual(e["estado"], "Sesiones abiertas.")
         self.assertGreaterEqual(demora, 6)          # deja el navegador abierto 6 s antes de cerrarlo
         self.assertEqual(Path(n.pw.lanzamientos[0]["user_data_dir"]), self.sb / "perfiles" / "op_prueba")
+
+
+class TestPausaDelPanel(soporte.CasoAQ):
+    """Cómo termina la pausa del panel web (_web_pausa), para que quede en log.txt (decisión de Marcelo, encargo 55,
+    CICLO-pausa-plazos-y-datadome.md): con «Ya lo resolví», con «Detener», o a los 10 minutos sin respuesta."""
+
+    def pausa(self, dormir):
+        m = self.mod
+        with m._LOCK:
+            m._WEB.update(detener=threading.Event(), log=[], base=0)
+        try:
+            with mock.patch.object(m, "_time", types.SimpleNamespace(sleep=dormir, time=time.time)):
+                como = m._web_pausa("resuelve el paso de prueba")
+            with m._LOCK:
+                return como, list(m._WEB["log"]), (m._WEB["pausa"], m._WEB["pausa_msg"])
+        finally:
+            with m._LOCK:
+                m._WEB.update(detener=None, log=[], base=0, pausa=None, pausa_msg="")
+
+    def test_termina_con_ya_lo_resolvi(self):
+        def dormir(s):
+            self.mod._WEB["pausa"].set()            # el operador pulsa «Ya lo resolví» mientras espera
+        como, log, quedo = self.pausa(dormir)
+        self.assertEqual((como, quedo), (self.mod.PAUSA_RESUELTA, (None, "")))
+        self.assertEqual(log, ["*** ACCIÓN MANUAL REQUERIDA ***", "resuelve el paso de prueba",
+                               "▸ Continuando (paso manual resuelto)."])
+
+    def test_detener_la_corta(self):
+        # «Detener» también suelta la pausa (/api/detener): se mira primero. Hasta el encargo 55, el registro del panel
+        # decía «Continuando (paso manual resuelto)» también entonces.
+        def dormir(s):
+            self.mod._WEB["detener"].set()
+            self.mod._WEB["pausa"].set()
+        como, log, quedo = self.pausa(dormir)
+        self.assertEqual((como, quedo), (self.mod.PAUSA_DETENIDA, (None, "")))
+        self.assertNotIn("▸ Continuando (paso manual resuelto).", log)
+
+    def test_vence_a_los_diez_minutos(self):
+        dormidas = []
+        como, _, quedo = self.pausa(dormidas.append)
+        self.assertEqual((como, len(dormidas), sum(dormidas), quedo), (self.mod.PAUSA_VENCIDA, 300, 600, (None, "")))
 
 
 def puertos_seguidos(n=4, intentos=200):

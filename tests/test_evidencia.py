@@ -73,6 +73,12 @@ class SoloLee:
     def content(self):
         return "<body>sintetico</body>"
 
+    def locator(self, sel):
+        if sel == ":root":                       # el HTML que la evidencia lee con plazo (CMA, encargo 55)
+            return soporte.RaizFalsa(self)
+        self.prohibidos.append("locator")
+        raise AttributeError("locator")
+
     def __getattr__(self, nombre):
         self.prohibidos.append(nombre)
         raise AttributeError(nombre)
@@ -175,11 +181,11 @@ class TestCadaReservadorLaDeja(soporte.CasoAQ):
     """Justo antes de la guarda, como sentencia suelta (su resultado no decide nada), con el prefijo de las
     capturas de su naviera y la fila."""
 
-    def _deja(self, nombre):
+    def _deja(self, nombre, plazo=""):
         previa = justo_antes_de_la_guarda(funciones(self.mod)[nombre])
         self.assertIsInstance(previa, ast.Expr, f"{nombre}: la evidencia no va justo antes de la guarda")
         self.assertEqual(ast.unparse(previa),
-                         f"_evidencia_antes_de_la_guarda(page, reg, f'{PREFIJOS[nombre]}_f{{f}}_guarda')")
+                         f"_evidencia_antes_de_la_guarda(page, reg, f'{PREFIJOS[nombre]}_f{{f}}_guarda'{plazo})")
 
     def test_one(self):
         self._deja("reservar_one")
@@ -188,7 +194,7 @@ class TestCadaReservadorLaDeja(soporte.CasoAQ):
         self._deja("reservar_msc")
 
     def test_cma(self):
-        self._deja("reservar_cma")
+        self._deja("reservar_cma", ", plazo_ms=CMA_PLAZO_MS")      # su HTML, con plazo (encargo 55)
 
     def test_cosco(self):
         self._deja("reservar_cosco")
@@ -481,7 +487,7 @@ class LocPanel:
     def filter(self, has_text=None, visible=None):
         return self
 
-    def evaluate(self, js, *a):
+    def evaluate(self, js, *a, **k):                  # k: el plazo con que lo lee el programa (encargo 55)
         if js == self.pagina.mod._JS_CMA_REEFER_GUARDAR:
             self.pagina.eventos.append(("js", "del panel"))
             return self.pagina.del_panel
@@ -526,6 +532,8 @@ class PanelReefer(Pantalla):
         pass
 
     def locator(self, sel):
+        if sel == ":root":                       # lo que el programa lee con plazo (encargo 55)
+            return soporte.RaizFalsa(self)
         return LocPanel(self, sel)
 
     def wait_for_timeout(self, ms):
@@ -768,7 +776,7 @@ class TestEvidenciaValidarRutaCma(ConRegistro):
     su aviso, CMA deja la captura de la ventana y el HTML de esa pantalla, sin clics, teclas, esperas ni navegación
     nuevas; si guardarla falla, lo avisa y la reserva sigue (decisión de Marcelo, CICLO-cola-tres-items.md)."""
     LLAMADA = ("_evidencia_antes_de_la_guarda(page, reg, f'cma_f{f}_validar_{modo}', 'tras «Validar ruta»', "
-               "completa=False)")
+               "completa=False, plazo_ms=CMA_PLAZO_MS)")
 
     def tramo(self):
         """En reservar_cma, las cuatro sentencias que preceden a la evidencia, la evidencia y la que la sigue."""
@@ -1021,6 +1029,8 @@ class PaginaRutasCma(PaginaRemark):
         self.lecturas, self.rutas = list(lecturas), 10
 
     def locator(self, sel):
+        if sel == ":root":                       # lo que el programa lee con plazo (encargo 55)
+            return soporte.RaizFalsa(self)
         if sel != "a, button, [role=link], [role=button]":
             return types.SimpleNamespace(count=lambda: 1)
         pagina = self
@@ -1248,6 +1258,8 @@ class PaginaSugerencias(Pantalla):
         Path(path).write_bytes(b"")
 
     def locator(self, sel):
+        if sel == ":root":                       # lo que el programa lee con plazo (encargo 55)
+            return soporte.RaizFalsa(self)
         return LocSugerencias(self, sel)
 
     def get_by_role(self, *a, **k):

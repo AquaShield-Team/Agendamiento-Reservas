@@ -272,11 +272,14 @@ class TestSinClicACiegas(ConRegistro):
                 decorados[r] = decos
                 # Desde el encargo 28, antes va el de la fila sin nave (CICLO-solo-la-nave-pedida.md); desde el 42,
                 # entre los dos, el de la fila sin puerto de carga o sin destino (CICLO-maersk-y-fila-sin-ruta.md);
-                # desde el 50, en COSCO, por fuera de todos, el del puerto traducido (CICLO-msc-segundo-intento.md); y
-                # desde el 54, en CMA, por dentro de todos, el de CMA detenida (CICLO-cma-acceso-restringido.md).
+                # desde el 50, en COSCO, por fuera de todos, el del puerto traducido (CICLO-msc-segundo-intento.md);
+                # desde el 54, en CMA, por dentro de todos, el de CMA detenida (CICLO-cma-acceso-restringido.md); y
+                # desde el 55, el de CMA guarda con plazo el HTML del paso sin objetivo
+                # (CICLO-pausa-plazos-y-datadome.md).
+                plazo = ", plazo_ms=CMA_PLAZO_MS" if r == "reservar_cma" else ""
                 self.assertEqual(decos, (["_con_el_puerto_de_cosco"] if r == "reservar_cosco" else [])
                                  + ["_con_la_nave_de_la_fila", "_con_la_ruta_de_la_fila",
-                                    f"_sin_clic_a_ciegas({prefijo!r})"]
+                                    f"_sin_clic_a_ciegas({prefijo!r}{plazo})"]
                                  + (["_cma_si_se_detuvo"] if r == "reservar_cma" else []), r)
         self.assertEqual(sorted(decorados), sorted(self.CORTAN))
 
@@ -343,8 +346,11 @@ class PaginaHastaLaRuta(soporte.PaginaFalsa):
     con ellos (también con los de get_by_text, get_by_role, get_by_placeholder y get_by_label), cada acción de la
     página (ACCIONES), del teclado y del mouse, cada dirección que se abre y cada JavaScript que se corre, con el que el
     programa también pulsa. Solo no anota el que guarda el HTML de la evidencia (el que trae «getHTML»), que solo lee
-    (revisiones del encargo 42). Sin un __getattr__ general: lo que la página no tiene (main_frame, content) sigue
-    fallando."""
+    (revisiones del encargo 42), ni las dos lecturas con que CMA mira si DataDome está (el código HTTP del documento y
+    el texto, LECTURAS_DE_DATADOME; encargo 55), que tampoco tocan nada. Sin un __getattr__ general: lo que la página no
+    tiene (main_frame, content) sigue fallando."""
+    LECTURAS_DE_DATADOME = ("performance.getEntriesByType('navigation')",
+                            "() => document.body ? document.body.innerText")
     ACCIONES = ("fill", "click", "dblclick", "type", "press", "select_option", "check", "uncheck", "hover",
                 "dispatch_event", "set_input_files", "tap", "focus")
 
@@ -363,6 +369,8 @@ class PaginaHastaLaRuta(soporte.PaginaFalsa):
         return lambda *a, **k: self.eventos.append((donde, nombre))
 
     def locator(self, sel):
+        if sel == ":root":                       # lo que el programa lee con plazo (encargo 55)
+            return soporte.RaizFalsa(self)
         return LocalizadorALaVista(self.eventos, sel)
 
     def get_by_text(self, texto, **k):
@@ -378,7 +386,7 @@ class PaginaHastaLaRuta(soporte.PaginaFalsa):
         return LocalizadorALaVista(self.eventos, f"etiqueta={texto}")
 
     def evaluate(self, js, *a):
-        if "getHTML" not in js:
+        if "getHTML" not in js and not any(m in js for m in self.LECTURAS_DE_DATADOME):
             self.eventos.append(("javascript", js[:40]))
         return super().evaluate(js, *a)
 
@@ -464,7 +472,7 @@ class TestSinSugerenciaNoSigue(ConRegistro):
         "reservar_hyundai": dict(esperar_hasta=_si, _hmm_realclick=_nada, esperar=_nada),
         "reservar_maersk": dict(_mk_listo_para_reservar=_si, _maersk_cookies=_nada, _mk_got_it=_nada, esperar_hasta=_si,
                                 esperar=_nada),
-        "reservar_cma": dict(_cma_esperar_desafio=_nada, esperar_hasta=_si, esperar=_nada,
+        "reservar_cma": dict(_cma_esperar_desafio=_si, esperar_hasta=_si, esperar=_nada,
                              _cma_esperar_resultado=lambda *a, **k: "aviso",
                              _cma_aviso=lambda *a, **k: "No matching quotation for this route"),
     }
@@ -2298,7 +2306,7 @@ class LocFalso:
         self.pagina.filtros.append((self.sel, getattr(has_text, "pattern", has_text), visible))
         return self
 
-    def evaluate(self, js, *a):
+    def evaluate(self, js, *a, **k):                  # k: el plazo con que lo lee el programa (encargo 55)
         return self.pagina.evaluate(js, *a)
 
     def count(self):
@@ -2340,6 +2348,8 @@ class PaginaCma(soporte.PaginaFalsa):
                                               type=lambda t, delay=None: self.teclas.append(t))
 
     def locator(self, sel):
+        if sel == ":root":                       # lo que el programa lee con plazo (encargo 55)
+            return soporte.RaizFalsa(self)
         return LocFalso(self, sel)
 
     def get_by_placeholder(self, texto):
@@ -2377,7 +2387,7 @@ class TestCma(ConRegistro):
                    "nave": "CMA CGM NAVE PRUEBA", "dia_carga": ""}
         motivo = "el portal de CMA está en mantenimiento"
         buscados = []
-        cambios = dict(_cma_esperar_desafio=lambda *a, **k: None, esperar_hasta=lambda *a, **k: True,
+        cambios = dict(_cma_esperar_desafio=lambda *a, **k: True, esperar_hasta=lambda *a, **k: True,
                        _cma_puerto=lambda page, sel, *a, **k: buscados.append(sel) or False)
         reg, vistas, log = self.corrida("cma_mantenimiento")
         pagina = PaginaCmaPortal("Inicio\nWe are improving the eBusiness area\nStart: September 26 from 7 PM CEST")
@@ -2543,6 +2553,8 @@ console.log(JSON.stringify([
                 return self.rutas.pop(0) if len(self.rutas) > 1 else self.rutas[0]
 
             def locator(self, sel):
+                if sel == ":root":                   # la pregunta de si la página responde (encargo 55)
+                    return soporte.RaizFalsa(self)
                 pagina = self
                 assert sel == "a, button, [role=link], [role=button]", sel
 
@@ -2838,8 +2850,8 @@ console.log(JSON.stringify(f()));
         """El JavaScript de _cma_comentarios que busca el campo y escribe (va dentro de la función)."""
         tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
         f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_cma_comentarios")
-        return next(c.args[0].value for c in ast.walk(f) if isinstance(c, ast.Call) and c.args
-                    and isinstance(c.args[0], ast.Constant) and "allTa" in str(c.args[0].value))
+        return next(a.value for c in ast.walk(f) if isinstance(c, ast.Call) for a in c.args
+                    if isinstance(a, ast.Constant) and "allTa" in str(a.value))
 
     def test_js_comentarios_solo_en_su_campo(self):
         def correr(campos):

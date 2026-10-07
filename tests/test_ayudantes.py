@@ -492,6 +492,9 @@ class Marco:
     def __init__(self, url="", titulo="", texto=""):
         self.url, self._t, self._x = url, titulo, texto
 
+    def locator(self, sel):
+        return soporte.RaizFalsa(self)          # el programa lee el marco con plazo (encargo 55)
+
     def title(self):
         return self._t
 

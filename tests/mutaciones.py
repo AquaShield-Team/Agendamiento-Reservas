@@ -18,6 +18,10 @@ AVISO_CONSOLA = '    try:\n        print(texto, flush=True)\n    except Exceptio
 LLAVE_OTRA = CAND + "test_llave_config_con_otro_valor_no_abre_y_avisa"
 LLAVE_LOG = CAND + "test_aviso_va_al_log_de_la_corrida"
 LLAVE_WEB = "test_web.TestPanelRutas.test_llave_invalida_se_avisa_en_pantalla"
+# El decorador _sin_clic_a_ciegas de cada reservador, como está escrito: desde el encargo 55, el de CMA guarda con plazo
+# el HTML del paso sin objetivo.
+SIN_CLIC = {p: f'@_sin_clic_a_ciegas("{p}")\n' for p in ("one", "msc", "cosco", "hmm", "mk")}
+SIN_CLIC["cma"] = '@_sin_clic_a_ciegas("cma", plazo_ms=CMA_PLAZO_MS)\n'
 
 MUTACIONES = [
     # --- Arnés: importar no tiene efectos ---
@@ -370,7 +374,7 @@ MUTACIONES += [
     dict(id="robot-no-mira-url", pruebas=[AY + "TestCMA.test_robotcheck_cma"],
          viejo='if "captcha-delivery.com" in u or "datadome" in u:', nuevo='if "datadome" in u:'),
     dict(id="robot-no-mira-iframes", pruebas=[AY + "TestCMA.test_robotcheck_cma"],
-         viejo='hay_ifr = bool(page.evaluate(', nuevo='hay_ifr = False and bool(page.evaluate('),
+         viejo='hay_ifr = bool(_cma_leer(page, ', nuevo='hay_ifr = False and bool(_cma_leer(page, '),
     dict(id="robot-pagina-que-falla-revienta", pruebas=[AY + "TestCMA.test_robotcheck_cma_pagina_que_falla"],
          viejo=FIN_ROBOT, nuevo=FIN_ROBOT.replace("        pass\n", "        raise\n")),
     dict(id="reefer-otra-temperatura", pruebas=[AY + "TestReefer.test_temperatura_reefer"],
@@ -636,7 +640,8 @@ MUTACIONES += [
          viejo='seg = int(os.environ.get("AQUASHIELD_PAUSA_SEG", "25"))',
          nuevo='seg = int(os.environ.get("AQUASHIELD_PAUSA_SEG", "20"))'),
     dict(id="pausa-no-avisa-al-panel", pruebas=[UT + "test_pausa_manual"],
-         viejo='    if on_pausa:\n        on_pausa(mensaje); return', nuevo='    if on_pausa:\n        return'),
+         viejo='    if on_pausa:\n        return _pausa_del_panel(reg, on_pausa, mensaje)\n',
+         nuevo='    if on_pausa:\n        return\n'),
     dict(id="chrome-otro-zoom", pruebas=[UT + "test_argumentos_de_chrome"],
          viejo='zoom = float(os.environ.get("AQUASHIELD_ZOOM", "0.65"))', nuevo='zoom = float(os.environ.get("AQUASHIELD_ZOOM", "0.7"))'),
     dict(id="chrome-otro-minimo", pruebas=[UT + "test_argumentos_de_chrome"],
@@ -686,7 +691,7 @@ LP = "test_envio.TestLecturaDelPanel."
 EST = "test_planilla.TestEstadosNuevos."
 LEE_NUMERO = ("    if pulsado is not False and not rechazo and not error_portal:\n"
               "        bkg = numero_tras_envio(page, naviera)\n")
-EVIDENCIA = "    _guardar_evidencia(page, reg, evidencia)\n    if pulsado is False:\n"
+EVIDENCIA = "    _guardar_evidencia(page, reg, evidencia, plazo_ms=plazo_ms)\n    if pulsado is False:\n"
 AVISO_HTML = ("            reg.paso(f\"⚠ No pude guardar el HTML {'de la página' if i == 0 else f'del marco {i}'} \"\n"
               "                     f\"{momento}: {_texto_error(e)}\")")
 BOOL_JS = "    return bool(alcance.evaluate(js) if arg is None else alcance.evaluate(js, arg))"
@@ -968,7 +973,7 @@ MUTACIONES += [
     dict(id="cma-falla-sin-guardar-el-error", pruebas=[RS + "test_cma_decide_con_lo_que_vio"],
          viejo=FIN_CMA, nuevo=FIN_CMA.replace("                error = e\n", "                pass\n")),
     dict(id="cma-vuelve-al-extractor-viejo", pruebas=[RS + "test_cma_decide_con_lo_que_vio"],
-         viejo=DECIDE_CMA + "                                    error)",
+         viejo=DECIDE_CMA + "                                    error, plazo_ms=CMA_PLAZO_MS)",
          nuevo='            bkg_num = extraer_numero_booking(page, "CMA")\n'
                '            return ("EMITIDA", f"CMA emitida exitosamente; Bkg: {bkg_num or \'Ver captura\'}")'),
     dict(id="cma-evidencia-sin-la-fila", pruebas=[RS + "test_cma_decide_con_lo_que_vio"],
@@ -1055,7 +1060,10 @@ MUTACIONES += [
 SC = "test_clics.TestSinClicACiegas."
 EVIDENCIA_CORTE = ("                _evidencia_antes_de_la_guarda(page, reg, f\"{prefijo}_f{(reserva or {}).get('fila')}"
                    "_sin_objetivo\",\n                                              \"en el paso sin objetivo\", "
-                   "completa=False)\n")
+                   "completa=False, plazo_ms=plazo_ms)\n")
+# La condición del «Guardar» del panel Reefer (desde el encargo 55, contado y leído con plazo).
+REEFER_GUARDAR = ("        if _cma_cuantos(page, btn_g) != 1 or not btn_g.evaluate(_JS_CMA_REEFER_GUARDAR, "
+                  "timeout=CMA_PLAZO_MS):\n")
 FG ="test_clics.TestFotoDeClicsGenericos.test_ningun_clic_generico_nuevo_antes_de_la_guarda"
 O1 = "test_clics.TestOne."
 
@@ -1129,7 +1137,7 @@ TEMPERATURA_CMA_CORTA = "        if donde != \"ok\":\n            raise Objetivo
 
 MUTACIONES += [
     dict(id="cma-sin-decorador", pruebas=[SC + "test_cada_reservador_que_corta_esta_decorado"],
-         viejo='@_sin_clic_a_ciegas("cma")\n', nuevo=""),
+         viejo=SIN_CLIC["cma"], nuevo=""),
     dict(id="cma-tamano-el-primer-desplegable", pruebas=[C1 + "test_tamano_y_tipo_no_abre_el_primer_desplegable", FG],
          viejo="            \"input[placeholder*='Seleccionar' i]\",\n            \".el-form-item:has-text('Tamaño y tipo') input\",\n",
          nuevo="            \"input[placeholder*='Seleccionar' i]\",\n            \".el-select input\",\n"
@@ -1280,7 +1288,8 @@ MUTACIONES += [
 EG = "test_evidencia.TestEvidenciaEnLaGuarda."
 LD = "test_evidencia.TestCadaReservadorLaDeja."
 CAPTURA_EG = "        png = reg.captura(page, nombre, pagina_entera=completa)\n"
-HTML_EG = "        guardados, total, sin_shadow = _guardar_html_completo(page, reg, nombre, momento)\n"
+HTML_EG = ("        guardados, total, sin_shadow = _guardar_html_completo(page, reg, nombre, momento, "
+           "plazo_ms=plazo_ms)\n")
 FALLA_EG = ('        reg.paso(f"⚠ No pude guardar la evidencia {momento} ({nombre}): {_texto_error(e)}. '
             '{_EVIDENCIA_SIGUE}")\n')
 TRY_EG = "    try:\n" + CAPTURA_EG + HTML_EG + "    except Exception as e:\n" + FALLA_EG + "        return\n"
@@ -1328,7 +1337,8 @@ MUTACIONES += [
     dict(id="guarda-msc-sin-evidencia", pruebas=[LD + "test_msc", LD + "test_solo_ahi"],
          viejo='    _evidencia_antes_de_la_guarda(page, reg, f"msc_f{f}_guarda")\n', nuevo=""),
     dict(id="guarda-cma-sin-evidencia", pruebas=[LD + "test_cma", LD + "test_solo_ahi"],
-         viejo='        _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_guarda")\n', nuevo=""),
+         viejo='        _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_guarda", plazo_ms=CMA_PLAZO_MS)\n',
+         nuevo=""),
     dict(id="guarda-cosco-sin-evidencia", pruebas=[LD + "test_cosco", LD + "test_solo_ahi"],
          viejo='    _evidencia_antes_de_la_guarda(page, reg, f"cosco_f{f}_guarda")\n', nuevo=""),
     dict(id="guarda-hyundai-sin-evidencia", pruebas=[LD + "test_hyundai", LD + "test_solo_ahi"],
@@ -1418,9 +1428,9 @@ MUTACIONES += [
 # --- CMA: la evidencia dentro del panel Reefer (CICLO-cma-reefer-y-fecha-maersk.md) ---
 ER_ = "test_evidencia.TestEvidenciaReefer."
 PANEL_R = ('        _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_reefer_panel", "en el panel Reefer", '
-           'completa=False)\n')
+           'completa=False,\n                                      plazo_ms=CMA_PLAZO_MS)\n')
 GUARDADO_R = ('        _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_reefer_guardado", "tras guardar el panel Reefer",\n'
-              '                                      completa=False)\n')
+              '                                      completa=False, plazo_ms=CMA_PLAZO_MS)\n')
 PANEL_Y_GUARDADO = ER_ + "test_el_panel_abierto_y_tras_guardarlo"
 
 MUTACIONES += [
@@ -1971,7 +1981,7 @@ MUTACIONES += [
          viejo='        raise ObjetivoNoEncontrado(f"{etiqueta} de CMA", f"la sugerencia del puerto «{ciudad}» (por su texto) que deja "\n                                                         f"el código del puerto en el campo")\n',
          nuevo='        page.keyboard.press("ArrowDown"); esperar(page, 0.4); page.keyboard.press("Enter")\n'),
     dict(id='teclado-cma-tamano', pruebas=[C1 + "test_tamano_y_mercancia_no_eligen_con_el_teclado", FG],
-         viejo='            raise ObjetivoNoEncontrado("Tamaño y tipo de CMA", "la opción «40\' Reefer High Cube» en el desplegable "\n                                                               "(por su texto)")\n',
+         viejo='            raise ObjetivoNoEncontrado("Tamaño y tipo de CMA", "la opción «40\' Reefer High Cube» en el desplegable "\n                                                               "(por su texto)" + (f", porque {CMA_SIN_RESPUESTA}"\n                                                                                   if sin_respuesta else ""))\n',
          nuevo='            page.keyboard.press("ArrowDown"); esperar(page, 0.4); page.keyboard.press("Enter")\n'),
     dict(id='teclado-cma-mercancia', pruebas=[C1 + "test_tamano_y_mercancia_no_eligen_con_el_teclado", FG],
          viejo='            raise ObjetivoNoEncontrado("Mercancía de CMA", "la sugerencia que dice «030313» en la lista (por su "\n                                                           "texto)")\n',
@@ -2107,10 +2117,11 @@ MUTACIONES += [
          viejo="    if (bloques.length > 1) return 'varios-campos';\n",
          nuevo=''),
     dict(id='cma-reefer-guarda-a-ciegas', pruebas=[C1 + "test_reefer_corta_en_cada_paso_sin_pulsar_a_ciegas", FG],
-         viejo='        if btn_g.count() != 1 or not btn_g.evaluate(_JS_CMA_REEFER_GUARDAR):\n',
-         nuevo='        if not btn_g.count():\n            btn_g = page.locator(".el-drawer .el-button--primary, [role=\'dialog\'] .el-button--primary")\n        if btn_g.count() != 1 or not btn_g.evaluate(_JS_CMA_REEFER_GUARDAR):\n'),
+         viejo=REEFER_GUARDAR,
+         nuevo=('        if not btn_g.count():\n            btn_g = page.locator(".el-drawer .el-button--primary, '
+                '[role=\'dialog\'] .el-button--primary")\n' + REEFER_GUARDAR)),
     dict(id='cma-reefer-guarda-sin-mirar-el-panel', pruebas=[C1 + "test_reefer_corta_en_cada_paso_sin_pulsar_a_ciegas", ER_ + "test_sin_el_guardar_del_panel_no_pulsa_ni_deja_lo_guardado"],
-         viejo=' or not btn_g.evaluate(_JS_CMA_REEFER_GUARDAR)',
+         viejo=' or not btn_g.evaluate(_JS_CMA_REEFER_GUARDAR, timeout=CMA_PLAZO_MS)',
          nuevo=''),
     dict(id='cma-reefer-guarda-otro-texto', pruebas=[C1 + "test_reefer_corta_en_cada_paso_sin_pulsar_a_ciegas"],
          viejo='has_text=_r.compile(r"^\\s*Guardar\\s*$", _r.I), visible=True)',
@@ -2492,7 +2503,8 @@ MUTACIONES += [
          viejo='f"hmm_f{f}_naves", "en la lista de naves"', nuevo='f"hmm_f{f}_naves", "en la lista"'),
     dict(id="cma-rutas-sin-evidencia", pruebas=[RC + "test_la_lista_antes_de_leerla",
                                                 RC + "test_y_otra_tras_cada_carga", LD + "test_solo_ahi"],
-         viejo='        _evidencia_antes_de_la_guarda(page, reg, nombre, "en la lista de rutas", completa=False)\n',
+         viejo=('        _evidencia_antes_de_la_guarda(page, reg, nombre, "en la lista de rutas", completa=False,\n'
+                '                                      plazo_ms=CMA_PLAZO_MS)\n'),
          nuevo=""),
     dict(id="cma-rutas-un-solo-nombre", pruebas=[RC + "test_y_otra_tras_cada_carga"],
          viejo='        sufijo = "" if not cargas else "_mas" if cargas == 1 else f"_mas{cargas}"\n',
@@ -2637,8 +2649,8 @@ MUTACIONES += [
         ("if nave_especificada else [])\n",
          'if nave_especificada else [])\n    sig_toks = [t for t in toks if t not in {"MSC", "CMA", "CGM", "HMM", "ONE", '
          '"COSCO", "MV"}] or toks\n'),
-        ('res = page.evaluate(_JS_CMA_RUTAS, {"toks": toks})',
-         'res = page.evaluate(_JS_CMA_RUTAS, {"toks": toks, "sigToks": sig_toks})'),
+        ('res = _cma_js(page, _JS_CMA_RUTAS, {"toks": toks})',
+         'res = _cma_js(page, _JS_CMA_RUTAS, {"toks": toks, "sigToks": sig_toks})'),
         ("const matched = _traeLaNave(upperTxt, toks);",
          "const matched = _traeLaNave(upperTxt, toks) || _traeLaNave(upperTxt, args.sigToks || []);")]),
     dict(id="cma-comodin-se-busca", pruebas=[C1 + "test_itinerario_comodin_no_se_busca_como_nave"],
@@ -2806,7 +2818,8 @@ MUTACIONES += [
 # --- Encargo 27 · ítem 3: CMA deja la evidencia de la pantalla al terminar la espera de «Validar ruta», después de leer
 # su aviso (CICLO-cola-tres-items.md). ---
 VR = "test_evidencia.TestEvidenciaValidarRutaCma."
-EV_VR = '        _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_validar_{modo}", "tras «Validar ruta»", completa=False)\n'
+EV_VR = ('        _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_validar_{modo}", "tras «Validar ruta»", '
+         'completa=False,\n                                      plazo_ms=CMA_PLAZO_MS)\n')
 COMENTARIO_VR = ("        # Lo que dejó «Validar ruta» al terminar la espera que ya existe, respondiera o no el portal: la captura de la\n"
                  "        # ventana y el HTML, sin clics, teclas, esperas ni navegación. Va después de leer el aviso, para que esa lectura,\n"
                  "        # que decide el camino, siga en el mismo instante (decisión de Marcelo, CICLO-cola-tres-items.md).\n")
@@ -2881,8 +2894,8 @@ MUTACIONES += [
 ] + [
     dict(id=f"sin-nave-{nav}-sin-decorador", pruebas=[FSN + "test_ningun_reservador_abre_el_portal_sin_nave",
                                              SC + "test_cada_reservador_que_corta_esta_decorado"],
-         viejo=f'@_con_la_nave_de_la_fila\n@_con_la_ruta_de_la_fila\n@_sin_clic_a_ciegas("{pref}")\n',
-         nuevo=f'@_con_la_ruta_de_la_fila\n@_sin_clic_a_ciegas("{pref}")\n')
+         viejo='@_con_la_nave_de_la_fila\n@_con_la_ruta_de_la_fila\n' + SIN_CLIC[pref],
+         nuevo='@_con_la_ruta_de_la_fila\n' + SIN_CLIC[pref])
     for nav, pref in (("one", "one"), ("msc", "msc"), ("cosco", "cosco"), ("hyundai", "hmm"), ("maersk", "mk"), ("cma", "cma"))
 ] + [
     # CMA con su propia lista, como hasta a198645.
@@ -3682,10 +3695,12 @@ MUTACIONES += [
          viejo='    return "we are improving the ebusiness area" in',
          nuevo='    return "we are improving" in'),
     dict(id="cma-mant-con-saltos", pruebas=[CMA_AVISO],
-         viejo='" ".join(texto_pagina(page).split())\n', nuevo="texto_pagina(page)\n"),
+         viejo='" ".join(str(texto or "").lower().split())\n',
+         nuevo='str(texto or "").lower()\n'),
     dict(id="cma-mant-sin-leer", pruebas=[CMA_AVISO],
-         viejo='" ".join(texto_pagina(page).split())\n',
-         nuevo='(" ".join(texto_pagina(page).split()) or "we are improving the ebusiness area")\n'),
+         viejo='" ".join(str(texto or "").lower().split())\n',
+         nuevo=('(" ".join(str(texto or "").lower().split())\n'
+                '        or "we are improving the ebusiness area")\n')),
 ]
 
 # --- Encargo 31 · ítem 4: si la fila trae viaje y ninguna salida de la nave lo trae, MAERSK y COSCO cortan con motivo en
@@ -4129,8 +4144,8 @@ MUTACIONES += [
     dict(id="cma-cargar-sin-el-final", pruebas=[C_CARGAR],
          viejo='siguientes\\s+resultados\\s*$"', nuevo='siguientes\\s+resultados"'),
     dict(id="cma-cargar-tambien-ocultos", pruebas=[C_CARGAR],
-         viejo="    vistos = [e.nth(j) for j in range(e.count()) if e.nth(j).is_visible()]\n",
-         nuevo="    vistos = [e.nth(j) for j in range(e.count())]\n"),
+         viejo="    vistos = [e.nth(j) for j in range(_cma_cuantos(page, e)) if _cma_se_ve(page, e.nth(j))]\n",
+         nuevo="    vistos = [e.nth(j) for j in range(_cma_cuantos(page, e))]\n"),
     dict(id="cma-cargar-con-varios", pruebas=[C_CARGAR],
          viejo="    return (vistos[0] if len(vistos) == 1 else None, len(vistos))\n",
          nuevo="    return (vistos[0] if vistos else None, 1 if vistos else 0)\n"),
@@ -5303,7 +5318,7 @@ MUTACIONES += [
          nuevo='@_con_la_ruta_de_la_fila\n@_con_la_nave_de_la_fila\n@_sin_clic_a_ciegas("one")\n'),
 ] + [
     dict(id=f"ruta-{nav}-sin-decorador", pruebas=[FSR_DECORADOR, SC + "test_cada_reservador_que_corta_esta_decorado"],
-         viejo=f'@_con_la_ruta_de_la_fila\n@_sin_clic_a_ciegas("{pref}")\n', nuevo=f'@_sin_clic_a_ciegas("{pref}")\n')
+         viejo='@_con_la_ruta_de_la_fila\n' + SIN_CLIC[pref], nuevo=SIN_CLIC[pref])
     for nav, pref in (("one", "one"), ("msc", "msc"), ("cosco", "cosco"), ("hyundai", "hmm"), ("maersk", "mk"), ("cma", "cma"))
 ] + [
     # El panel web: la fila sin ruta va al portal, se abre el navegador sin filas, no queda el resultado, o en
@@ -5410,12 +5425,13 @@ SIN_LISTA_HMM = ('        if not picked and pendiente:\n'
                  '            _evidencia_sin_sugerencia(page, reg, evidencia, etiqueta)\n')
 SIN_LISTA_MK = '        if pendiente:\n            _evidencia_sin_sugerencia(page, reg, nombre, etiqueta)\n'
 SIN_LISTA_CMA = ('        if pendiente:\n'
-                 '            _evidencia_sin_sugerencia(page, reg, evidencia, etiqueta)\n'
+                 '            _evidencia_sin_sugerencia(page, reg, evidencia, etiqueta, plazo_ms=CMA_PLAZO_MS)\n'
                  '        val = _valor()\n')
 SIN_LISTA_ENTREGA = ('    if pendiente:\n'
-                     '        _evidencia_sin_sugerencia(page, reg, evidencia, "el lugar de entrega")\n')
+                     '        _evidencia_sin_sugerencia(page, reg, evidencia, "el lugar de entrega", '
+                     'plazo_ms=CMA_PLAZO_MS)\n')
 SIN_LISTA = ('    _evidencia_antes_de_la_guarda(page, reg, nombre, f"sin una sugerencia que elegir en {etiqueta}", '
-             'completa=False)\n')
+             'completa=False,\n                                  plazo_ms=plazo_ms)\n')
 
 MUTACIONES += [
     # Cada ayudante, sin dejarla: como hasta el encargo 42.
@@ -6641,7 +6657,7 @@ CLASIFICA = ('    if de_datadome:\n        return "otra" if any(de_datadome) els
 TRAE = '        if (partes.hostname or "").lower().endswith("captcha-delivery.com"):\n'
 HTTP_ENTERO = '    return estado if isinstance(estado, int) and not isinstance(estado, bool) else None\n'
 ROBOT_403 = '        if _cma_http(page) == 403:\n            return True\n'
-HTML_CMA = ('    guardados, total, _ = _guardar_html_completo(page, reg, nombre, "con CMA-CGM detenida",\n'
+HTML_CMA = ('    guardados, total, _ = _guardar_html_completo(page, reg, nombre, f"con CMA-CGM {como}",\n'
             '                                                 '
             'sin=_textos_de_la_cuenta(creds), plazo_ms=CMA_LECTURA_MS)\n')
 CAPTURA_CON_PLAZO = ('            page.screenshot(path=str(ruta), full_page=completa or bool(pagina_entera),\n'
@@ -6691,9 +6707,9 @@ MUTACIONES += [
          nuevo="    return alcance.evaluate(js)\n"),
     dict(id="e54-leer-otro-plazo", pruebas=[MEDIDO], viejo="CMA_LECTURA_MS = 1500\n", nuevo="CMA_LECTURA_MS = 15000\n"),
     dict(id="e54-leer-sin-atajar", pruebas=[RECONOCE, EVIDENCIA_CMA],
-         viejo=("        return _evaluar_con_plazo(alcance, js, CMA_LECTURA_MS)\n    except Exception:\n"
+         viejo=("        return _evaluar_con_plazo(alcance, js, plazo_ms)\n    except Exception:\n"
                 "        return None\n"),
-         nuevo=("        return _evaluar_con_plazo(alcance, js, CMA_LECTURA_MS)\n    except ValueError:\n"
+         nuevo=("        return _evaluar_con_plazo(alcance, js, plazo_ms)\n    except ValueError:\n"
                 "        return None\n")),
     dict(id="e54-http-cualquier-cosa", pruebas=[DD + "test_codigo_http_solo_entero"], viejo=HTTP_ENTERO,
          nuevo="    return estado\n"),
@@ -6781,7 +6797,7 @@ MUTACIONES += [
     # La reserva: sin el decorador, de vuelta al portal en la fila siguiente, sin el motivo, sin las credenciales para
     # la evidencia, la detención después de la guarda, o una detención que un `except Exception` se traga.
     dict(id="e54-reserva-sin-decorador", pruebas=[CLICK_BOOK, DECORADO],
-         viejo='@_sin_clic_a_ciegas("cma")\n@_cma_si_se_detuvo\n', nuevo='@_sin_clic_a_ciegas("cma")\n'),
+         viejo=SIN_CLIC["cma"] + '@_cma_si_se_detuvo\n', nuevo=SIN_CLIC["cma"]),
     dict(id="e54-reserva-vuelve-al-portal", pruebas=[CLICK_BOOK],
          viejo=('        motivo = _naviera_detenida(reg, "cma")\n        if motivo:\n'
                 '            return _no_enviada(reg, motivo)\n'),
@@ -6789,10 +6805,10 @@ MUTACIONES += [
     dict(id="e54-reserva-sin-motivo", pruebas=[CLICK_BOOK], viejo="            return _no_enviada(reg, e.motivo)\n",
          nuevo='            return (NO_ENVIADA, "")\n'),
     dict(id="e54-reserva-sin-credenciales-para-la-evidencia", pruebas=[CLICK_BOOK],
-         viejo=('            _cma_esperar_desafio(page, reg, on_pausa, creds=creds)\n'
-                '            esperar_hasta(page, "#pol"'),
-         nuevo=('            _cma_esperar_desafio(page, reg, on_pausa)\n'
-                '            esperar_hasta(page, "#pol"')),
+         viejo=('            if not _cma_esperar_desafio(page, reg, on_pausa, creds=creds):\n'
+                '                _cma_interrumpir(page, reg, "al abrir el formulario",\n'),
+         nuevo=('            if not _cma_esperar_desafio(page, reg, on_pausa):\n'
+                '                _cma_interrumpir(page, reg, "al abrir el formulario",\n')),
     dict(id="e54-reserva-detenida-despues-de-la-guarda",
          pruebas=[RS + "test_lo_que_detiene_no_corre_despues_de_la_guarda"],
          viejo='            return _resultado_envio(page, reg, "cma", "CMA", f"cma_f{f}_6_confirmado"',
@@ -6816,4 +6832,308 @@ MUTACIONES += [
          nuevo="            or SIN_SESION.get(nav, MSC_SIN_SESION))\n"),
     dict(id="e54-naviera-detenida-nunca", pruebas=[CLICK_BOOK, CO_CMA, BLOQUEO_YA],
          viejo='    return (getattr(reg, "detenida", None) or {}).get(nav, "")\n', nuevo='    return ""\n'),
+]
+
+# --- Encargo 55: la pausa del panel en log.txt, toda lectura de las páginas de CMA-CGM con plazo, y DataDome a mitad
+# de una reserva de CMA-CGM (decisiones de Marcelo, CICLO-pausa-plazos-y-datadome.md). ---
+LP = "test_datadome.TestLecturasConPlazo."
+AM = "test_datadome.TestDataDomeAMitad."
+RD = "test_datadome.TestReservaConDataDome."
+PW = "test_web.TestPausaDelPanel."
+PAUSA_LOG = UT + "test_pausa_del_panel_en_log"
+DESLIZA = AM + "test_deslizador_lo_pasa_el_operador_y_la_fila_termina"
+COMO_ANTES = SD + "test_deslizador_como_antes"
+ENVUELTO = LP + "test_el_argumento_va_envuelto"
+RESPONDE = LP + "test_cuenta_y_mira_solo_si_la_pagina_responde"
+DETECTOR = LP + "test_el_detector_de_antes_lee_con_plazo"
+FOTO_PLAZO = LP + "test_ninguna_lectura_de_cma_sin_plazo"
+BOTON_FINAL = LP + "test_el_boton_final_solo_si_la_pagina_responde"
+EVIDENCIA_ENVIO = LP + "test_la_evidencia_del_envio_con_plazo"
+BOTON_LOGIN = LP + "test_el_login_mira_el_boton_con_plazo"
+PASA = AM + "test_verificacion_que_deja_pasar_termina_la_fila"
+BLOQUEO_A_MITAD = AM + "test_bloqueo_detiene_la_corrida"
+CORTE_BLOQUEO = RD + "test_corte_con_el_bloqueo_detiene_la_corrida"
+CORTE_SIN = RD + "test_corte_sin_datadome_sigue_como_antes"
+REVISAR_DD = RD + "test_revisar_con_datadome_termina_la_fila_y_la_corrida_sigue"
+ENTRE_PASOS = RD + "test_mira_entre_los_pasos_y_antes_de_la_guarda"
+SIN_RESPUESTA = LP + "test_lo_que_vale_sin_respuesta"
+PLAZOS = LP + "test_los_plazos_de_la_reserva_y_de_datadome"
+NO_DECIDE = "test_datadome.TestSinRespuestaNoDecide."
+ANADIR = NO_DECIDE + "test_no_pulsa_anadir_sin_saber_si_hace_falta"
+RAMP = NO_DECIDE + "test_no_elige_otra_sugerencia_que_la_de_la_regla"
+TAMANO = NO_DECIDE + "test_tamano_y_tipo_corta_sin_respuesta"
+FINAL_PAUSA = ('    if como in (PAUSA_DETENIDA, PAUSA_VENCIDA):\n'
+               '        reg.paso(f"⛔ La pausa se cortó a los {seg} s: {como}.")\n'
+               '    else:\n'
+               '        reg.paso(f"▶ La pausa terminó a los {seg} s" + (f": {como}." if como else "."))\n')
+VUELTA_PANEL = ('        if _WEB["detener"] and _WEB["detener"].is_set():\n'
+                '            como = PAUSA_DETENIDA\n'
+                '            break\n'
+                '        if ev.is_set():\n'
+                '            _wlog("▸ Continuando (paso manual resuelto).")\n'
+                '            como = PAUSA_RESUELTA\n'
+                '            break\n')
+ENVUELTA = '    return alcance.locator(":root").evaluate(f"(_raiz, arg) => ({js}\\n)(arg)", arg, timeout=plazo_ms)\n'
+DESLIZADOR_PAUSA = ('        _pausa_del_panel(reg, on_pausa, "CMA CGM: desliza la flecha hacia la derecha en el '
+                    'navegador para continuar.")\n')
+CORTE_DD = ('            except ObjetivoNoEncontrado:\n'
+            '                _cma_datadome_a_mitad(page, reg, on_pausa, creds, '
+            '"en un paso que no encontró su objetivo", fila)\n'
+            '                raise\n')
+SI_REVISAR = '            if resultado and resultado[0] == "REVISAR":\n'
+EN_LA_GUARDA = '        _cma_datadome_a_mitad(page, reg, on_pausa, creds, "en «Envío de la reserva»", f)\n'
+EVIDENCIA_GUARDA_CMA = '        _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_guarda", plazo_ms=CMA_PLAZO_MS)\n'
+AL_ABRIR = ('            if not _cma_esperar_desafio(page, reg, on_pausa, creds=creds):\n'
+            '                _cma_interrumpir(page, reg, "al abrir el formulario",\n'
+            '                                 CMA_SIN_DESLIZAR.format(seg=CMA_ESPERA_DESLIZADOR), f, creds)\n')
+EMISION_CMA = '            reg.paso("EMISIÓN: Pulsando \'Enviar el booking\'...")\n'
+
+MUTACIONES += [
+    # La pausa del panel en log.txt: sin el porqué, sin cómo terminó, la cortada como terminada, sin los segundos, la
+    # falla del panel sin anotar o tragada, pausa_manual o el deslizador sin anotarla, y el texto de «Detener».
+    dict(id="e55-pausa-sin-por-que", pruebas=[PAUSA_LOG, DESLIZA, COMO_ANTES],
+         viejo="    reg.paso(f\"⏸ PAUSA: espero al operador. Por qué: {' '.join(str(mensaje).split())}\")\n",
+         nuevo='    reg.paso("⏸ PAUSA: espero al operador.")\n'),
+    dict(id="e55-pausa-sin-final", pruebas=[PAUSA_LOG, DESLIZA], viejo=FINAL_PAUSA, nuevo="    pass\n"),
+    dict(id="e55-pausa-detenida-como-terminada", pruebas=[PAUSA_LOG],
+         viejo="    if como in (PAUSA_DETENIDA, PAUSA_VENCIDA):\n", nuevo="    if como in (PAUSA_VENCIDA,):\n"),
+    dict(id="e55-pausa-vencida-como-terminada", pruebas=[PAUSA_LOG],
+         viejo="    if como in (PAUSA_DETENIDA, PAUSA_VENCIDA):\n", nuevo="    if como in (PAUSA_DETENIDA,):\n"),
+    dict(id="e55-pausa-sin-segundos", pruebas=[PAUSA_LOG], viejo="    seg = round(time.time() - t0)\n",
+         nuevo="    seg = 0\n"),
+    dict(id="e55-pausa-falla-sin-anotar", pruebas=[PAUSA_LOG],
+         viejo=('        reg.paso(f"⛔ La pausa se cortó a los {round(time.time() - t0)} s: falló el panel '
+                '({_texto_error(e)}).")\n'),
+         nuevo="        pass\n"),
+    dict(id="e55-pausa-falla-se-traga", pruebas=[PAUSA_LOG],
+         viejo='falló el panel ({_texto_error(e)}).")\n        raise\n',
+         nuevo='falló el panel ({_texto_error(e)}).")\n        return None\n'),
+    dict(id="e55-pausa-manual-sin-anotar", pruebas=[PAUSA_LOG],
+         viejo="        return _pausa_del_panel(reg, on_pausa, mensaje)\n", nuevo="        return on_pausa(mensaje)\n"),
+    dict(id="e55-deslizador-pausa-sin-anotar", pruebas=[COMO_ANTES, DESLIZA], viejo=DESLIZADOR_PAUSA,
+         nuevo=DESLIZADOR_PAUSA.replace("_pausa_del_panel(reg, on_pausa, ", "on_pausa(")),
+    dict(id="e55-pausa-otro-texto-de-detener", pruebas=[PAUSA_LOG],
+         viejo='PAUSA_DETENIDA = "el operador pulsó «Detener»"\n', nuevo='PAUSA_DETENIDA = "el operador la detuvo"\n'),
+    # La pausa del panel web: «Ya lo resolví» antes que «Detener», sin decir cómo terminó, la vencida como resuelta, o
+    # «Detener» sin decirlo.
+    dict(id="e55-web-pausa-continuar-antes-que-detener", pruebas=[PW + "test_detener_la_corta", CO + "test_detener"],
+         viejo=VUELTA_PANEL,
+         nuevo=VUELTA_PANEL[VUELTA_PANEL.index("        if ev.is_set()"):]
+         + VUELTA_PANEL[:VUELTA_PANEL.index("        if ev.is_set()")]),
+    dict(id="e55-web-pausa-no-dice",
+         pruebas=[PW + "test_termina_con_ya_lo_resolvi", PW + "test_vence_a_los_diez_minutos",
+                  CO + "test_pausa_y_continuar"],
+         viejo='        _WEB["pausa_msg"] = ""\n    return como\n',
+         nuevo='        _WEB["pausa_msg"] = ""\n    return None\n'),
+    dict(id="e55-web-pausa-vencida-como-resuelta", pruebas=[PW + "test_vence_a_los_diez_minutos"],
+         viejo="    como = PAUSA_VENCIDA\n", nuevo="    como = PAUSA_RESUELTA\n"),
+    dict(id="e55-web-pausa-detener-no-dice", pruebas=[PW + "test_detener_la_corta", CO + "test_detener"],
+         viejo="            como = PAUSA_DETENIDA\n            break\n", nuevo="            break\n"),
+    # Las lecturas con plazo: el argumento sin envolver o sin su salto de línea, None como sin argumento, la pregunta
+    # siempre que sí o sin plazo, count, is_visible y el JavaScript sin preguntar o sin plazo.
+    dict(id="e55-evaluar-sin-envoltura", pruebas=[ENVUELTO], viejo=ENVUELTA,
+         nuevo='    return alcance.locator(":root").evaluate(js, arg, timeout=plazo_ms)\n'),
+    dict(id="e55-evaluar-sin-salto", pruebas=[ENVUELTO], viejo="({js}\\n)(arg)", nuevo="({js})(arg)"),
+    dict(id="e55-evaluar-none-sin-argumento", pruebas=[ENVUELTO],
+         viejo="    if arg is _SIN_ARGUMENTO:\n        return alc",
+         nuevo="    if arg is _SIN_ARGUMENTO or arg is None:\n        return alc"),
+    dict(id="e55-responde-siempre", pruebas=[RESPONDE, BOTON_FINAL],
+         viejo='        return _evaluar_con_plazo(alcance, "() => true", plazo_ms) is True\n',
+         nuevo="        return True\n"),
+    dict(id="e55-responde-sin-plazo", pruebas=[RESPONDE, FOTO_PLAZO],
+         viejo='        return _evaluar_con_plazo(alcance, "() => true", plazo_ms) is True\n',
+         nuevo='        return alcance.evaluate("() => true") is True\n'),
+    dict(id="e55-cuantos-sin-preguntar", pruebas=[RESPONDE],
+         viejo="    return loc.count() if _cma_responde(page) else si_no_responde\n", nuevo="    return loc.count()\n"),
+    dict(id="e55-se-ve-sin-preguntar", pruebas=[RESPONDE],
+         viejo="    return loc.is_visible() if _cma_responde(page) else si_no_responde\n",
+         nuevo="    return loc.is_visible()\n"),
+    dict(id="e55-js-sin-plazo", pruebas=[FOTO_PLAZO],
+         viejo="    return _evaluar_con_plazo(alcance, js, CMA_PLAZO_MS, arg)\n",
+         nuevo="    return alcance.evaluate(js) if arg is _SIN_ARGUMENTO else alcance.evaluate(js, arg)\n"),
+    # El detector de antes, el login y la reserva leyendo otra vez sin plazo.
+    dict(id="e55-robotcheck-marco-titulo-sin-plazo", pruebas=[DETECTOR, FOTO_PLAZO],
+         viejo='                ftit = str(_cma_leer(fr, _JS_CMA_TITULO) or "").lower()\n',
+         nuevo='                ftit = (fr.title() or "").lower()\n'),
+    dict(id="e55-robotcheck-marco-texto-sin-plazo", pruebas=[DETECTOR, FOTO_PLAZO],
+         viejo='                ftxt = str(_cma_leer(fr, _JS_CMA_TEXTO) or "").lower()\n',
+         nuevo='                ftxt = (fr.evaluate(_JS_CMA_TEXTO) or "").lower()\n'),
+    dict(id="e55-robotcheck-pagina-sin-plazo", pruebas=[DETECTOR, FOTO_PLAZO],
+         viejo='        tit = str(_cma_leer(page, _JS_CMA_TITULO) or "").lower()\n',
+         nuevo='        tit = (page.title() or "").lower()\n'),
+    dict(id="e55-login-titulo-sin-plazo", pruebas=[FOTO_PLAZO],
+         viejo='        titulo = str(_cma_leer(page, _JS_CMA_TITULO) or "").lower()       # con plazo (encargo 55)\n',
+         nuevo='        titulo = (page.title() or "").lower()\n'),
+    dict(id="e55-login-menu-sin-plazo", pruebas=[FOTO_PLAZO],
+         viejo="            ab = _cma_js(page, _JS_CMA_MENU); reg.info",
+         nuevo="            ab = page.evaluate(_JS_CMA_MENU); reg.info"),
+    dict(id="e55-login-boton-sin-plazo", pruebas=[FOTO_PLAZO],
+         viejo='        click_si_existe(page, "button[type=\'submit\']", 5000, reg, plazo_ms=CMA_PLAZO_MS)\n',
+         nuevo='        click_si_existe(page, "button[type=\'submit\']", 5000, reg)\n'),
+    dict(id="e55-aviso-sin-plazo", pruebas=[FOTO_PLAZO], viejo='        return str(_cma_js(page, r"""()=>{',
+         nuevo='        return str(page.evaluate(r"""()=>{'),
+    dict(id="e55-rutas-sin-plazo", pruebas=[FOTO_PLAZO],
+         viejo='            res = _cma_js(page, _JS_CMA_RUTAS, {"toks": toks})\n',
+         nuevo='            res = page.evaluate(_JS_CMA_RUTAS, {"toks": toks})\n'),
+    dict(id="e55-temperatura-sin-plazo", pruebas=[FOTO_PLAZO],
+         viejo="        donde = _cma_js(page, _JS_CMA_REEFER_TEMPERATURA, temp)\n",
+         nuevo="        donde = page.evaluate(_JS_CMA_REEFER_TEMPERATURA, temp)\n"),
+    dict(id="e55-reefer-guardar-sin-plazo", pruebas=[FOTO_PLAZO],
+         viejo="btn_g.evaluate(_JS_CMA_REEFER_GUARDAR, timeout=CMA_PLAZO_MS)",
+         nuevo="btn_g.evaluate(_JS_CMA_REEFER_GUARDAR)"),
+    dict(id="e55-mantenimiento-sin-plazo", pruebas=[FOTO_PLAZO],
+         viejo="    texto = _cma_leer(page, _JS_CMA_TEXTO, CMA_PLAZO_MS)\n",
+         nuevo="    texto = texto_pagina(page)\n"),
+    dict(id="e55-sugerencias-cuentan-sin-preguntar", pruebas=[FOTO_PLAZO],
+         viejo="                if _cma_cuantos(page, li):\n", nuevo="                if li.count():\n"),
+    # Los ayudantes comunes que CMA llama con plazo: llamados sin él, o sin usarlo.
+    dict(id="e55-evidencia-del-puerto-sin-plazo", pruebas=[FOTO_PLAZO],
+         viejo=('f"con las sugerencias de {etiqueta}",\n'
+                '                                                      completa=False, plazo_ms=CMA_PLAZO_MS)\n'),
+         nuevo=('f"con las sugerencias de {etiqueta}",\n'
+                '                                                      completa=False)\n')),
+    dict(id="e55-sin-sugerencia-sin-plazo", pruebas=[FOTO_PLAZO],
+         viejo="_evidencia_sin_sugerencia(page, reg, evidencia, etiqueta, plazo_ms=CMA_PLAZO_MS)",
+         nuevo="_evidencia_sin_sugerencia(page, reg, evidencia, etiqueta)"),
+    dict(id="e55-sin-objetivo-sin-plazo",
+         pruebas=[FOTO_PLAZO, "test_clics.TestSinClicACiegas.test_cada_reservador_que_corta_esta_decorado"],
+         viejo=SIN_CLIC["cma"], nuevo='@_sin_clic_a_ciegas("cma")\n'),
+    dict(id="e55-sin-objetivo-ignora-el-plazo", pruebas=[CORTE_SIN],
+         viejo='"en el paso sin objetivo", completa=False, plazo_ms=plazo_ms)\n',
+         nuevo='"en el paso sin objetivo", completa=False)\n'),
+    dict(id="e55-evidencia-ignora-el-plazo", pruebas=[CORTE_SIN],
+         viejo="_guardar_html_completo(page, reg, nombre, momento, plazo_ms=plazo_ms)\n",
+         nuevo="_guardar_html_completo(page, reg, nombre, momento)\n"),
+    dict(id="e55-guarda-cma-sin-plazo", pruebas=[LD + "test_cma", FOTO_PLAZO], viejo=EVIDENCIA_GUARDA_CMA,
+         nuevo='        _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_guarda")\n'),
+    dict(id="e55-pulsar-sin-preguntar", pruebas=[BOTON_FINAL],
+         viejo="    if plazo_ms and not _responde(alcance, plazo_ms):\n        return False\n", nuevo=""),
+    dict(id="e55-envio-evidencia-ignora-el-plazo", pruebas=[EVIDENCIA_ENVIO],
+         viejo='_guardar_html_completo(page, reg, nombre, "tras el envío", plazo_ms=plazo_ms)\n',
+         nuevo='_guardar_html_completo(page, reg, nombre, "tras el envío")\n'),
+    dict(id="e55-resultado-sin-plazo", pruebas=[EVIDENCIA_ENVIO], viejo=EVIDENCIA,
+         nuevo=EVIDENCIA.replace(", plazo_ms=plazo_ms", "")),
+    dict(id="e55-envio-cma-sin-plazo",
+         pruebas=["test_envio.TestReservadores.test_cma_decide_con_lo_que_vio", FOTO_PLAZO],
+         viejo="\"button:has-text('Submit booking')\", plazo_ms=CMA_PLAZO_MS)\n",
+         nuevo="\"button:has-text('Submit booking')\")\n"),
+    dict(id="e55-click-si-existe-ignora-el-plazo", pruebas=[BOTON_LOGIN],
+         viejo=("                estado = int(_evaluar_con_plazo(page, _JS_ESTADO, plazo_ms, selector) if plazo_ms\n"
+                "                             else page.evaluate(_JS_ESTADO, selector)); err = \"\"; break\n"),
+         nuevo="                estado = int(page.evaluate(_JS_ESTADO, selector)); err = \"\"; break\n"),
+    # DataDome a mitad de la reserva: no mirar, mirar y seguir, la otra página sin el operador, sin el nombre de la
+    # fila, el deslizador sin pasar como pasado, sin la línea, la fila interrumpida que detiene la corrida o sin
+    # evidencia, la interrumpida que no es una detenida, siempre interrumpir, no esperar ni detener, el bloqueo en la
+    # espera, y lo medido.
+    dict(id="e55-a-mitad-no-mira", pruebas=[BLOQUEO_A_MITAD, PASA, CORTE_BLOQUEO],
+         viejo="    if not _cma_datadome(page):\n        return\n    reg.paso(f\"DataDome apareció",
+         nuevo="    return\n    reg.paso(f\"DataDome apareció"),
+    dict(id="e55-a-mitad-siempre-interrumpe", pruebas=[AM + "test_sin_datadome_no_hace_nada"],
+         viejo="    if not _cma_datadome(page):\n        return\n    reg.paso(f\"DataDome apareció",
+         nuevo="    if False:\n        return\n    reg.paso(f\"DataDome apareció"),
+    dict(id="e55-a-mitad-sigue-tras-pasar", pruebas=[PASA, REVISAR_DD],
+         viejo="    _cma_interrumpir(page, reg, donde, CMA_PASO_LA_VERIFICACION, fila, creds)\n", nuevo=""),
+    dict(id="e55-a-mitad-otra-sin-operador", pruebas=[AM + "test_otra_pagina_suya_va_al_operador"],
+         viejo='    if que in ("deslizador", "otra"):\n        deslizo',
+         nuevo='    if que == "deslizador":\n        deslizo'),
+    dict(id="e55-a-mitad-sin-nombre-de-fila", pruebas=[DESLIZA], viejo=', nombre=f"cma_f{fila}_robot_desafio")',
+         nuevo=")"),
+    dict(id="e55-a-mitad-sin-deslizar-como-deslizado", pruebas=[AM + "test_deslizador_que_nadie_desliza"],
+         viejo=("CMA_DESLIZADO if deslizo\n"
+                "                         else CMA_SIN_DESLIZAR.format(seg=CMA_ESPERA_DESLIZADOR), fila, creds)"),
+         nuevo="CMA_DESLIZADO, fila, creds)"),
+    dict(id="e55-a-mitad-sin-aviso", pruebas=[BLOQUEO_A_MITAD, CORTE_BLOQUEO],
+         viejo='    reg.paso(f"DataDome apareció a mitad de la reserva de CMA-CGM, {donde}.")\n', nuevo=""),
+    dict(id="e55-a-mitad-sin-esperar-ni-detener",
+         pruebas=[AM + "test_verificacion_que_no_deja_pasar_detiene_al_plazo", BLOQUEO_A_MITAD],
+         viejo="    que = _cma_sin_bloqueo_ni_espera(page, reg, creds)\n    if que in (\"deslizador\", \"otra\"):\n",
+         nuevo="    que = _cma_datadome(page)\n    if que in (\"deslizador\", \"otra\"):\n"),
+    dict(id="e55-a-mitad-sin-bloqueo-en-la-espera", pruebas=[AM + "test_deslizador_que_pasa_al_bloqueo_detiene"],
+         viejo=('        if _cma_datadome(page) == "bloqueo":\n'
+                '            _cma_detener(page, reg, CMA_ACCESO_RESTRINGIDO, "cma_acceso_restringido", creds)\n'),
+         nuevo=""),
+    dict(id="e55-deslizador-captura-sin-plazo", pruebas=[COMO_ANTES, DESLIZA],
+         viejo="    reg.captura(page, nombre, plazo_ms=CMA_CAPTURA_MS)\n", nuevo="    reg.captura(page, nombre)\n"),
+    dict(id="e55-interrumpida-detiene", pruebas=[PASA, REVISAR_DD],
+         viejo="    motivo = CMA_INTERRUMPIDA.format(donde=donde, que=que)\n",
+         nuevo=('    motivo = CMA_INTERRUMPIDA.format(donde=donde, que=que)\n'
+                '    vars(reg).setdefault("detenida", {})["cma"] = motivo\n')),
+    dict(id="e55-interrumpida-sin-evidencia", pruebas=[PASA],
+         viejo='    _cma_evidencia(page, reg, f"cma_f{fila}_datadome", "interrumpida", creds)\n', nuevo=""),
+    dict(id="e55-interrumpida-de-baseexception", pruebas=[AM + "test_lo_medido", REVISAR_DD],
+         viejo="class CmaInterrumpida(CmaDetenida):\n", nuevo="class CmaInterrumpida(BaseException):\n"),
+    dict(id="e55-espera-deslizador-otra", pruebas=[AM + "test_lo_medido"], viejo="CMA_ESPERA_DESLIZADOR = 180\n",
+         nuevo="CMA_ESPERA_DESLIZADOR = 120\n"),
+    dict(id="e55-motivo-de-la-interrumpida-otro", pruebas=[AM + "test_lo_medido"],
+         viejo='CMA_DESLIZADO = "el operador deslizó la flecha"\n',
+         nuevo='CMA_DESLIZADO = "el operador lo resolvió"\n'),
+    # El decorador: no mirar DataDome en el corte, tragárselo, no mirar REVISAR, mirarlo todo (también lo de después de
+    # la guarda), o mirar también los errores.
+    dict(id="e55-decorador-no-mira-el-corte", pruebas=[CORTE_BLOQUEO], viejo=CORTE_DD,
+         nuevo="            except ObjetivoNoEncontrado:\n                raise\n"),
+    dict(id="e55-decorador-se-traga-el-corte", pruebas=[RD + "test_el_decorador_no_se_traga_el_corte", CORTE_SIN],
+         viejo=CORTE_DD,
+         nuevo=CORTE_DD.replace("                raise\n", '                return _no_enviada(reg, "corte")\n')),
+    dict(id="e55-decorador-no-mira-revisar", pruebas=[REVISAR_DD], viejo=SI_REVISAR, nuevo="            if False:\n"),
+    dict(id="e55-decorador-mira-todo", pruebas=[RD + "test_despues_de_la_guarda_no_mira"], viejo=SI_REVISAR,
+         nuevo="            if resultado:\n"),
+    dict(id="e55-decorador-mira-los-errores", pruebas=[RD + "test_otra_falla_sale_sin_mirar"],
+         viejo="            except ObjetivoNoEncontrado:\n                _cma_datadome_a_mitad(",
+         nuevo="            except (ObjetivoNoEncontrado, Exception):\n                _cma_datadome_a_mitad("),
+    # La reserva: sin mirar tras el origen o en la guarda, mirar después de la evidencia de la guarda o después de la
+    # guarda, un REVISAR después de la guarda, y la que sigue sin el deslizador al abrir el formulario.
+    dict(id="e55-reserva-no-mira-tras-el-origen", pruebas=[ENTRE_PASOS],
+         viejo='        _cma_datadome_a_mitad(page, reg, on_pausa, creds, "tras el origen", f)\n', nuevo=""),
+    dict(id="e55-reserva-no-mira-en-la-guarda", pruebas=[ENTRE_PASOS], viejo=EN_LA_GUARDA, nuevo=""),
+    dict(id="e55-reserva-mira-despues-de-la-evidencia", pruebas=[ENTRE_PASOS],
+         viejo=EN_LA_GUARDA + EVIDENCIA_GUARDA_CMA, nuevo=EVIDENCIA_GUARDA_CMA + EN_LA_GUARDA),
+    dict(id="e55-reserva-mira-despues-de-la-guarda",
+         pruebas=[ENTRE_PASOS, RS + "test_lo_que_detiene_no_corre_despues_de_la_guarda"], viejo=EMISION_CMA,
+         nuevo=EMISION_CMA + '            _cma_datadome_a_mitad(page, reg, on_pausa, creds, "tras la guarda", f)\n'),
+    dict(id="e55-revisar-despues-de-la-guarda", pruebas=[RD + "test_revisar_solo_antes_de_la_guarda"],
+         viejo=EMISION_CMA,
+         nuevo=EMISION_CMA + '            if not reserva:\n                return ("REVISAR", "x")\n'),
+    dict(id="e55-formulario-sigue-sin-deslizar", pruebas=[RD + "test_deslizador_sin_pasar_al_abrir_el_formulario"],
+         viejo=AL_ABRIR, nuevo="            _cma_esperar_desafio(page, reg, on_pausa, creds=creds)\n"),
+    # Encargo 55, después de la revisión propia: las lecturas de la reserva y del login con CMA_PLAZO_MS, y las
+    # elecciones que una lectura sin respuesta no decide. Sin respuesta, 0 o False aunque se pida otra cosa; el campo
+    # que no se ve sin respuesta, la sugerencia de «ramp» o la opción de «Tamaño y tipo» elegidas igual, el JavaScript
+    # de respaldo sin respuesta, el motivo sin decir por qué; y cada plazo con el del otro.
+    dict(id="e55-cuantos-sin-respuesta-cero", pruebas=[SIN_RESPUESTA, RAMP, TAMANO],
+         viejo="    return loc.count() if _cma_responde(page) else si_no_responde\n",
+         nuevo="    return loc.count() if _cma_responde(page) else 0\n"),
+    dict(id="e55-se-ve-sin-respuesta-falso", pruebas=[SIN_RESPUESTA, ANADIR],
+         viejo="    return loc.is_visible() if _cma_responde(page) else si_no_responde\n",
+         nuevo="    return loc.is_visible() if _cma_responde(page) else False\n"),
+    dict(id="e55-anadir-sin-respuesta-pulsa", pruebas=[ANADIR],
+         viejo="_cma_se_ve(page, page.locator(sel).first, si_no_responde=True)",
+         nuevo="_cma_se_ve(page, page.locator(sel).first)"),
+    dict(id="e55-ramp-sin-respuesta-elige", pruebas=[RAMP],
+         viejo="        n = _cma_cuantos(page, ramp, si_no_responde=None)\n",
+         nuevo="        n = _cma_cuantos(page, ramp)\n"),
+    dict(id="e55-ramp-sin-respuesta-la-primera", pruebas=[RAMP],
+         viejo="            raise TimeoutError(CMA_SIN_RESPUESTA)\n", nuevo="            return li.first\n"),
+    dict(id="e55-tamano-sin-respuesta-cuenta-cero", pruebas=[TAMANO],
+         viejo="                n = _cma_cuantos(page, op, si_no_responde=None)\n                if n == 0:\n",
+         nuevo="                n = _cma_cuantos(page, op)\n                if n == 0:\n"),
+    dict(id="e55-tamano-sin-respuesta-js", pruebas=[TAMANO],
+         viejo="        if not sel_ok and not sin_respuesta:\n", nuevo="        if not sel_ok:\n"),
+    dict(id="e55-tamano-sin-respuesta-sin-motivo", pruebas=[TAMANO], viejo='f", porque {CMA_SIN_RESPUESTA}"',
+         nuevo='""'),
+    dict(id="e55-plazo-de-la-reserva-corto", pruebas=[PLAZOS], viejo="CMA_PLAZO_MS = 30000\n",
+         nuevo="CMA_PLAZO_MS = 1500\n"),
+    dict(id="e55-sin-respuesta-sin-plazo", pruebas=[PLAZOS],
+         viejo='CMA_SIN_RESPUESTA = f"la página no contestó en {CMA_PLAZO_MS // 1000} s"\n',
+         nuevo='CMA_SIN_RESPUESTA = "la página no contestó"\n'),
+    dict(id="e55-js-con-el-plazo-de-datadome", pruebas=[PLAZOS],
+         viejo="    return _evaluar_con_plazo(alcance, js, CMA_PLAZO_MS, arg)\n",
+         nuevo="    return _evaluar_con_plazo(alcance, js, CMA_LECTURA_MS, arg)\n"),
+    dict(id="e55-responde-con-el-plazo-de-datadome", pruebas=[PLAZOS, RESPONDE],
+         viejo="    return _responde(page, CMA_PLAZO_MS)\n", nuevo="    return _responde(page, CMA_LECTURA_MS)\n"),
+    dict(id="e55-mantenimiento-con-el-plazo-de-datadome", pruebas=[PLAZOS],
+         viejo="    texto = _cma_leer(page, _JS_CMA_TEXTO, CMA_PLAZO_MS)\n",
+         nuevo="    texto = _cma_leer(page, _JS_CMA_TEXTO)\n"),
+    dict(id="e55-leer-con-el-plazo-de-la-reserva", pruebas=[PLAZOS, DETECTOR],
+         viejo="def _cma_leer(alcance, js, plazo_ms=CMA_LECTURA_MS):\n",
+         nuevo="def _cma_leer(alcance, js, plazo_ms=CMA_PLAZO_MS):\n"),
 ]
