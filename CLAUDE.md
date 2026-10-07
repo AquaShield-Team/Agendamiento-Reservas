@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 AQUASHIELD · Agendamiento de Reservas (AquaChile): robot que lee una planilla Excel de reservas y, con
 Playwright sobre el Chrome instalado, entra a seis portales navieros (ONE, MSC, CMA-CGM, COSCO,
 HYUNDAI/HMM y MAERSK), arma cada booking y devuelve la planilla con el estado y el N° de reserva.
-Todo el programa vive en **un solo archivo, `AQUASHIELD.py` (~12 900 líneas)**. No hay
+Todo el programa vive en **un solo archivo, `AQUASHIELD.py` (~16 000 líneas)**. No hay
 `requirements.txt` ni linter; hay una red de verificación offline en `tests/` (ver su sección).
 
 **Qué asegura una reserva** (decisión de Marcelo, encargo 50, `CICLO-msc-segundo-intento.md`): solo el espacio de los
@@ -705,12 +705,13 @@ línea cambian). De arriba hacia abajo:
      `_pausa_del_panel`, que usan `pausa_manual` y el deslizador de CMA): cuándo empieza y por qué (el mensaje que ve
      el operador), y cuándo termina y cómo, o si se cortó, con los segundos. La hora la pone el Registro en cada línea.
      El panel web dice cómo terminó (`_web_pausa`): con «Ya lo resolví» (`PAUSA_RESUELTA`), con «Detener»
-     (`PAUSA_DETENIDA`) o a los 10 minutos sin respuesta (`PAUSA_VENCIDA`); el panel Tkinter no lo dice, y su línea
-     dice solo que terminó. Hasta ahí, de la pausa del deslizador de CMA log.txt no decía nada, y de las de
-     `pausa_manual`, solo «PAUSA: esperando acción manual del operador...», sin el porqué ni el final: el 2026-10-06,
-     en «Solo iniciar sesión», log.txt quedó 6 minutos sin escribir. «Detener» también suelta la pausa, y el panel
-     decía «Continuando (paso manual resuelto)» igual; desde el encargo 55 se mira primero. Lo vigilan `test_consola`
-     y `test_web`. Sin panel, en la consola, `pausa_manual` hace lo mismo que antes.
+     (`PAUSA_DETENIDA`) o a los 10 minutos sin respuesta (`PAUSA_VENCIDA`); el panel Tkinter lo dice solo cuando la
+     pausa termina sola (encargo 56, abajo), y si no, su línea dice solo que terminó. Hasta ahí, de la pausa del
+     deslizador de CMA log.txt no decía nada, y de las de `pausa_manual`, solo «PAUSA: esperando acción manual del
+     operador...», sin el porqué ni el final: el 2026-10-06, en «Solo iniciar sesión», log.txt quedó 6 minutos sin
+     escribir. «Detener» también suelta la pausa, y el panel decía «Continuando (paso manual resuelto)» igual; desde el
+     encargo 55 se mira primero. Lo vigilan `test_consola` y `test_web`. Sin panel, en la consola, `pausa_manual` hace
+     lo mismo que antes.
    - **La pausa puede terminar sola** (decisión de Marcelo, encargo 56, `CICLO-pausa-sola-y-comentarios.md`): con
      `hasta`, una función sin argumentos, el panel la mira mientras espera, después de cada espera de 2 s, y si
      devuelve algo, la pausa termina con eso, y log.txt lo dice («▶ La pausa terminó a los N s: DataDome dejó pasar

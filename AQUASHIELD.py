@@ -1079,13 +1079,14 @@ PAUSA_VENCIDA = "pasaron 10 minutos sin que el operador la resolviera"
 def _pausa_del_panel(reg, on_pausa, mensaje, hasta=None):
     """La pausa del panel en log.txt (decisión de Marcelo, encargo 55, CICLO-pausa-plazos-y-datadome.md): cuándo empieza
     y por qué (el mensaje que ve el operador), y cuándo termina y cómo, o si se cortó; la hora la pone el Registro en
-    cada línea. on_pausa es la del panel web (_web_pausa, que dice cómo terminó) o la del panel Tkinter (que no lo
-    dice). Hasta el encargo 55, de la pausa del deslizador de CMA log.txt no decía nada, y de las de pausa_manual, solo
-    «PAUSA: esperando acción manual del operador...», sin el porqué ni el final: el 2026-10-06, en «Solo iniciar
-    sesión», log.txt quedó 6 minutos sin escribir. Si on_pausa falla, lo anota y deja pasar la falla. Devuelve lo que
-    devolvió. Con 'hasta' (decisión de Marcelo, encargo 56, CICLO-pausa-sola-y-comentarios.md), una función sin
-    argumentos que el panel llama mientras espera: si devuelve algo, la pausa termina sola, y eso dice cómo (la del
-    deslizador de CMA, cuando DataDome deja pasar la página o la bloquea: _cma_como_quedo)."""
+    cada línea. on_pausa es la del panel web (_web_pausa, que dice cómo terminó) o la del panel Tkinter (que lo dice
+    solo cuando termina sola, con 'hasta': encargo 56). Hasta el encargo 55, de la pausa del deslizador de CMA log.txt
+    no decía nada, y de las de pausa_manual, solo «PAUSA: esperando acción manual del operador...», sin el porqué ni el
+    final: el 2026-10-06, en «Solo iniciar sesión», log.txt quedó 6 minutos sin escribir. Si on_pausa falla, lo anota y
+    deja pasar la falla. Devuelve lo que devolvió. Con 'hasta' (decisión de Marcelo, encargo 56,
+    CICLO-pausa-sola-y-comentarios.md), una función sin argumentos que el panel llama mientras espera: si devuelve
+    algo, la pausa termina sola, y eso dice cómo (la del deslizador de CMA, cuando DataDome deja pasar la página o la
+    bloquea: _cma_como_quedo)."""
     reg.paso(f"⏸ PAUSA: espero al operador. Por qué: {' '.join(str(mensaje).split())}")
     t0 = time.time()
     try:
