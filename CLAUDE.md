@@ -288,14 +288,41 @@ cerrado:
   comentarios; lo que busca cada paso, en `CMA_TAMANO_Y_TIPO`, `CMA_CAMPO_PESO`, `CMA_REEFER_GUARDADO` y
   `CMA_CASILLA_I_AGREE`.
   - Ninguna reserva llega al botón final sin la temperatura guardada: el panel Reefer corta si falla antes de pulsar
-    su «Guardar». Que el portal la haya guardado no se comprueba (residual del encargo 57).
+    su «Guardar» y, desde el encargo 58, antes de comprobar que el portal la guardó (abajo).
   - Hasta ahí, cuando no encontraban su objetivo ya cortaban (`ObjetivoNoEncontrado`); las otras fallas las
     anotaban («tamaño y tipo err», «peso err», «ajustes reefer err», «check agree err») y la reserva seguía sin el
     paso. En `logs/` no pasó nunca: las 14 reservas que llegaron a la guarda hicieron los cuatro.
   - Lo que falle después de terminarlos, como antes. «I Agree» va en su propio paso, `_cma_i_agree_en_el_envio`;
     hasta el encargo 57 iba escrito dentro de `reservar_cma`.
-  - La mercancía (el HS 030313) y la cantidad siguen anotando su falla y la reserva sigue: no estaban en la
-    decisión.
+  - **La mercancía también corta** (decisión de Marcelo, encargo 58, `CICLO-temperatura-y-puerto.md`): si el
+    programa falla antes de elegir la sugerencia «030313» (`CMA_MERCANCIA`), corta con `_cma_fallo`; hasta ahí,
+    «mercancía err» y la reserva seguía. Las 14 de `logs/` que llegaron a la guarda la eligieron; las 5 del 21-09 que
+    la anotaron y reintentaron la información extra no llegaron a la guarda: con el corte, quedan NO ENVIADA ahí.
+  - **La cantidad sigue como antes, por un FRENA SI del encargo 58:** sus selectores (`.el-input-number input`,
+    `input[role='spinbutton']`, un placeholder «Cantidad») no calzan con el campo del portal, que es un `input` sin
+    tipo, sin clase y sin placeholder dentro del `.el-form-item` con la etiqueta «Cantidad» y el valor 1 (medido en los
+    59 HTML guardados con el formulario). En las 14 reservas que llegaron a la guarda, `log.txt` no trae ningún
+    «cantidad:»: el paso nunca la escribió, y la reserva fue con el 1 del portal. Cortar como los otros pasos las habría
+    dejado NO ENVIADA a las 14; lo decide Marcelo.
+- **CMA comprueba que el portal guardó la temperatura** (decisión de Marcelo, encargo 58,
+  `CICLO-temperatura-y-puerto.md`): después del «Guardar» del panel Reefer y de su evidencia
+  (`cma_f<fila>_reefer_guardado`), `_cma_temperatura_guardada` lee la página con `_JS_CMA_TEMPERATURA_GUARDADA` hasta
+  `CMA_LECTURAS_TEMPERATURA` veces (20), cada 0,5 s, sin clics ni teclas, y la da por guardada solo con las tres
+  señales medidas (`_cma_lo_que_falta_de_la_temperatura`):
+  - ningún elemento con la clase `reefer-drawer` (el cajón del panel);
+  - la insignia de la fila Reefer (cada `.capsule` de la `.capsule-container` del único botón «Modifique el reefer»)
+    sin «to complete»;
+  - una sola temperatura en «Operando en» (el `<dd>` que sigue a ese `<dt>` en `.cargo-wrapper--info-details-item`),
+    igual a la que escribió.
+
+  Si no, NO ENVIADA (`ObjetivoNoEncontrado`, «Temperatura guardada de CMA», con lo que faltó en la última lectura), con
+  la captura y el HTML del paso; si la lectura falla, corta con `_cma_fallo`. Medido en los HTML guardados, corriendo
+  ese JavaScript en un Chromium sin red: los 9 de después del «Guardar» y los 9 de la guarda la dan por guardada, y los
+  10 con el panel abierto no (9 por el cajón, y el del 24-09, que no lo trae, por «to complete»). Las señales salen solo
+  de lo que trae el HTML guardado: no mira si algo se ve. Las 5 reservas del 21-09 que llegaron a la guarda no tienen
+  HTML, y sus capturas de la revisión no muestran la carga: con ellas no se pudo medir. Hasta el encargo 58, con solo
+  pulsar el «Guardar» la daba por guardada, y lo que fallaba después se anotaba («ajustes reefer err») y la reserva
+  seguía.
 - **Ampliar la búsqueda** (decisiones de Marcelo, `CICLO-ampliar-la-busqueda.md` y `CICLO-ampliar-msc-y-cma.md`) trae
   clics nuevos antes de la guarda, cada uno por su texto: en MAERSK, el único botón con el nombre accesible
   «Search more sailing options» (`MK_BOTON_MAS`, exacto); en COSCO, el único campo «Sailing Within N Weeks» y su opción
@@ -591,6 +618,12 @@ python -m playwright show-trace "logs\<carpeta>\traza.zip"
     corre (`_ceder_al_previo` decide igual en las dos preguntas; revisión del encargo 51); y si tampoco contesta,
     prueba otra vez el puerto, por si se soltó mientras tanto. Desde el encargo 53 lo hace en los cuatro puertos, antes
     de tomar uno (`_puerto_libre`).
+  - **Antes de dar el puerto por de otro programa, lo vuelve a probar** hasta `PUERTO_SE_SUELTA` s (1; hipótesis), cada
+    0,05 s, solo enlazándolo (`_puerto_se_suelta`; decisión de Marcelo, encargo 58, `CICLO-temperatura-y-puerto.md`):
+    cuando quien escuchaba se cierra mientras el lanzador le pregunta, la pregunta vuelve con el reset un instante antes
+    de que Windows suelte el puerto. Medido sin red: el `bind` hecho enseguida falló en 3 de 20 corridas con el equipo
+    quieto y en 8 de 40 con la CPU ocupada, y se pudo enlazar a los 11 ms o menos. Hasta ahí, lo probaba una sola vez y
+    tomaba el siguiente (5 de 30 corridas, medido en el encargo 57).
   - Hasta el encargo 52 solo miraba el 8765, y a quien no lo dejaba libre lo cerraba con `taskkill /F` (el pid que daba
     netstat), fuera o no de AQUASHIELD. El 2026-10-05 escuchaba ahí `servidor_sync.py`, que no es de AQUASHIELD, y el
     lanzador lo habría cerrado (medido sin red, con un servidor ajeno en su lugar).
@@ -612,7 +645,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 713 pruebas al 2026-10-07 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 723 pruebas al 2026-10-08 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -644,7 +677,9 @@ segunda tardó 1.185 s (encargo 53).
   lo soltaba con un `threading.Timer` a los 2 s, mientras la segunda pregunta del lanzador esperaba: la pregunta
   volvía con el reset de la conexión y, con la CPU ocupada, el lanzador probaba el puerto antes de que Windows lo
   soltara, y tomaba el siguiente (5 de 30 corridas del mismo caso; 0 de 20 con el equipo quieto). Desde el encargo
-  57 el puerto se suelta dentro de esa segunda pregunta, con un `_panel_en` falso: el lanzador no cambió.
+  57 el puerto se suelta dentro de esa segunda pregunta, con un `_panel_en` falso. Desde el 58, el lanzador vuelve a
+  probarlo unos instantes (`_puerto_se_suelta`), y `test_puerto_que_windows_suelta_un_instante_despues` hace ese
+  instante con un `_puerto_libre` falso, sin reloj.
 - Una página falsa no avisa de lo inesperado solo levantando una excepción: el programa se la traga en su `try`. Que lo
   anote, y que la prueba exija esa lista vacía (`PaginaRevision` y `PaginaShipper` de `test_clics`, del encargo 38, y
   `SoloLee` de `test_evidencia`, de antes). Lo mismo con lo esperado: una página falsa que acepta cualquier acción sin
@@ -934,8 +969,9 @@ línea cambian). De arriba hacia abajo:
    (ver «Antes de la guarda no hay clics a ciegas», encargo 42), cuando el login de MSC no deja la sesión iniciada
    (encargo 45), cuando New Booking de COSCO no muestra su formulario (encargo 48), cuando CMA-CGM restringe el
    acceso o su página no termina de cargar (encargo 54), cuando DataDome interrumpe una reserva de CMA-CGM a mitad de
-   camino (encargo 55), o cuando CMA-CGM no puede escribir sus comentarios (encargo 56) o falla antes de terminar el
-   tamaño y tipo, el peso, el panel Reefer o «I Agree» (encargo 57). `DETENIDO`, con «Detener»: en
+   camino (encargo 55), o cuando CMA-CGM no puede escribir sus comentarios (encargo 56), falla antes de terminar el
+   tamaño y tipo, el peso, el panel Reefer o «I Agree» (encargo 57) o la mercancía, o la página no muestra la
+   temperatura guardada (encargo 58). `DETENIDO`, con «Detener»: en
    COSCO y, desde el encargo 56, en la espera del deslizador de CMA-CGM. `REVISAR`, entre otros (en MAERSK
    y en COSCO, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el motivo dice hasta qué fecha buscó (ver
    «Ampliar la búsqueda»). Después: `EMITIDA`, `ENVIADA – REVISAR EN PORTAL`,

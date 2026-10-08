@@ -45,9 +45,11 @@ el programa deja CMA-CGM por esa corrida. Si a mitad de una reserva te pide desl
 reserva igual queda NO ENVIADA, porque, según DataDome, al dejarte pasar la página se vuelve a cargar y se pierde lo
 que se había llenado, y el programa sigue con la fila siguiente.
 
-Si en una reserva de CMA-CGM falla el tamaño y tipo del contenedor, su peso, la temperatura del Reefer (antes de
-guardarla), la casilla «I Agree» o los comentarios, esa fila queda NO ENVIADA, con el motivo, la captura y el HTML
-del paso: no se arma sin ellos.
+Si en una reserva de CMA-CGM falla el tamaño y tipo del contenedor, su peso, la mercancía (el código 030313), la
+temperatura del Reefer, la casilla «I Agree» o los comentarios, esa fila queda NO ENVIADA, con el motivo, la captura y
+el HTML del paso: no se arma sin ellos. Después de guardar la temperatura, el programa mira que la página la muestre
+guardada (el panel Reefer cerrado, sin «to complete» y con la temperatura en «Operando en»); si no, también queda NO
+ENVIADA.
 
 Cuando el panel te pide resolver algo en el navegador («Te toca a ti»), `log.txt` anota cuándo empezó la pausa, por
 qué, y cuándo terminó: si pulsaste «Ya lo resolví» o «Detener», si pasaron 10 minutos sin respuesta o, con el
