@@ -2386,18 +2386,25 @@ class PaginaCmaQueNoEscribe(PaginaCma):
 
 
 class PaginaCmaQueNoPulsa(PaginaCma):
-    """La de CMA, con el elemento 'sel' que se ve y no se deja pulsar (encargo 57)."""
+    """La de CMA, con el elemento 'sel' que se ve y no se deja pulsar (encargo 57); desde el encargo 58, también el que
+    se busca por su placeholder («placeholder=…», como lo anota LocFalso)."""
 
     def __init__(self, sel, **k):
         super().__init__(**k)
         self.no_pulsa = sel
 
-    def locator(self, sel):
-        loc = super().locator(sel)
-        if sel == self.no_pulsa:
+    def no_se_deja(self, loc):
+        if getattr(loc, "sel", None) == self.no_pulsa:
             def falla(**k):
                 raise RuntimeError("el botón no se deja pulsar")
             loc.click = falla
+        return loc
+
+    def get_by_placeholder(self, texto):
+        return self.no_se_deja(super().get_by_placeholder(texto))
+
+    def locator(self, sel):
+        loc = self.no_se_deja(super().locator(sel))
         return loc
 
 
@@ -2408,6 +2415,24 @@ def espera_que_falla_tras(pagina, clic):
         if clic in pagina.clics:
             raise RuntimeError("espera inventada que falla")
     pagina.wait_for_timeout = esperar
+
+
+class PaginaCmaQueGuarda(PaginaCma):
+    """La de CMA con el panel Reefer que se guarda (encargo 58): el JavaScript que comprueba la temperatura guardada
+    responde, en cada lectura, la que sigue de 'lecturas' (la última se repite), y las cuenta; anota cada espera."""
+
+    def __init__(self, lecturas, **k):
+        super().__init__(**k)
+        self.lecturas, self.leidas, self.esperas_ms = list(lecturas), 0, []
+
+    def evaluate(self, js, *a):
+        if "Operando en" in js:
+            self.leidas += 1
+            return self.lecturas[min(self.leidas, len(self.lecturas)) - 1]
+        return super().evaluate(js, *a)
+
+    def wait_for_timeout(self, ms):
+        self.esperas_ms.append(ms)
 
 
 class TestCma(ConRegistro):
@@ -3060,7 +3085,7 @@ console.log(JSON.stringify(f()));
         # Ninguna reserva llega al botón final sin la temperatura guardada: si falla el JavaScript que busca la
         # temperatura, o el clic en el «Guardar» del panel, corta.
         m = self.mod
-        que = "abrir el panel, escribir la temperatura o guardarla"
+        que = "abrir el panel, escribir la temperatura, guardarla o comprobar que quedó guardada"
         casos = [(PaginaCmaQueFalla(error, marca=self.TEMP, visibles={self.ABRE}), m._texto_error(error), False)
                  for error in self.errores()]
         casos.append((PaginaCmaQueNoPulsa(self.GUARDAR, visibles={self.ABRE, self.GUARDAR},
@@ -3076,14 +3101,23 @@ console.log(JSON.stringify(f()));
                 self.assertNotIn("guardados", log)
                 self.assertNotIn("ajustes reefer err", log)
 
-    def test_lo_que_falla_despues_de_guardar_el_reefer_sigue_como_antes(self):
-        pagina = PaginaCma(visibles={self.ABRE, self.GUARDAR}, js={self.TEMP: "ok", self.DEL_PANEL: True})
+    def test_lo_que_falla_entre_el_guardar_y_la_comprobacion_corta(self):
+        # Desde el encargo 58, lo que falla después del «Guardar» y antes de comprobar que la temperatura quedó guardada
+        # (aquí, la espera que sigue al clic) también corta: hasta ahí, se anotaba («ajustes reefer err») y la reserva
+        # seguía (encargo 57). La página muestra la temperatura guardada: así decide solo esa espera, y no la de la
+        # comprobación, que también fallaría (el censo del encargo 58 lo vio: el caso estaba incompleto).
+        m = self.mod
+        pagina = PaginaCmaQueGuarda([self.GUARDADA], visibles={self.ABRE, self.GUARDAR},
+                                    js={self.TEMP: "ok", self.DEL_PANEL: True})
         espera_que_falla_tras(pagina, self.GUARDAR)
-        reg, _, log = self.corrida("e57_reefer_guardado")
-        self.assertIs(self.mod._cma_ajustes_reefer(pagina, {"fila": 5}, reg), False)
-        texto = log.read_text(encoding="utf-8")
-        self.assertIn("    ajustes reefer guardados", texto)
-        self.assertIn("    ajustes reefer err: espera inventada que falla", texto)
+        e, log = self.corta(m._cma_ajustes_reefer, pagina, {"fila": 5}, nombre="e58_reefer_guardado")
+        self.assertEqual((e.paso, e.buscaba, pagina.clics),
+                         ("Ajustes Reefer de CMA", f"{m.CMA_REEFER_GUARDADO}, porque el programa falló al abrir el "
+                                                   f"panel, escribir la temperatura, guardarla o comprobar que quedó "
+                                                   f"guardada (RuntimeError: espera inventada que falla)",
+                          [self.ABRE, self.GUARDAR]))
+        self.assertIn("    ajustes reefer guardados", log)
+        self.assertNotIn("ajustes reefer err", log)
 
     def test_i_agree_que_falla_corta(self):
         # Si falla antes de marcarla (aquí, el JavaScript que baja al final de la página), corta: hasta el encargo 57 la
@@ -3121,6 +3155,11 @@ console.log(JSON.stringify(f()));
                           "el panel Reefer con su temperatura guardada (por el botón «Modifique el reefer», la "
                           "etiqueta «Temperature» y su «Guardar»)",
                           "la casilla «I Agree» (por su texto)"))
+        # Los del encargo 58.
+        self.assertEqual((m.CMA_MERCANCIA, m.CMA_TEMPERATURA_GUARDADA),
+                         ("la sugerencia que dice «030313» en la lista (por su texto)",
+                          "la temperatura guardada en la página (el panel Reefer cerrado, su fila sin «to complete» y "
+                          "la temperatura en «Operando en»)"))
 
     def test_reservar_cma_corre_los_pasos_que_cortan_antes_de_la_guarda(self):
         # Los pasos que cortan si el programa falla antes de terminarlos (encargos 56 y 57) corren en reservar_cma, y
@@ -3142,7 +3181,8 @@ console.log(JSON.stringify(f()));
                   {self.SELECCIONAR}, lambda p, reg: m._cma_completar_info_extra(p, {"fila": 9}, reg)),
                  ("Peso por contenedor de CMA", m.CMA_CAMPO_PESO, "buscarlo o escribirlo", "peso por contenedor",
                   {self.SELECCIONAR, self.OPCION}, lambda p, reg: m._cma_completar_info_extra(p, {"fila": 9}, reg)),
-                 ("Ajustes Reefer de CMA", m.CMA_REEFER_GUARDADO, "abrir el panel, escribir la temperatura o guardarla",
+                 ("Ajustes Reefer de CMA", m.CMA_REEFER_GUARDADO,
+                  "abrir el panel, escribir la temperatura, guardarla o comprobar que quedó guardada",
                   self.TEMP, {self.ABRE}, lambda p, reg: m._cma_ajustes_reefer(p, {"fila": 9}, reg)),
                  ("«I Agree» de CMA", m.CMA_CASILLA_I_AGREE, "llegar a ella o marcarla", "window.scrollTo",
                   {self.I_AGREE}, lambda p, reg: m._cma_i_agree_en_el_envio(p, reg)))
@@ -3165,6 +3205,218 @@ console.log(JSON.stringify(f()));
                 self.assertEqual(pagina.capturas[-1], ("cma_f9_sin_objetivo.png", False))
                 guardado = (log.parent / "cma_f9_sin_objetivo.html").read_text(encoding="utf-8")
                 self.assertIn("Click &amp; Book inventado", guardado)
+
+    # --- Encargo 58 (CICLO-temperatura-y-puerto.md): después del «Guardar» del panel Reefer, el programa comprueba en
+    # la página que el portal guardó la temperatura, con las señales medidas en los HTML guardados; si no, la fila
+    # queda NO ENVIADA con el motivo, la captura y el HTML (decisión de Marcelo). Y la mercancía corta si el programa
+    # falla antes de elegirla, como los pasos del encargo 57.
+    # Lo medido 1,5 s después del «Guardar» (9 de 9) y con el panel abierto (9 de 10; el del 24-09, sin el cajón).
+    GUARDADA = {"cajones": 0, "botones": 1, "insignias": ["completed"], "temperaturas": ["-20 °C"]}
+    ABIERTO = {"cajones": 1, "botones": 1, "insignias": ["to complete"], "temperaturas": []}
+    HS = "input[placeholder*='código HS' i]"
+
+    def test_lo_que_falta_para_dar_la_temperatura_por_guardada(self):
+        f, ok = self.mod._cma_lo_que_falta_de_la_temperatura, self.GUARDADA
+
+        def con(**k):
+            return {**ok, **k}
+        # Lo medido después del «Guardar»: no falta nada. Con la coma decimal, o con otra temperatura de la fila, igual.
+        # Sin la insignia, «to complete» tampoco está: la decisión pide que desaparezca, no que diga «completed».
+        for leido, temp in ((ok, "-20"), (con(temperaturas=["-20,0 °C"]), "-20"),
+                            (con(temperaturas=["-18.5 °C"]), "-18,5"), (con(temperaturas=["-20 °C"]), "-20 °C"),
+                            (con(insignias=[]), "-20")):
+            with self.subTest(leido=leido, temp=temp):
+                self.assertEqual(f(leido, temp), "")
+        uno = "hay {} botones «Modifique el reefer» y no uno solo, así que no sé cuál es la fila Reefer"
+        casos = ((self.ABIERTO, "el panel Reefer sigue en la página"),
+                 (con(insignias=["to complete"]), "la fila Reefer sigue «to complete»"),
+                 (con(insignias=["completed", "To  Complete"]), "la fila Reefer sigue «to complete»"),
+                 (con(botones=0), uno.format(0)), (con(botones=2), uno.format(2)), (None, uno.format(0)),
+                 (con(insignias=None), "la fila Reefer no está donde la mido (el botón «Modifique el reefer» sin su "
+                                       "insignia)"),
+                 (con(temperaturas=[]), "la carga no muestra la temperatura en «Operando en»"),
+                 (con(temperaturas=["-20 °C", "-20 °C"]), "la carga muestra 2 temperaturas en «Operando en» y no una "
+                                                         "sola"),
+                 (con(temperaturas=["-18 °C"]), "«Operando en» dice -18 °C, y escribí -20 °C"),
+                 (con(temperaturas=["Not Filled"]), "«Operando en» dice «Not Filled», y no la puedo comparar con "
+                                                    "-20 °C"))
+        for leido, falta in casos:
+            with self.subTest(falta=falta, leido=leido):
+                self.assertEqual(f(leido, "-20"), falta)
+
+    def temperatura_guardada(self, casos):
+        """Corre _JS_CMA_TEMPERATURA_GUARDADA sobre documentos falsos, uno por caso: 'cajones' (cuántos
+        «reefer-drawer»), 'botones' ([texto, insignias de su .capsule-container, o None si no tiene una]) y 'dts'
+        ([texto del <dt> de un .cargo-wrapper--info-details-item, [etiqueta, texto] del elemento que le sigue, o
+        None]). Devuelve lo que responde en cada uno."""
+        guion = (
+            "const el = (t, x) => Object.assign({textContent: t}, x || {});\n"
+            "function armar(c) {\n"
+            "  const botones = c.botones.map(([t, ins]) => el(t, {closest: s => (s === '.capsule-container' && ins)\n"
+            "    ? {querySelectorAll: q => (q === '.capsule' ? ins.map(i => el(i)) : [])} : null}));\n"
+            "  const dts = c.dts.map(([t, dd]) =>\n"
+            "    el(t, {nextElementSibling: dd && {tagName: dd[0], textContent: dd[1]}}));\n"
+            "  global.document = {querySelectorAll: s => (s === 'button' ? botones\n"
+            "    : s === '.cargo-wrapper--info-details-item dt' ? dts\n"
+            "    : s === '.reefer-drawer' ? Array(c.cajones).fill({}) : [])};\n"
+            "}\n"
+            "const f = " + self.mod._JS_CMA_TEMPERATURA_GUARDADA + ";\n"
+            + f"console.log(JSON.stringify({json.dumps(casos)}.map(c => (armar(c), f()))));\n")
+        return correr_node(self, guion)
+
+    def test_js_temperatura_guardada_por_lo_medido(self):
+        boton = " Modifique  el reefer "
+        casos = [
+            # Lo medido después del «Guardar»: sin el cajón, la insignia «completed», y «Operando en» con «-20 °C».
+            # Los otros botones y los otros rótulos de la carga no cuentan.
+            {"cajones": 0, "botones": [[boton, ["completed"]], ["Guardar plantilla", None]],
+             "dts": [["Operando en", ["DD", " -20  °C "]], ["Peso", ["DD", "1"]]]},
+            # Lo medido con el panel abierto: el cajón, la insignia «to complete», y sin «Operando en».
+            {"cajones": 1, "botones": [[boton, ["to complete"]]], "dts": []},
+            # Con dos botones no elige fila; sin su .capsule-container, no hay insignia que leer.
+            {"cajones": 0, "botones": [[boton, ["completed"]], [boton, ["completed"]]], "dts": []},
+            {"cajones": 0, "botones": [[boton, None]], "dts": []},
+            # «Operando en» sin un <dd> que le siga no trae temperatura; otro rótulo, con «°C», no cuenta.
+            {"cajones": 2, "botones": [], "dts": [["Operando en", ["SPAN", "-20 °C"]], ["Operando en", None],
+                                                  ["Operando en:", ["DD", "-20 °C"]]]},
+        ]
+        self.assertEqual(self.temperatura_guardada(casos), [
+            {"cajones": 0, "botones": 1, "insignias": ["completed"], "temperaturas": ["-20 °C"]},
+            {"cajones": 1, "botones": 1, "insignias": ["to complete"], "temperaturas": []},
+            {"cajones": 0, "botones": 2, "insignias": None, "temperaturas": []},
+            {"cajones": 0, "botones": 1, "insignias": None, "temperaturas": []},
+            {"cajones": 2, "botones": 0, "insignias": None, "temperaturas": ["", ""]},
+        ])
+
+    def test_reefer_sin_la_temperatura_guardada_corta(self):
+        # Si en CMA_LECTURAS_TEMPERATURA lecturas, cada 0,5 s, la página no muestra la temperatura guardada, corta con
+        # lo que faltó en la última, sin pulsar nada más ni la tecla Escape. Hasta el encargo 58, con solo pulsar el
+        # «Guardar», la daba por guardada.
+        m = self.mod
+        casos = ((self.ABIERTO, "el panel Reefer sigue en la página"),
+                 ({**self.GUARDADA, "insignias": ["to complete"]}, "la fila Reefer sigue «to complete»"),
+                 ({**self.GUARDADA, "temperaturas": ["-18 °C"]}, "«Operando en» dice -18 °C, y escribí -20 °C"))
+        for k, (leido, falta) in enumerate(casos):
+            with self.subTest(falta=falta):
+                pagina = PaginaCmaQueGuarda([leido], visibles={self.ABRE, self.GUARDAR},
+                                            js={self.TEMP: "ok", self.DEL_PANEL: True})
+                e, log = self.corta(m._cma_ajustes_reefer, pagina, {"fila": 5}, nombre=f"e58_reefer_{k}")
+                self.assertEqual((e.paso, e.buscaba),
+                                 ("Temperatura guardada de CMA", f"{m.CMA_TEMPERATURA_GUARDADA}: {falta} (la leí 20 "
+                                                                 f"veces, cada 0,5 s, después de pulsar su «Guardar»)"))
+                self.assertEqual((pagina.leidas, pagina.clics, pagina.teclas, pagina.esperas_ms),
+                                 (20, [self.ABRE, self.GUARDAR], ["Control+A", "Backspace", "-20"],
+                                  [2000, 800, 1500] + [500] * 19))
+                self.assertIn("    ajustes reefer guardados", log)
+                self.assertNotIn("temperatura guardada:", log)
+
+    def test_reefer_con_la_temperatura_guardada_sigue(self):
+        # Con lo medido después del «Guardar», sigue, lo dice en log.txt, y cierra lo que haya quedado con Escape, como
+        # antes. Si las señales tardan, las espera: aquí llegan en la primera lectura, en la cuarta y en la última.
+        m = self.mod
+        for lecturas in ([self.GUARDADA], [self.ABIERTO] * 3 + [self.GUARDADA], [self.ABIERTO] * 19 + [self.GUARDADA]):
+            n = len(lecturas)
+            with self.subTest(lecturas=n):
+                pagina = PaginaCmaQueGuarda(lecturas, visibles={self.ABRE, self.GUARDAR},
+                                            js={self.TEMP: "ok", self.DEL_PANEL: True})
+                reg, _, log = self.corrida(f"e58_guardada_{n}")
+                self.assertIs(m._cma_ajustes_reefer(pagina, {"fila": 5}, reg), True)
+                self.assertEqual((pagina.leidas, pagina.clics, pagina.teclas, pagina.esperas_ms),
+                                 (n, [self.ABRE, self.GUARDAR], ["Control+A", "Backspace", "-20", "Escape"],
+                                  [2000, 800, 1500] + [500] * (n - 1) + [400]))
+                self.assertIn(f"    temperatura guardada: la página muestra -20 °C en «Operando en», sin el panel "
+                              f"ni «to complete» (lectura {n})", log.read_text(encoding="utf-8"))
+        # Después de comprobarla, la tecla Escape que falla no corta, como antes.
+        pagina = PaginaCmaQueGuarda([self.GUARDADA], visibles={self.ABRE, self.GUARDAR},
+                                    js={self.TEMP: "ok", self.DEL_PANEL: True})
+
+        def tecla(k):
+            if k == "Escape":
+                raise RuntimeError("tecla inventada que falla")
+            pagina.teclas.append(k)
+        pagina.keyboard.press = tecla
+        reg, _, log = self.corrida("e58_guardada_escape")
+        self.assertIs(m._cma_ajustes_reefer(pagina, {"fila": 5}, reg), True)
+        self.assertNotIn("ajustes reefer err", log.read_text(encoding="utf-8"))
+
+    def test_la_comprobacion_que_falla_corta(self):
+        # Si la lectura de la comprobación falla, o no vuelve en CMA_PLAZO_MS, corta como el resto del paso.
+        m = self.mod
+        for error in self.errores():
+            with self.subTest(error=type(error).__name__):
+                pagina = PaginaCmaQueFalla(error, marca="Operando en", visibles={self.ABRE, self.GUARDAR},
+                                           js={self.TEMP: "ok", self.DEL_PANEL: True})
+                e, log = self.corta(m._cma_ajustes_reefer, pagina, {"fila": 5}, nombre="e58_comprobacion")
+                self.assertEqual((e.paso, e.buscaba, pagina.clics),
+                                 ("Ajustes Reefer de CMA", f"{m.CMA_REEFER_GUARDADO}, porque el programa falló al "
+                                                           f"abrir el panel, escribir la temperatura, guardarla o "
+                                                           f"comprobar que quedó guardada ({m._texto_error(error)})",
+                                  [self.ABRE, self.GUARDAR]))
+                self.assertNotIn("temperatura guardada:", log)
+
+    def test_mercancia_que_falla_corta(self):
+        # Si el programa falla antes de elegirla (aquí, el clic en su campo; en el portal, un campo que no llega a
+        # tiempo), corta: hasta el encargo 58 lo anotaba («mercancía err») y la reserva seguía sin ella. Sin su campo a
+        # la vista, el programa prueba su placeholder en inglés; si ese tampoco se deja pulsar, igual.
+        m = self.mod
+        respaldo = "placeholder=Enter HS code or commodity type"
+        for k, (no_pulsa, visibles) in enumerate(((self.HS, {self.HS}), (respaldo, set()))):
+            with self.subTest(campo=no_pulsa):
+                pagina = PaginaCmaQueNoPulsa(no_pulsa, visibles={self.SELECCIONAR, self.OPCION} | visibles,
+                                             js={"peso por contenedor": True})
+                e, log = self.corta(m._cma_completar_info_extra, pagina, {"fila": 5}, nombre=f"e58_mercancia_{k}")
+                self.assertEqual((e.paso, e.buscaba, pagina.clics),
+                                 ("Mercancía de CMA", f"{m.CMA_MERCANCIA}, porque el programa falló al buscarla o "
+                                                      f"elegirla (RuntimeError: el botón no se deja pulsar)",
+                                  [self.SELECCIONAR, self.OPCION]))
+                self.assertIn("    peso contenedor:", log)
+                self.assertNotIn("mercancía err", log)
+
+    def test_la_temperatura_y_la_mercancia_dejan_la_fila_no_enviada_con_su_evidencia(self):
+        # Con los decoradores de reservar_cma, como en una corrida: NO ENVIADA con el motivo, la captura y el HTML del
+        # paso, y sin seguir al paso siguiente.
+        m = self.mod
+        html = {"html": "<!DOCTYPE html>\n<html><body>Click &amp; Book inventado</body></html>", "sombras": 0}
+        sigue = ", así que no pulsé nada. La reserva no se envió; revisa ese paso en el portal."
+        temperatura = PaginaCmaQueGuarda([self.ABIERTO], visibles={self.ABRE, self.GUARDAR},
+                                         js={self.TEMP: "ok", self.DEL_PANEL: True, "getHTML": html})
+        mercancia = PaginaCmaQueNoPulsa(self.HS, visibles={self.SELECCIONAR, self.OPCION, self.HS},
+                                        js={"peso por contenedor": True, "getHTML": html})
+        casos = ((temperatura, lambda p, reg: m._cma_ajustes_reefer(p, {"fila": 9}, reg),
+                  f"Temperatura guardada de CMA: no encontré {m.CMA_TEMPERATURA_GUARDADA}: el panel Reefer sigue en "
+                  f"la página (la leí 20 veces, cada 0,5 s, después de pulsar su «Guardar»){sigue}"),
+                 (mercancia, lambda p, reg: m._cma_completar_info_extra(p, {"fila": 9}, reg),
+                  f"Mercancía de CMA: no encontré {m.CMA_MERCANCIA}, porque el programa falló al buscarla o elegirla "
+                  f"(RuntimeError: el botón no se deja pulsar){sigue}"))
+        for k, (pagina, hacer, motivo) in enumerate(casos):
+            with self.subTest(caso=k):
+                pasos = []
+
+                def cruda(page, reserva, creds, reg, on_pausa=None, hacer=hacer):
+                    hacer(page, reg)
+                    pasos.append("siguió")
+                    return ("OK-EJEMPLO", "armada sin el paso")
+                reg, _, log = self.corrida(f"e58_fila_{k}")
+                reservar = m._sin_clic_a_ciegas("cma", plazo_ms=m.CMA_PLAZO_MS)(m._cma_si_se_detuvo(cruda))
+                self.assertEqual((reservar(pagina, {"fila": 9}, {}, reg), pasos), (("NO ENVIADA", motivo), []))
+                self.assertEqual(pagina.capturas[-1], ("cma_f9_sin_objetivo.png", False))
+                guardado = (log.parent / "cma_f9_sin_objetivo.html").read_text(encoding="utf-8")
+                self.assertIn("Click &amp; Book inventado", guardado)
+
+    def test_la_comprobacion_va_tras_la_evidencia_y_antes_del_escape(self):
+        # La comprobación lee la página después de la evidencia de lo guardado (la que midió las señales) y antes de la
+        # tecla Escape con que el paso cierra lo que haya quedado: así lee lo mismo que se midió.
+        fuente = Path(self.mod.__file__).read_text(encoding="utf-8")
+        f = next(n for n in ast.parse(fuente).body
+                 if isinstance(n, ast.FunctionDef) and n.name == "_cma_ajustes_reefer")
+        lineas = ast.get_source_segment(fuente, f).splitlines()
+
+        def donde(texto):
+            (i,) = [k for k, linea in enumerate(lineas) if texto in linea]
+            return i
+        orden = ["btn_g.click(", 'f"cma_f{f}_reefer_guardado"', "_cma_temperatura_guardada(page, reg, temp)",
+                 'page.keyboard.press("Escape")']
+        self.assertEqual(sorted(orden, key=donde), orden)
 
 
 class MarcoCosco:

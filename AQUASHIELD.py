@@ -11160,6 +11160,7 @@ CMA_CAMPO_PESO = "el campo «Peso por contenedor» (por su etiqueta o su placeho
 CMA_REEFER_GUARDADO = ("el panel Reefer con su temperatura guardada (por el botón «Modifique el reefer», la etiqueta "
                        "«Temperature» y su «Guardar»)")
 CMA_CASILLA_I_AGREE = "la casilla «I Agree» (por su texto)"
+CMA_MERCANCIA = "la sugerencia que dice «030313» en la lista (por su texto)"
 
 
 def _cma_fallo(paso, buscaba, que, e):
@@ -11181,7 +11182,10 @@ def _cma_completar_info_extra(page, reserva, reg):
     - Clic en 'Mostrar soluciones disponibles'
     Si el programa falla antes de elegir el tamaño y tipo o de escribir el peso, corta con lo que falló (_cma_fallo;
     decisión de Marcelo, encargo 57): hasta ahí lo anotaba («tamaño y tipo err», «peso err») y la reserva seguía sin
-    ellos. En logs/ no pasó nunca: las 14 reservas que llegaron a la guarda los eligieron y escribieron.
+    ellos. En logs/ no pasó nunca: las 14 reservas que llegaron a la guarda los eligieron y escribieron. Desde el
+    encargo 58, la mercancía también (decisión de Marcelo, CICLO-temperatura-y-puerto.md): hasta ahí, «mercancía err»;
+    las 14 la eligieron, y las 5 del 21-09 que no llegaron a la guarda la anotaron y reintentaron la información extra.
+    La cantidad sigue como antes: su campo no lo encuentran sus selectores (FRENA SI del encargo 58).
     """
     reg.paso("CMA · Completando información extra de carga...")
 
@@ -11366,10 +11370,10 @@ def _cma_completar_info_extra(page, reserva, reg):
         if not picked:
             # Hasta fb63271 elegía con el teclado (flecha abajo y Enter) la sugerencia que quedara primera, fuera
             # cual fuera (CICLO-cola-nueve-items.md).
-            raise ObjetivoNoEncontrado("Mercancía de CMA", "la sugerencia que dice «030313» en la lista (por su "
-                                                           "texto)")
+            raise ObjetivoNoEncontrado("Mercancía de CMA", CMA_MERCANCIA)
     except Exception as e:
-        reg.info(f"mercancía err: {str(e)[:50]}")
+        # Después de elegirla no queda nada que pueda fallar: toda falla de aquí es de antes (encargo 58).
+        raise _cma_fallo("Mercancía de CMA", CMA_MERCANCIA, "buscarla o elegirla", e)
 
     esperar(page, 1.5)
     # 5. Clic en 'Mostrar soluciones disponibles'
@@ -11712,6 +11716,79 @@ _JS_CMA_REEFER_GUARDAR = r"""(boton)=>{""" + _JS_CMA_PANELES_VISIBLES + r"""
     return paneles.length === 1 && paneles[0].contains(boton);
 }"""
 
+# Lo que muestra la página de que el portal guardó la temperatura del panel Reefer (decisión de Marcelo, encargo 58,
+# CICLO-temperatura-y-puerto.md). Medido en los 9 HTML guardados 1,5 s después de su «Guardar»
+# (cma_f<fila>_reefer_guardado, del 25-09 al 02-10) y en los 10 del panel abierto (cma_f<fila>_reefer_panel):
+# - el cajón del panel (clase «reefer-drawer»): está en 9 de los 10 abiertos (el del 24-09 era otro, oculto) y en
+#   ninguno después;
+# - la insignia de la fila Reefer (cada .capsule de la .capsule-container del único botón «Modifique el reefer»): dice
+#   «to complete» en los 10 abiertos, y «completed» en los 9 de después;
+# - la carga muestra la temperatura en «Operando en» (el <dd> que sigue a ese <dt>, en
+#   .cargo-wrapper--info-details-item): «-20 °C» en los 9 de después, y no está en ninguno de los abiertos.
+# Solo lee lo que trae el HTML guardado: no mira si algo se ve (eso no está en el HTML).
+_JS_CMA_TEMPERATURA_GUARDADA = r"""()=>{
+    const txt = e => (e.textContent || '').replace(/\s+/g, ' ').trim();
+    const botones = [...document.querySelectorAll('button')].filter(b => /modifique el reefer/i.test(txt(b)));
+    const fila = botones.length === 1 ? botones[0].closest('.capsule-container') : null;
+    const temperaturas = [...document.querySelectorAll('.cargo-wrapper--info-details-item dt')]
+        .filter(dt => txt(dt) === 'Operando en')
+        .map(dt => (dt.nextElementSibling && dt.nextElementSibling.tagName === 'DD') ? txt(dt.nextElementSibling) : '');
+    return {cajones: document.querySelectorAll('.reefer-drawer').length, botones: botones.length,
+            insignias: fila ? [...fila.querySelectorAll('.capsule')].map(txt) : null, temperaturas};
+}"""
+
+# Cuántas veces lee la página _cma_temperatura_guardada, cada 0,5 s, antes de cortar (unos 10 s). Hipótesis: en los 9
+# HTML medidos, las tres señales ya estaban a los 1,5 s del «Guardar»; cuánto pueden tardar con el portal lento no está
+# medido.
+CMA_LECTURAS_TEMPERATURA = 20
+CMA_TEMPERATURA_GUARDADA = ("la temperatura guardada en la página (el panel Reefer cerrado, su fila sin «to complete» "
+                            "y la temperatura en «Operando en»)")
+
+
+def _cma_lo_que_falta_de_la_temperatura(leido, temp):
+    """Qué le falta a lo que leyó _JS_CMA_TEMPERATURA_GUARDADA ('leido') para dar por guardada la temperatura 'temp'
+    (la que el programa escribió en el panel), o "" si no le falta nada."""
+    leido = leido if isinstance(leido, dict) else {}
+    if leido.get("cajones"):
+        return "el panel Reefer sigue en la página"
+    if leido.get("botones") != 1:
+        return (f"hay {leido.get('botones') or 0} botones «Modifique el reefer» y no uno solo, así que no sé cuál "
+                f"es la fila Reefer")
+    if leido.get("insignias") is None:
+        return "la fila Reefer no está donde la mido (el botón «Modifique el reefer» sin su insignia)"
+    if any(_re_mk.search(r"to\s*complete", i or "", _re_mk.I) for i in leido["insignias"]):
+        return "la fila Reefer sigue «to complete»"
+    temperaturas = leido.get("temperaturas") or []
+    if len(temperaturas) != 1:
+        return ("la carga no muestra la temperatura en «Operando en»" if not temperaturas
+                else f"la carga muestra {len(temperaturas)} temperaturas en «Operando en» y no una sola")
+    m = _re_mk.fullmatch(r"(-?\d+(?:[.,]\d+)?)\s*°\s*C", temperaturas[0])
+    q = _re_mk.fullmatch(r"\s*(-?\d+(?:[.,]\d+)?)\s*(?:°\s*C)?\s*", temp or "")
+    if not m or not q:
+        return f"«Operando en» dice «{temperaturas[0][:40]}», y no la puedo comparar con {temp} °C"
+    if float(m.group(1).replace(",", ".")) != float(q.group(1).replace(",", ".")):
+        return f"«Operando en» dice {temperaturas[0]}, y escribí {temp} °C"
+    return ""
+
+
+def _cma_temperatura_guardada(page, reg, temp):
+    """Comprueba en la página que el portal guardó la temperatura 'temp' del panel Reefer, con las señales medidas
+    (_JS_CMA_TEMPERATURA_GUARDADA), leyéndola hasta CMA_LECTURAS_TEMPERATURA veces, cada 0,5 s. Si no, corta
+    (ObjetivoNoEncontrado), con lo que faltó en la última lectura, y la fila queda NO ENVIADA con la captura y el HTML
+    del paso (decisión de Marcelo, encargo 58, CICLO-temperatura-y-puerto.md). Solo lee: ni clics ni teclas. Hasta ahí,
+    el programa daba la temperatura por guardada con solo pulsar el «Guardar» del panel."""
+    for n in range(1, CMA_LECTURAS_TEMPERATURA + 1):
+        falta = _cma_lo_que_falta_de_la_temperatura(_cma_js(page, _JS_CMA_TEMPERATURA_GUARDADA), temp)
+        if not falta:
+            reg.info(f"temperatura guardada: la página muestra {temp} °C en «Operando en», sin el panel ni «to "
+                     f"complete» (lectura {n})")
+            return
+        if n < CMA_LECTURAS_TEMPERATURA:
+            esperar(page, 0.5)
+    raise ObjetivoNoEncontrado("Temperatura guardada de CMA",
+                               f"{CMA_TEMPERATURA_GUARDADA}: {falta} (la leí {CMA_LECTURAS_TEMPERATURA} veces, cada "
+                               f"0,5 s, después de pulsar su «Guardar»)")
+
 
 def _cma_ajustes_reefer(page, reserva, reg):
     """En la sección Carga, abre los ajustes de 'Reefer TO COMPLETE', escribe la temperatura y los guarda. Cada
@@ -11725,12 +11802,14 @@ def _cma_ajustes_reefer(page, reserva, reg):
     Si el programa falla antes de pulsar el «Guardar» del panel, también corta, con lo que falló (_cma_fallo): ninguna
     reserva llega al botón final sin la temperatura guardada (decisión de Marcelo, encargo 57,
     CICLO-cortes-de-cma-y-pausas.md). Hasta ahí lo anotaba («ajustes reefer err») y la reserva seguía sin ella; en logs/
-    no pasó nunca: las 14 reservas que llegaron a la guarda la guardaron. Lo que falle después de pulsarlo, como
-    antes."""
+    no pasó nunca: las 14 reservas que llegaron a la guarda la guardaron. Desde el encargo 58, después de pulsarlo y de
+    dejar su evidencia, comprueba en la página que el portal la guardó (_cma_temperatura_guardada; decisión de
+    Marcelo, CICLO-temperatura-y-puerto.md): si no, o si algo falla antes de comprobarlo, también corta. Después de
+    comprobarla solo queda el Escape, que no corta, como antes; hasta el encargo 58, lo que fallaba después del
+    «Guardar» se anotaba («ajustes reefer err») y la reserva seguía."""
     reg.paso("CMA · Configurando Ajustes Reefer...")
     f = reserva["fila"]
     temp = _temp_reserva(reserva)
-    guardado = False
     try:
         # 1. Abrir los ajustes de la sección Reefer: el botón «Modifique el reefer» de su fila. Medido en la corrida
         #    del 2026-09-24 (CICLO-revision-corrida-completa.md): «text=/TO COMPLETE/i» calzaba con la insignia de
@@ -11780,11 +11859,12 @@ def _cma_ajustes_reefer(page, reserva, reg):
         if _cma_cuantos(page, btn_g) != 1 or not btn_g.evaluate(_JS_CMA_REEFER_GUARDAR, timeout=CMA_PLAZO_MS):
             raise ObjetivoNoEncontrado("Guardar los ajustes Reefer de CMA", "el botón «Guardar» del panel Reefer visible")
         btn_g.click(timeout=4000)
-        guardado = True
         reg.info("ajustes reefer guardados")
         esperar(page, 1.5)
         _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_reefer_guardado", "tras guardar el panel Reefer",
                                       completa=False, plazo_ms=CMA_PLAZO_MS)
+        # 4. Que el portal la guardó, con las señales medidas en esa evidencia (encargo 58)
+        _cma_temperatura_guardada(page, reg, temp)
         # Asegurar que no quede ningún modal ni popup abierto
         try:
             page.keyboard.press("Escape")
@@ -11793,11 +11873,9 @@ def _cma_ajustes_reefer(page, reserva, reg):
             pass
         return True
     except Exception as e:
-        if not guardado:
-            raise _cma_fallo("Ajustes Reefer de CMA", CMA_REEFER_GUARDADO,
-                             "abrir el panel, escribir la temperatura o guardarla", e)
-        reg.info(f"ajustes reefer err: {str(e)[:50]}")
-        return False
+        # Después de comprobarla no queda nada que pueda fallar: toda falla de aquí es de antes (encargo 58).
+        raise _cma_fallo("Ajustes Reefer de CMA", CMA_REEFER_GUARDADO,
+                         "abrir el panel, escribir la temperatura, guardarla o comprobar que quedó guardada", e)
 
 
 def _cma_marcar_i_agree(page, reg):
@@ -13667,6 +13745,26 @@ def _puerto_libre(puerto):
         return False
 
 
+# Cuánto vuelve a probar el lanzador un puerto que sigue tomado después de la segunda pregunta, antes de darlo por de
+# otro programa (decisión de Marcelo, encargo 58, CICLO-temperatura-y-puerto.md): cuando quien escuchaba se cierra
+# mientras le pregunta, la pregunta vuelve con el reset un instante antes de que Windows suelte el puerto. Medido sin
+# red con Python 3.13: el bind hecho enseguida falló en 3 de 20 corridas con el equipo quieto y en 8 de 40 con la CPU
+# ocupada, y en todas se pudo enlazar a los 11 ms o menos (en el encargo 57, una a los 0,22 s). Hipótesis: 1 s alcanza.
+PUERTO_SE_SUELTA = 1.0
+
+
+def _puerto_se_suelta(puerto, espera=PUERTO_SE_SUELTA):
+    """Si el puerto queda libre (_puerto_libre) en 'espera' s, probándolo cada 0,05 s. No cierra a nadie: solo prueba
+    enlazarlo, como _puerto_libre."""
+    fin = time.time() + espera
+    while True:
+        if _puerto_libre(puerto):
+            return True
+        if time.time() >= fin:
+            return False
+        time.sleep(0.05)
+
+
 def _otro_modo(puerto, estado, modo, propio):
     """El aviso del lanzador que encuentra en su puerto un panel de AQUASHIELD en el otro modo, o que no dice en cuál:
     no se conecta a él, no lo cierra y no abre otro (decisión de Marcelo, encargo 51). Dice cómo cerrarlo: el botón de
@@ -14017,10 +14115,13 @@ def lanzar_web(puerto=8765, abrir=True):
         libre, False si lo tiene otro programa, o el panel de AQUASHIELD. Si nadie contestó en 1 s y el puerto está
         tomado, le vuelve a preguntar, con más paciencia (un panel del otro modo que tardó más, con la máquina cargada,
         avisa y no corre: revisión del encargo 51); si tampoco contesta y el puerto sigue tomado, es otro programa, y
-        si se soltó mientras tanto, está libre."""
+        si se soltó mientras tanto, está libre. Antes de darlo por de otro programa, lo vuelve a probar hasta
+        PUERTO_SE_SUELTA s (_puerto_se_suelta; decisión de Marcelo, encargo 58): si quien escuchaba se cerró mientras
+        le preguntaba, Windows suelta el puerto un instante después del reset, y hasta ahí el lanzador tomaba el
+        siguiente."""
         if visto is None and not _puerto_libre(p):
             visto = _panel_en(p, espera=PANEL_ESPERA_LARGA)
-            if visto is None and not _puerto_libre(p):
+            if visto is None and not _puerto_se_suelta(p):
                 visto = False
         return visto
 

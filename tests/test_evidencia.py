@@ -552,6 +552,9 @@ class PanelReefer(Pantalla):
         if js == self.mod._JS_CMA_REEFER_TEMPERATURA:
             self.eventos.append(("js", "temperatura"))
             return "ok"
+        if js == self.mod._JS_CMA_TEMPERATURA_GUARDADA:           # lo medido tras el «Guardar» (encargo 58)
+            self.eventos.append(("js", "temperatura guardada"))
+            return {"cajones": 0, "botones": 1, "insignias": ["completed"], "temperaturas": ["-20 °C"]}
         self.eventos.append(("js", "desconocido"))
         raise AssertionError("JavaScript desconocido")
 
@@ -566,6 +569,8 @@ class TestEvidenciaReefer(ConRegistro):
     # El «Guardar» a la vista, solo si es del panel visible (CICLO-pendientes-con-evidencia.md).
     GUARDAR = [("js", "del panel"), ("clic", GUARDAR_REEFER), ("espera", 1500)]
     GUARDADO = [("captura", "cma_f5_reefer_guardado.png", False), ("html",)]
+    # Que el portal la guardó: una lectura, sin clics ni teclas, después de la evidencia de lo guardado (encargo 58).
+    COMPROBADA = [("js", "temperatura guardada")]
     CIERRE = [("tecla", "Escape"), ("espera", 400)]
 
     def setUp(self):
@@ -584,7 +589,7 @@ class TestEvidenciaReefer(ConRegistro):
         self.assertIs(r, True)
         # Lo de siempre, en el mismo orden, con la evidencia intercalada: ni un clic, una tecla ni una espera más.
         self.assertEqual(pagina.eventos, self.ABRIR + self.PANEL + self.TEMPERATURA + self.GUARDAR + self.GUARDADO
-                         + self.CIERRE)
+                         + self.COMPROBADA + self.CIERRE)
         self.assertEqual(sorted(p.name for p in carpeta.iterdir() if "reefer_" in p.name and "4b" not in p.name),
                          ["cma_f5_reefer_guardado.html", "cma_f5_reefer_guardado.png", "cma_f5_reefer_panel.html",
                           "cma_f5_reefer_panel.png"])
@@ -614,7 +619,7 @@ class TestEvidenciaReefer(ConRegistro):
         r, _, lugares = self.configurar(pagina)
         self.assertIs(r, True)
         self.assertEqual(pagina.eventos, [("clic", ABRE_REEFER), ("espera", 2000)] + self.TEMPERATURA + self.GUARDAR
-                         + self.CIERRE)
+                         + self.COMPROBADA + self.CIERRE)
         for donde in lugares:
             for momento, nombre in (("en el panel Reefer", "cma_f5_reefer_panel"),
                                     ("tras guardar el panel Reefer", "cma_f5_reefer_guardado")):

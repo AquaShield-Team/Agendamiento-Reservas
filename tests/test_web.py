@@ -1247,6 +1247,78 @@ class TestArranqueDelPanel(unittest.TestCase):
         finally:
             ocupante.close()
 
+    def test_puerto_que_windows_suelta_un_instante_despues(self):
+        # La carrera del encargo 57: la segunda pregunta vuelve con el reset de quien se cerró, y Windows deja enlazar
+        # el puerto un instante después (medido en el encargo 58: a los 11 ms o menos). El lanzador lo vuelve a probar,
+        # hasta PUERTO_SE_SUELTA s, antes de darlo por de otro programa, y lo toma, sin cerrar a nadie (decisión de
+        # Marcelo, encargo 58, CICLO-temperatura-y-puerto.md). Aquí ese instante lo hace un _puerto_libre falso, que
+        # dice «tomado» las dos primeras veces que se le pregunta después de la segunda pregunta. Hasta el encargo 58,
+        # el lanzador lo probaba una sola vez, y tomaba el puerto siguiente.
+        mod, _ = soporte.cargar()
+        p = puertos_seguidos()
+        ocupante = socket.socket()
+        ocupante.bind(("127.0.0.1", p))
+        ocupante.listen(5)
+        preguntas, pruebas, panel_real, libre_real = [], [], mod._panel_en, mod._puerto_libre
+
+        def panel_en(q, espera=1.0):
+            if q != p:
+                return panel_real(q, espera)
+            preguntas.append(espera)
+            if espera == mod.PANEL_ESPERA_LARGA:
+                ocupante.close()                # se suelta mientras el lanzador le vuelve a preguntar
+            return None
+
+        def puerto_libre(q):
+            libre = libre_real(q)
+            if q == p and len(preguntas) == 2:
+                pruebas.append(libre)
+                return libre and len(pruebas) > 2
+            return libre
+        mod._panel_en, mod._puerto_libre = panel_en, puerto_libre
+        self._falsos("")
+        try:
+            hilo, puerto = self.levantar(mod, p)
+            try:
+                self.assertEqual((puerto, self.llamadas, preguntas), (p, [], [1.0, mod.PANEL_ESPERA_LARGA]))
+                self.assertGreaterEqual(len(pruebas), 3)
+                self.assertNotIn(self.AVISO_AJENO.format(p), mod._WEB["log"])
+            finally:
+                self.cerrar(mod, hilo)
+        finally:
+            ocupante.close()
+
+    def test_puerto_se_suelta_prueba_unos_instantes(self):
+        # _puerto_se_suelta prueba el puerto cada 0,05 s, hasta PUERTO_SE_SUELTA s (1 s; hipótesis: lo medido, hasta
+        # 11 ms), solo enlazándolo: a quien lo tiene no lo cierra (encargo 58). Con el puerto libre, una sola prueba.
+        # Con un reloj falso, que avanza solo con sus esperas: la primera versión contaba las pruebas en 1 s de reloj de
+        # verdad, y con el equipo cargado entraron 5 (el control del censo chico del encargo 58 no pasó).
+        mod, _ = soporte.cargar()
+        pruebas, esperas, reloj, real = [], [], [0.0], mod._puerto_libre
+        mod._puerto_libre = lambda q: pruebas.append(reloj[0]) or real(q)
+
+        def dormir(s):
+            esperas.append(s)
+            reloj[0] += s
+        tiempo_real = mod.time
+        mod.time = types.SimpleNamespace(time=lambda: reloj[0], sleep=dormir)
+        p = puertos_seguidos(1)
+        ocupante = socket.socket()
+        ocupante.bind(("127.0.0.1", p))
+        ocupante.listen(5)
+        try:
+            self.assertIs(mod._puerto_se_suelta(p), False)
+            self.assertEqual((esperas, len(pruebas)), ([0.05] * 20, 21))
+            self.assertAlmostEqual(pruebas[-1], 1.0)
+            with socket.create_connection(("127.0.0.1", p), timeout=2):
+                pass                                # el ocupante sigue escuchando
+        finally:
+            ocupante.close()
+            mod.time = tiempo_real
+        pruebas.clear()
+        self.assertIs(mod._puerto_se_suelta(puertos_seguidos(1)), True)
+        self.assertEqual(len(pruebas), 1)
+
     def test_panel_en_dice_quien_contesta(self):
         # _panel_en distingue a nadie (None) de otro programa (False; encargo 52) y de un panel de AQUASHIELD ((su
         # estado, su modo)). El lanzador enlaza el puerto solo si nadie contestó.

@@ -1984,7 +1984,7 @@ MUTACIONES += [
          viejo='            raise ObjetivoNoEncontrado("Tamaño y tipo de CMA", CMA_TAMANO_Y_TIPO + (f", porque {CMA_SIN_RESPUESTA}"\n                                                                                    if sin_respuesta else ""))\n',
          nuevo='            page.keyboard.press("ArrowDown"); esperar(page, 0.4); page.keyboard.press("Enter")\n'),
     dict(id='teclado-cma-mercancia', pruebas=[C1 + "test_tamano_y_mercancia_no_eligen_con_el_teclado", FG],
-         viejo='            raise ObjetivoNoEncontrado("Mercancía de CMA", "la sugerencia que dice «030313» en la lista (por su "\n                                                           "texto)")\n',
+         viejo='            raise ObjetivoNoEncontrado("Mercancía de CMA", CMA_MERCANCIA)\n',
          nuevo='            page.keyboard.press("ArrowDown"); esperar(page, 0.4); page.keyboard.press("Enter")\n'),
     dict(id='teclado-cosco-autocompletar', pruebas=[K1 + "test_autocompletar_no_elige_con_el_teclado", FG],
          viejo='                raise ObjetivoNoEncontrado(f"{etiqueta} de COSCO", f"la sugerencia «{txt_op}» elegida en el campo (el "\n                                                                   f"clic y los eventos de puntero no la dejaron; con el "\n                                                                   f"teclado sería a ciegas)")\n',
@@ -6506,7 +6506,7 @@ MUTACIONES += [
     dict(id="e52-lanzador-un-solo-puerto", pruebas=[NO_CIERRA, CONTESTA, AUNQUE], viejo="PUERTOS_DEL_PANEL = 4\n",
          nuevo="PUERTOS_DEL_PANEL = 1\n"),
     dict(id="e52-lanzador-no-vuelve-a-probar", pruebas=[SE_SUELTA],
-         viejo="            if visto is None and not _puerto_libre(p):\n                visto = False\n",
+         viejo="            if visto is None and not _puerto_se_suelta(p):\n                visto = False\n",
          nuevo="            if visto is None:\n                visto = False\n"),
     dict(id="e52-lanzador-salta-al-panel-del-siguiente", pruebas=[SIGUIENTE],
          viejo="        if _ceder_al_previo(p, visto, propio, abrir):\n            return True, None\n",
@@ -7287,7 +7287,7 @@ TAMANO_FALLA = C1 + "test_tamano_y_tipo_que_falla_corta"
 TAMANO_ELEGIDO = C1 + "test_lo_que_falla_despues_de_elegir_el_tamano_sigue_como_antes"
 PESO_FALLA = C1 + "test_peso_que_falla_corta"
 REEFER_FALLA = C1 + "test_reefer_que_falla_antes_de_guardar_corta"
-REEFER_GUARDADO = C1 + "test_lo_que_falla_despues_de_guardar_el_reefer_sigue_como_antes"
+REEFER_GUARDADO = C1 + "test_lo_que_falla_entre_el_guardar_y_la_comprobacion_corta"      # encargo 58
 AGREE_FALLA = C1 + "test_i_agree_que_falla_corta"
 AGREE_MARCADA = C1 + "test_i_agree_como_antes"
 CUATRO = C1 + "test_los_cuatro_que_fallan_dejan_la_fila_no_enviada_con_su_evidencia"
@@ -7301,7 +7301,9 @@ DETENER_LOGIN_WEB = CO + "test_detener_en_solo_iniciar_sesion"
 TAMANO_CORTA = ('        if not sel_ok:\n'
                 '            raise _cma_fallo("Tamaño y tipo de CMA", CMA_TAMANO_Y_TIPO, "abrir el desplegable o '
                 'elegirla", e)\n')
-REEFER_CORTA = '        if not guardado:\n            raise _cma_fallo("Ajustes Reefer de CMA", CMA_REEFER_GUARDADO,\n'
+REEFER_CORTA = ('        raise _cma_fallo("Ajustes Reefer de CMA", CMA_REEFER_GUARDADO,\n'
+                '                         "abrir el panel, escribir la temperatura, guardarla o comprobar que quedó '
+                'guardada", e)\n')
 AGREE_CORTA = ('        if not marcada:\n'
                '            raise _cma_fallo("«I Agree» de CMA", CMA_CASILLA_I_AGREE, "llegar a ella o marcarla", e)\n')
 FALLO = '    return ObjetivoNoEncontrado(paso, f"{buscaba}, porque el programa falló al {que} ({_texto_error(e)})")\n'
@@ -7320,14 +7322,10 @@ MUTACIONES += [
     dict(id="e57-peso-falla-sigue", pruebas=[PESO_FALLA, CUATRO],
          viejo='        raise _cma_fallo("Peso por contenedor de CMA", CMA_CAMPO_PESO, "buscarlo o escribirlo", e)\n',
          nuevo='        reg.info(f"peso err: {str(e)[:50]}")\n'),
-    dict(id="e57-reefer-falla-sigue", pruebas=[REEFER_FALLA, CUATRO], viejo=REEFER_CORTA,
-         nuevo=REEFER_CORTA.replace("if not guardado:", "if False:")),
-    dict(id="e57-reefer-guardado-corta", pruebas=[REEFER_GUARDADO],
-         viejo='        guardado = True\n        reg.info("ajustes reefer guardados")\n',
-         nuevo='        reg.info("ajustes reefer guardados")\n'),
-    dict(id="e57-reefer-guardado-antes-del-clic", pruebas=[REEFER_FALLA],
-         viejo="        btn_g.click(timeout=4000)\n        guardado = True\n",
-         nuevo="        guardado = True\n        btn_g.click(timeout=4000)\n"),
+    dict(id="e57-reefer-falla-sigue", pruebas=[REEFER_FALLA, CUATRO, REEFER_GUARDADO], viejo=REEFER_CORTA,
+         nuevo='        reg.info(f"ajustes reefer err: {str(e)[:50]}")\n        return False\n'),
+    # (Encargo 58: las dos que anclaban en la bandera «guardado» se retiraron con ella: lo que falla después del
+    # «Guardar» ya no sigue. Las reemplazan e58-reefer-clic-se-traga y e58-reefer-espera-tras-guardar-se-traga.)
     dict(id="e57-agree-falla-sigue", pruebas=[AGREE_FALLA, CUATRO], viejo=AGREE_CORTA,
          nuevo=AGREE_CORTA.replace("if not marcada:", "if False:")),
     dict(id="e57-agree-marcada-corta", pruebas=[AGREE_MARCADA],
@@ -7404,4 +7402,113 @@ MUTACIONES += [
     # El lanzador que no le vuelve a preguntar a quien tiene su puerto (la prueba ya no depende del reloj).
     dict(id="e57-lanzador-no-vuelve-a-preguntar", pruebas=[SE_SUELTA],
          viejo="            visto = _panel_en(p, espera=PANEL_ESPERA_LARGA)\n", nuevo="            visto = None\n"),
+]
+
+
+# --- Encargo 58 (CICLO-temperatura-y-puerto.md): después del «Guardar» del panel Reefer, CMA-CGM comprueba en la página
+# que el portal guardó la temperatura (si no, NO ENVIADA); la mercancía corta si el programa falla antes de elegirla; y
+# el lanzador vuelve a probar el puerto unos instantes antes de saltarlo. ---
+FALTA_T = C1 + "test_lo_que_falta_para_dar_la_temperatura_por_guardada"
+JS_T = C1 + "test_js_temperatura_guardada_por_lo_medido"
+SIN_T = C1 + "test_reefer_sin_la_temperatura_guardada_corta"
+CON_T = C1 + "test_reefer_con_la_temperatura_guardada_sigue"
+COMPRUEBA_FALLA = C1 + "test_la_comprobacion_que_falla_corta"
+MERCANCIA_FALLA = C1 + "test_mercancia_que_falla_corta"
+FILA_E58 = C1 + "test_la_temperatura_y_la_mercancia_dejan_la_fila_no_enviada_con_su_evidencia"
+ORDEN_T = C1 + "test_la_comprobacion_va_tras_la_evidencia_y_antes_del_escape"
+EV_REEFER = "test_evidencia.TestEvidenciaReefer.test_el_panel_abierto_y_tras_guardarlo"
+WINDOWS = ARR + "test_puerto_que_windows_suelta_un_instante_despues"
+UNOS_INSTANTES = ARR + "test_puerto_se_suelta_prueba_unos_instantes"
+COMPRUEBA = "        _cma_temperatura_guardada(page, reg, temp)\n"
+PASO_4 = "        # 4. Que el portal la guardó, con las señales medidas en esa evidencia (encargo 58)\n"
+EVIDENCIA_G = ('        _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_reefer_guardado", "tras guardar el panel '
+               'Reefer",\n                                      completa=False, plazo_ms=CMA_PLAZO_MS)\n')
+ENTRE_LECTURAS = "        if n < CMA_LECTURAS_TEMPERATURA:\n            esperar(page, 0.5)\n"
+LO_DICE = ('            reg.info(f"temperatura guardada: la página muestra {temp} °C en «Operando en», sin el panel ni '
+           '«to "\n')
+NUMERO_T = '    m = _re_mk.fullmatch(r"(-?\\d+(?:[.,]\\d+)?)\\s*°\\s*C", temperaturas[0])\n'
+
+MUTACIONES += [
+    # La comprobación: sin ella, antes de la evidencia, tragándose su falla, o lo de entre el «Guardar» y ella que no
+    # corta (el clic o la espera que fallan).
+    dict(id="e58-reefer-sin-comprobar", pruebas=[SIN_T, CON_T, FILA_E58, EV_REEFER, ORDEN_T], viejo=COMPRUEBA,
+         nuevo=""),
+    dict(id="e58-comprobar-antes-de-la-evidencia", pruebas=[ORDEN_T, EV_REEFER], viejo=EVIDENCIA_G + PASO_4 + COMPRUEBA,
+         nuevo=PASO_4 + COMPRUEBA + EVIDENCIA_G),
+    dict(id="e58-escape-que-falla-corta", pruebas=[CON_T],
+         viejo=(COMPRUEBA + "        # Asegurar que no quede ningún modal ni popup abierto\n        try:\n"
+                '            page.keyboard.press("Escape")\n            esperar(page, 0.4)\n        except Exception:\n'
+                "            pass\n"),
+         nuevo=COMPRUEBA + '        page.keyboard.press("Escape")\n        esperar(page, 0.4)\n'),
+    dict(id="e58-comprobacion-se-traga-la-falla", pruebas=[COMPRUEBA_FALLA], viejo=COMPRUEBA,
+         nuevo="        try:\n    " + COMPRUEBA + "        except Exception:\n            pass\n"),
+    dict(id="e58-reefer-clic-se-traga", pruebas=[REEFER_FALLA],
+         viejo="        btn_g.click(timeout=4000)\n",
+         nuevo="        try:\n            btn_g.click(timeout=4000)\n        except Exception:\n            pass\n"),
+    dict(id="e58-reefer-espera-tras-guardar-se-traga", pruebas=[REEFER_GUARDADO],
+         viejo='        reg.info("ajustes reefer guardados")\n        esperar(page, 1.5)\n',
+         nuevo='        reg.info("ajustes reefer guardados")\n        try:\n            esperar(page, 1.5)\n'
+               '        except Exception:\n            pass\n'),
+    # Lo que falta: cada señal que no se mira, o se mira de otra forma.
+    dict(id="e58-falta-sin-el-cajon", pruebas=[FALTA_T, SIN_T],
+         viejo='    if leido.get("cajones"):\n        return "el panel Reefer sigue en la página"\n', nuevo=""),
+    dict(id="e58-falta-sin-un-solo-boton", pruebas=[FALTA_T],
+         viejo='    if leido.get("botones") != 1:\n', nuevo='    if not leido.get("botones"):\n'),
+    dict(id="e58-falta-sin-la-fila", pruebas=[FALTA_T],
+         viejo='    if leido.get("insignias") is None:\n', nuevo="    if False:\n"),
+    dict(id="e58-falta-to-complete-no-cuenta", pruebas=[FALTA_T, SIN_T],
+         viejo='    if any(_re_mk.search(r"to\\s*complete", i or "", _re_mk.I) for i in leido["insignias"]):\n',
+         nuevo="    if False:\n"),
+    dict(id="e58-falta-ninguna-temperatura-basta", pruebas=[FALTA_T],
+         viejo="    if len(temperaturas) != 1:\n", nuevo="    if not temperaturas:\n"),
+    dict(id="e58-falta-otra-temperatura-pasa", pruebas=[FALTA_T, SIN_T],
+         viejo='    if float(m.group(1).replace(",", ".")) != float(q.group(1).replace(",", ".")):\n',
+         nuevo="    if False:\n"),
+    dict(id="e58-falta-sin-comparar-pasa", pruebas=[FALTA_T],
+         viejo="    if not m or not q:\n", nuevo='    if not m or not q:\n        return ""\n'),
+    dict(id="e58-falta-sin-la-coma", pruebas=[FALTA_T], viejo=NUMERO_T,
+         nuevo=NUMERO_T.replace("[.,]", "[.]")),
+    # El JavaScript: otro cajón, cualquier rótulo, sin mirar el <dd>, la fila del primer botón, otra insignia.
+    dict(id="e58-js-otro-cajon", pruebas=[JS_T], viejo="document.querySelectorAll('.reefer-drawer').length",
+         nuevo="document.querySelectorAll('.el-drawer').length"),
+    dict(id="e58-js-cualquier-rotulo", pruebas=[JS_T], viejo=".filter(dt => txt(dt) === 'Operando en')",
+         nuevo=".filter(dt => txt(dt).includes('Operando en'))"),
+    dict(id="e58-js-sin-mirar-el-dd", pruebas=[JS_T],
+         viejo="(dt.nextElementSibling && dt.nextElementSibling.tagName === 'DD')",
+         nuevo="(dt.nextElementSibling)"),
+    dict(id="e58-js-fila-del-primer-boton", pruebas=[JS_T],
+         viejo="botones.length === 1 ? botones[0].closest(", nuevo="botones.length ? botones[0].closest("),
+    dict(id="e58-js-otra-insignia", pruebas=[JS_T], viejo="botones[0].closest('.capsule-container')",
+         nuevo="botones[0].closest('.row')"),
+    # Las lecturas: una sola, cada 2 s, una espera de más tras la última, o sin decirlo en log.txt.
+    dict(id="e58-una-lectura", pruebas=[SIN_T, CON_T], viejo="CMA_LECTURAS_TEMPERATURA = 20\n",
+         nuevo="CMA_LECTURAS_TEMPERATURA = 1\n"),
+    dict(id="e58-lecturas-cada-2-s", pruebas=[SIN_T, CON_T], viejo=ENTRE_LECTURAS,
+         nuevo=ENTRE_LECTURAS.replace("0.5", "2.0")),
+    dict(id="e58-espera-tras-la-ultima", pruebas=[SIN_T], viejo=ENTRE_LECTURAS,
+         nuevo="        esperar(page, 0.5)\n"),
+    dict(id="e58-sin-decir-guardada", pruebas=[CON_T], viejo=LO_DICE,
+         nuevo=LO_DICE.replace("temperatura guardada:", "comprobada:")),
+    # La mercancía que falla y sigue, y lo que buscan con otro texto.
+    dict(id="e58-mercancia-falla-sigue", pruebas=[MERCANCIA_FALLA, FILA_E58],
+         viejo='        raise _cma_fallo("Mercancía de CMA", CMA_MERCANCIA, "buscarla o elegirla", e)\n',
+         nuevo='        reg.info(f"mercancía err: {str(e)[:50]}")\n'),
+    dict(id="e58-mercancia-otro-texto", pruebas=[BUSCAN, C1 + "test_tamano_y_mercancia_no_eligen_con_el_teclado"],
+         viejo='CMA_MERCANCIA = "la sugerencia que dice «030313» en la lista (por su texto)"\n',
+         nuevo='CMA_MERCANCIA = "la mercancía"\n'),
+    dict(id="e58-temperatura-otro-texto", pruebas=[BUSCAN],
+         viejo='CMA_TEMPERATURA_GUARDADA = ("la temperatura guardada en la página',
+         nuevo='CMA_TEMPERATURA_GUARDADA = ("la temperatura'),
+    # El lanzador: una sola prueba del puerto, sin esperar, cada medio segundo, o sin ver que se soltó.
+    dict(id="e58-lanzador-prueba-una-vez", pruebas=[WINDOWS],
+         viejo="            if visto is None and not _puerto_se_suelta(p):\n",
+         nuevo="            if visto is None and not _puerto_libre(p):\n"),
+    dict(id="e58-se-suelta-sin-esperar", pruebas=[UNOS_INSTANTES, WINDOWS], viejo="PUERTO_SE_SUELTA = 1.0\n",
+         nuevo="PUERTO_SE_SUELTA = 0.0\n"),
+    dict(id="e58-se-suelta-cada-medio-segundo", pruebas=[UNOS_INSTANTES],
+         viejo="            return False\n        time.sleep(0.05)\n",
+         nuevo="            return False\n        time.sleep(0.5)\n"),
+    dict(id="e58-se-suelta-no-lo-ve", pruebas=[UNOS_INSTANTES, WINDOWS],
+         viejo="        if _puerto_libre(puerto):\n            return True\n",
+         nuevo="        if False:\n            return True\n"),
 ]
