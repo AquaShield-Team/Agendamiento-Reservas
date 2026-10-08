@@ -281,6 +281,21 @@ cerrado:
   emitir»: con el candado abierto, se habría enviado sin ellos. En `logs/` no pasó nunca: los 14 los escribió el
   JavaScript. Lo que falle después de escribirlos, como antes. El motivo dice «no encontré el campo…, porque el
   programa falló al buscarlo o escribirlo (…)»: el texto de `_sin_clic_a_ciegas` empieza siempre por «no encontré».
+- **CMA corta también si falla el tamaño y tipo, el peso, el panel Reefer o «I Agree»** (decisión de Marcelo,
+  encargo 57, `CICLO-cortes-de-cma-y-pausas.md`): si el programa falla antes de terminar el paso (un JavaScript
+  que falla o no vuelve en `CMA_PLAZO_MS`, un clic o una espera que fallan), corta con lo que falló, y la fila
+  queda NO ENVIADA con la captura y el HTML del paso. El corte lo arma `_cma_fallo`, que usan también los
+  comentarios; lo que busca cada paso, en `CMA_TAMANO_Y_TIPO`, `CMA_CAMPO_PESO`, `CMA_REEFER_GUARDADO` y
+  `CMA_CASILLA_I_AGREE`.
+  - Ninguna reserva llega al botón final sin la temperatura guardada: el panel Reefer corta si falla antes de pulsar
+    su «Guardar». Que el portal la haya guardado no se comprueba (residual del encargo 57).
+  - Hasta ahí, cuando no encontraban su objetivo ya cortaban (`ObjetivoNoEncontrado`); las otras fallas las
+    anotaban («tamaño y tipo err», «peso err», «ajustes reefer err», «check agree err») y la reserva seguía sin el
+    paso. En `logs/` no pasó nunca: las 14 reservas que llegaron a la guarda hicieron los cuatro.
+  - Lo que falle después de terminarlos, como antes. «I Agree» va en su propio paso, `_cma_i_agree_en_el_envio`;
+    hasta el encargo 57 iba escrito dentro de `reservar_cma`.
+  - La mercancía (el HS 030313) y la cantidad siguen anotando su falla y la reserva sigue: no estaban en la
+    decisión.
 - **Ampliar la búsqueda** (decisiones de Marcelo, `CICLO-ampliar-la-busqueda.md` y `CICLO-ampliar-msc-y-cma.md`) trae
   clics nuevos antes de la guarda, cada uno por su texto: en MAERSK, el único botón con el nombre accesible
   «Search more sailing options» (`MK_BOTON_MAS`, exacto); en COSCO, el único campo «Sailing Within N Weeks» y su opción
@@ -597,7 +612,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 698 pruebas al 2026-10-06 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 713 pruebas al 2026-10-07 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -625,6 +640,11 @@ segunda tardó 1.185 s (encargo 53).
   `puertos_seguidos` (del 20000 al 39999, con los cuatro seguidos libres): el lanzador prueba los puertos que siguen a
   su base, y los que reparte el sistema (desde el 49152) vienen seguidos (29 de 29, medido el 2026-10-05), así que dos
   pruebas en paralelo, como las del censo, quedarían en puertos vecinos (encargo 52).
+- **Una prueba no espera con el reloj a que alguien suelte un puerto.** `test_puerto_que_se_suelta_mientras_pregunta`
+  lo soltaba con un `threading.Timer` a los 2 s, mientras la segunda pregunta del lanzador esperaba: la pregunta
+  volvía con el reset de la conexión y, con la CPU ocupada, el lanzador probaba el puerto antes de que Windows lo
+  soltara, y tomaba el siguiente (5 de 30 corridas del mismo caso; 0 de 20 con el equipo quieto). Desde el encargo
+  57 el puerto se suelta dentro de esa segunda pregunta, con un `_panel_en` falso: el lanzador no cambió.
 - Una página falsa no avisa de lo inesperado solo levantando una excepción: el programa se la traga en su `try`. Que lo
   anote, y que la prueba exija esa lista vacía (`PaginaRevision` y `PaginaShipper` de `test_clics`, del encargo 38, y
   `SoloLee` de `test_evidencia`, de antes). Lo mismo con lo esperado: una página falsa que acepta cualquier acción sin
@@ -720,6 +740,10 @@ línea cambian). De arriba hacia abajo:
      del panel web vence a los 10 minutos de reloj, y no a las 300 vueltas, porque cada vuelta tarda lo que tarda en
      leer. El panel Tkinter también la mira, cada 2 s, y apaga su «Ya lo resolví»; sus pruebas compilan suelto el
      método de su clase `Panel` (`test_web.metodo_del_panel_tkinter`), porque el panel no se abre en una prueba.
+   - **Cada pausa del panel Tkinter espera su propia respuesta** (decisión de Marcelo, encargo 57,
+     `CICLO-cortes-de-cma-y-pausas.md`): `_pausa` apaga `ev_pausa` antes de pedirla. Hasta ahí se apagaba solo al
+     empezar la corrida, y después del primer «Ya lo resolví» las pausas que seguían no esperaban: las de MSC, COSCO
+     y MAERSK, y la del deslizador de CMA-CGM.
 4. **Login por naviera** `login_<x>(page, creds, reg, on_pausa=None) -> bool`, registrados en
    `NAVIERAS = {clave: (nombre, login)}`. COSCO tiene un validador tipo puzzle: se intenta resolver solo
    (`resolver_cosco_puzzle`) y, si no, se pausa hasta que el operador pulse «Ya lo resolví». CMA tiene DataDome (un
@@ -824,7 +848,10 @@ línea cambian). De arriba hacia abajo:
        mientras espera al operador, el panel mira la página con lo mismo que mira la espera de después
        (`_cma_como_quedo`, con plazo: `_cma_es_robotcheck` ya no ve a DataDome, o `_cma_datadome` ve el bloqueo). Si
        DataDome dejó pasar la página, la corrida sigue sin «Ya lo resolví»; si la bloqueó, CMA-CGM se detiene, como
-       antes. Con «Ya lo resolví» o al vencer la pausa, la espera sigue como antes, hasta 180 s. Hasta ahí, en el
+       antes. Desde el encargo 57, que la dejó pasar lo dice con dos lecturas seguidas (`_cma_vigia`,
+       `CMA_LECTURAS_PARA_SEGUIR`; decisión de Marcelo, `CICLO-cortes-de-cma-y-pausas.md`): una sola podría caer en un
+       instante de paso (sin medir). El bloqueo, con una. Con «Ya lo resolví» o al vencer la pausa, la espera sigue
+       como antes, hasta 180 s. Hasta ahí, en el
        panel, mientras el operador no pulsaba «Ya lo resolví» el programa no miraba la página. En `logs/`, las 8
        esperas que ese detector dio por superadas terminaron con la sesión iniciada (del pedido a «superada», de 7 a
        92 s). Una página cerrada no cuenta como que DataDome la dejó pasar: hasta ahí, si el navegador se cerraba entre
@@ -836,9 +863,9 @@ línea cambian). De arriba hacia abajo:
        panel como `reservar_cosco`, y levanta `CmaCancelada`, que deriva de `CmaDetenida`). El login queda sin
        sesión, y la fila, DETENIDO, «Cancelado por el operador», como las otras navieras. Hasta ahí, la espera volvía
        a mirar la página que el panel cerraba: su espera fallaba con la página cerrada, o, si se cerraba entre la
-       espera y la lectura, la daba por superada (medido sin red, con páginas falsas, contra `a6159b3`). En «Solo
-       iniciar sesión», «Detener» no cierra el navegador ni detiene los inicios de sesión que siguen, como antes
-       (leído en el código): corta solo la espera.
+       espera y la lectura, la daba por superada (medido sin red, con páginas falsas, contra `a6159b3`). Desde el
+       encargo 57, en «Solo iniciar sesión», «Detener» también cierra el navegador y no sigue con los inicios de
+       sesión que faltan (sección 8).
      - `_cma_es_robotcheck` da por DataDome a todo documento 403 (`_cma_http`), sin leer sus marcos: hasta el encargo
        54, la página vacía de las 14:26:44 del 06-10 le parecía superada, y el login seguía en una página en blanco.
      - La detención (`_cma_detener`) deja la línea «⛔ …», la captura con plazo (`CMA_CAPTURA_MS`), el HTML con plazo
@@ -907,7 +934,8 @@ línea cambian). De arriba hacia abajo:
    (ver «Antes de la guarda no hay clics a ciegas», encargo 42), cuando el login de MSC no deja la sesión iniciada
    (encargo 45), cuando New Booking de COSCO no muestra su formulario (encargo 48), cuando CMA-CGM restringe el
    acceso o su página no termina de cargar (encargo 54), cuando DataDome interrumpe una reserva de CMA-CGM a mitad de
-   camino (encargo 55), o cuando CMA-CGM no puede escribir sus comentarios (encargo 56). `DETENIDO`, con «Detener»: en
+   camino (encargo 55), o cuando CMA-CGM no puede escribir sus comentarios (encargo 56) o falla antes de terminar el
+   tamaño y tipo, el peso, el panel Reefer o «I Agree» (encargo 57). `DETENIDO`, con «Detener»: en
    COSCO y, desde el encargo 56, en la espera del deslizador de CMA-CGM. `REVISAR`, entre otros (en MAERSK
    y en COSCO, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el motivo dice hasta qué fecha buscó (ver
    «Ampliar la búsqueda»). Después: `EMITIDA`, `ENVIADA – REVISAR EN PORTAL`,
@@ -1130,7 +1158,12 @@ línea cambian). De arriba hacia abajo:
    `/api/credenciales`, `/api/planilla`, `/api/filas`, `/api/correr`, `/api/login`, `/api/estado`,
    `/api/continuar`, `/api/detener`, `/api/descargar`, `/api/apagar`. Una corrida sin filas elegidas no abre el
    navegador ni entra a ningún portal, y lo avisa. `/api/correr` arma solo si la página manda el modo que muestra y es
-   el del panel (encargo 52; ver el candado).
+   el del panel (encargo 52; ver el candado). «Solo iniciar sesión» (`_web_worker_login`) deja su navegador en
+   `_WEB["ctx"]`, como las reservas, y le pasa a `ejecutar_login` cómo saber si se pulsó «Detener» (`se_detuvo`,
+   `_web_se_detuvo`): con «Detener», `/api/detener` lo cierra, no sigue con los inicios de sesión que faltan, no espera
+   para cerrar y el panel dice «Detenido.» (decisión de Marcelo, encargo 57,
+   `CICLO-cortes-de-cma-y-pausas.md`). Hasta ahí cortaba solo la pausa en curso. La consola y el panel Tkinter no tienen
+   «Detener»: siguen como antes.
 9. **Front-end embebido**: `HTML_INDEX`, `JS_INDEX`, `CSS_INDEX` y `CSS_FUENTES` son strings de
    Python servidos desde memoria (el `.exe` debe quedar autocontenido). `CSS_FUENTES` lleva fuentes
    woff2 en base64 en líneas gigantes: **el Read falla si el rango las incluye** (cerca del final,
