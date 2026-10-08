@@ -1151,15 +1151,40 @@ class TestPausaQueTerminaSola(ConCorrida):
         r, pagina, vistas, panel, dormidas, _ = self.con_el_panel(
             "deja_pasar", [CON_DESLIZADOR, CON_DESLIZADOR, CON_DESLIZADOR, NORMAL])
         self.assertIs(r, True)
-        # Sin «Ya lo resolví»: tres esperas de 2 s de la pausa, y la espera de después no corrió (la página esperó solo
-        # el segundo y medio de siempre tras darla por superada). El panel ya no muestra la pausa.
-        self.assertEqual((dormidas, pagina.esperas, panel), ([2, 2, 2], [1500], (None, "")))
+        # Sin «Ya lo resolví»: cuatro esperas de 2 s de la pausa (desde el encargo 57, la tercera ve la página sin
+        # DataDome y la cuarta lo confirma; hasta ahí, bastaba la tercera), y la espera de después no corrió (la página
+        # esperó solo el segundo y medio de siempre tras darla por superada). El panel ya no muestra la pausa.
+        self.assertEqual((dormidas, pagina.esperas, panel), ([2, 2, 2, 2], [1500], (None, "")))
         texto = "\n".join(vistas)
-        self.assertIn("· ▶ La pausa terminó a los 6 s: DataDome dejó pasar la página.", texto)
+        self.assertIn("· ▶ La pausa terminó a los 8 s: DataDome dejó pasar la página.", texto)
         self.assertIn("· Verificación de CMA CGM superada ✓; continúo automáticamente.", texto)
         self.assertNotIn("esperando que deslices", texto)
         # Solo lee, con el plazo de lo que mira DataDome: sin navegar ni leer sin plazo.
         self.assertEqual((pagina.visitas, pagina.sin_plazo, set(pagina.plazos)), ([], [], {self.mod.CMA_LECTURA_MS}))
+
+    def test_una_lectura_sin_datadome_no_basta(self):
+        # Decisión de Marcelo, encargo 57 (CICLO-cortes-de-cma-y-pausas.md): la pausa termina sola solo con dos lecturas
+        # seguidas sin DataDome. Aquí la segunda espera ve la página sin DataDome y la tercera, otra vez con la flecha:
+        # la cuenta vuelve a cero, y la pausa termina en la quinta, la segunda seguida sin DataDome.
+        r, pagina, vistas, _, dormidas, _ = self.con_el_panel(
+            "una_no_basta", [CON_DESLIZADOR, CON_DESLIZADOR, NORMAL, CON_DESLIZADOR, NORMAL])
+        self.assertIs(r, True)
+        self.assertEqual((dormidas, pagina.esperas), ([2] * 5, [1500]))
+        self.assertIn("· ▶ La pausa terminó a los 10 s: DataDome dejó pasar la página.", "\n".join(vistas))
+        self.assertEqual(self.mod.CMA_LECTURAS_PARA_SEGUIR, 2)
+
+    def test_el_vigia_cuenta_las_lecturas_seguidas(self):
+        # Lo que dice el vigía en cada lectura: el bloqueo, con una; que DataDome dejó pasar, en la segunda seguida; y
+        # una con la página cerrada también vuelve a contar desde cero.
+        m = self.mod
+        lecturas = [None, m.CMA_DEJO_PASAR, None, m.CMA_DEJO_PASAR, m.CMA_DEJO_PASAR, m.CMA_DEJO_PASAR,
+                    m.CMA_RESTRINGIO]
+        with mock.patch.object(m, "_cma_como_quedo", lambda page: lecturas.pop(0)):
+            mirar = m._cma_vigia(object())
+            dice = [mirar() for _ in range(7)]
+        self.assertEqual(dice, [None, None, None, None, m.CMA_DEJO_PASAR, m.CMA_DEJO_PASAR, m.CMA_RESTRINGIO])
+        with mock.patch.object(m, "_cma_como_quedo", lambda page: m.CMA_RESTRINGIO):
+            self.assertEqual(m._cma_vigia(object())(), m.CMA_RESTRINGIO)
 
     def test_termina_sola_cuando_datadome_bloquea(self):
         r, pagina, vistas, panel, dormidas, reg = self.con_el_panel("bloquea",
@@ -1231,7 +1256,7 @@ class TestPausaQueTerminaSola(ConCorrida):
         self.assertIs(type(r), self.mod.CmaInterrumpida)
         self.assertEqual((r.motivo, self.mod._naviera_detenida(reg, "cma")),
                          (self.mod.CMA_INTERRUMPIDA.format(donde="tras el origen", que=self.mod.CMA_DESLIZADO), ""))
-        self.assertIn("· ▶ La pausa terminó a los 4 s: DataDome dejó pasar la página.", "\n".join(vistas))
+        self.assertIn("· ▶ La pausa terminó a los 6 s: DataDome dejó pasar la página.", "\n".join(vistas))
         r, *_ = self.con_el_panel("a_mitad_detener", [DESLIZADOR_ENCIMA] * 3, a_mitad=True,
                                   en_la_pausa=lambda k, p: self.detener(p))
         self.assertIs(type(r), self.mod.CmaCancelada)

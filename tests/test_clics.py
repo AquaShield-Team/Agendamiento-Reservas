@@ -2360,14 +2360,15 @@ class PaginaCma(soporte.PaginaFalsa):
 
 
 class PaginaCmaQueFalla(PaginaCma):
-    """La de CMA, con el JavaScript de los comentarios que falla con 'error' (encargo 56)."""
+    """La de CMA, con el JavaScript que trae 'marca' que falla con 'error': el de los comentarios (encargo 56), o desde
+    el encargo 57 el del tamaño y tipo, el del peso, el de la temperatura del Reefer o el que baja hasta «I Agree»."""
 
-    def __init__(self, error, **k):
+    def __init__(self, error, marca="allTa", **k):
         super().__init__(**k)
-        self.error = error
+        self.error, self.marca = error, marca
 
     def evaluate(self, js, *a):
-        if "allTa" in js:
+        if self.marca in js:
             raise self.error
         return super().evaluate(js, *a)
 
@@ -2382,6 +2383,31 @@ class PaginaCmaQueNoEscribe(PaginaCma):
 
     def locator(self, sel):
         return soporte.RaizFalsa(self) if sel == ":root" else LocQueNoEscribe(self, sel)
+
+
+class PaginaCmaQueNoPulsa(PaginaCma):
+    """La de CMA, con el elemento 'sel' que se ve y no se deja pulsar (encargo 57)."""
+
+    def __init__(self, sel, **k):
+        super().__init__(**k)
+        self.no_pulsa = sel
+
+    def locator(self, sel):
+        loc = super().locator(sel)
+        if sel == self.no_pulsa:
+            def falla(**k):
+                raise RuntimeError("el botón no se deja pulsar")
+            loc.click = falla
+        return loc
+
+
+def espera_que_falla_tras(pagina, clic):
+    """Hace fallar cada espera de 'pagina' que llegue después de 'clic' (encargo 57: lo que falla después de terminar
+    el paso)."""
+    def esperar(ms):
+        if clic in pagina.clics:
+            raise RuntimeError("espera inventada que falla")
+    pagina.wait_for_timeout = esperar
 
 
 class TestCma(ConRegistro):
@@ -2435,8 +2461,8 @@ class TestCma(ConRegistro):
                                             "portal."))
         self.assertEqual((buscados, pagina.capturas), (["#pol"], [("cma_f7_sin_objetivo.png", False)]))
 
-    def corta(self, funcion, pagina, *args):
-        reg, _, log = self.corrida()
+    def corta(self, funcion, pagina, *args, nombre="corrida"):
+        reg, _, log = self.corrida(nombre)
         with self.assertRaises(self.mod.ObjetivoNoEncontrado) as e:
             funcion(pagina, *args, reg)
         return e.exception, log.read_text(encoding="utf-8")
@@ -2974,6 +3000,171 @@ console.log(JSON.stringify(f()));
         self.assertIs(self.mod._cma_marcar_i_agree(pagina, reg), True)
         self.assertEqual(pagina.clics, ["label:has-text('I Agree')"])
         self.assertIn("marcado 'I Agree'", log.read_text(encoding="utf-8"))
+
+    # --- Encargo 57 (CICLO-cortes-de-cma-y-pausas.md): si el programa falla antes de terminar el tamaño y tipo, el
+    # peso, el panel Reefer o «I Agree», la reserva corta ahí, y la fila queda NO ENVIADA con el motivo, la captura y
+    # el HTML (decisión de Marcelo, como los comentarios del encargo 56). Hasta ahí lo anotaba («… err») y seguía sin
+    # ellos.
+    ABRE = "button:has-text('Modifique el reefer')"
+    GUARDAR = ".el-drawer button, [class*='drawer'] button"
+    TEMP = "/^temperature$/i"
+    DEL_PANEL = "paneles[0].contains(boton)"
+    I_AGREE = "label:has-text('I Agree')"
+
+    def errores(self):
+        """Una falla cualquiera y la de una lectura que no vuelve en CMA_PLAZO_MS."""
+        return (RuntimeError("falla inventada del JavaScript"),
+                self.mod.PWTimeout("Locator.evaluate: Timeout 30000ms exceeded."))
+
+    def test_tamano_y_tipo_que_falla_corta(self):
+        m = self.mod
+        for error in self.errores():
+            with self.subTest(error=type(error).__name__):
+                pagina = PaginaCmaQueFalla(error, marca="high.*cube", visibles={self.SELECCIONAR})
+                e, log = self.corta(m._cma_completar_info_extra, pagina, {"fila": 5}, nombre="e57_tamano")
+                self.assertEqual((e.paso, e.buscaba, pagina.clics),
+                                 ("Tamaño y tipo de CMA", f"{m.CMA_TAMANO_Y_TIPO}, porque el programa falló al abrir "
+                                                          f"el desplegable o elegirla ({m._texto_error(error)})",
+                                  [self.SELECCIONAR]))
+                self.assertNotIn("tamaño y tipo err", log)
+        # También si falla la espera que sigue a abrir el desplegable, antes de buscar la opción.
+        pagina = PaginaCma(visibles={self.SELECCIONAR, self.OPCION})
+        espera_que_falla_tras(pagina, self.SELECCIONAR)
+        e, _ = self.corta(m._cma_completar_info_extra, pagina, {"fila": 5}, nombre="e57_tamano_abierto")
+        self.assertEqual((e.buscaba, pagina.clics),
+                         (f"{m.CMA_TAMANO_Y_TIPO}, porque el programa falló al abrir el desplegable o elegirla "
+                          f"(RuntimeError: espera inventada que falla)", [self.SELECCIONAR]))
+
+    def test_lo_que_falla_despues_de_elegir_el_tamano_sigue_como_antes(self):
+        # Elegido el tamaño y tipo, lo que falle después (la espera que sigue) se anota, y el paso sigue: aquí, hasta el
+        # peso, que esta página no tiene.
+        pagina = PaginaCma(visibles={self.SELECCIONAR, self.OPCION})
+        espera_que_falla_tras(pagina, self.OPCION)
+        e, log = self.corta(self.mod._cma_completar_info_extra, pagina, {"fila": 5}, nombre="e57_tamano_elegido")
+        self.assertEqual(e.paso, "Peso por contenedor de CMA")
+        self.assertIn("    tamaño y tipo err: espera inventada que falla", log)
+
+    def test_peso_que_falla_corta(self):
+        m = self.mod
+        for error in self.errores():
+            with self.subTest(error=type(error).__name__):
+                pagina = PaginaCmaQueFalla(error, marca="peso por contenedor", visibles={self.SELECCIONAR, self.OPCION})
+                e, log = self.corta(m._cma_completar_info_extra, pagina, {"fila": 5}, nombre="e57_peso")
+                self.assertEqual((e.paso, e.buscaba, pagina.clics),
+                                 ("Peso por contenedor de CMA", f"{m.CMA_CAMPO_PESO}, porque el programa falló al "
+                                                                f"buscarlo o escribirlo ({m._texto_error(error)})",
+                                  [self.SELECCIONAR, self.OPCION]))
+                self.assertNotIn("peso err", log)
+
+    def test_reefer_que_falla_antes_de_guardar_corta(self):
+        # Ninguna reserva llega al botón final sin la temperatura guardada: si falla el JavaScript que busca la
+        # temperatura, o el clic en el «Guardar» del panel, corta.
+        m = self.mod
+        que = "abrir el panel, escribir la temperatura o guardarla"
+        casos = [(PaginaCmaQueFalla(error, marca=self.TEMP, visibles={self.ABRE}), m._texto_error(error), False)
+                 for error in self.errores()]
+        casos.append((PaginaCmaQueNoPulsa(self.GUARDAR, visibles={self.ABRE, self.GUARDAR},
+                                          js={self.TEMP: "ok", self.DEL_PANEL: True}),
+                      "RuntimeError: el botón no se deja pulsar", True))
+        for k, (pagina, falla, escribio) in enumerate(casos):
+            with self.subTest(caso=k):
+                e, log = self.corta(m._cma_ajustes_reefer, pagina, {"fila": 5}, nombre=f"e57_reefer_{k}")
+                self.assertEqual((e.paso, e.buscaba, pagina.clics),
+                                 ("Ajustes Reefer de CMA", f"{m.CMA_REEFER_GUARDADO}, porque el programa falló al "
+                                                           f"{que} ({falla})", [self.ABRE]))
+                self.assertEqual("temperatura reefer: -20 °C (focus)" in log, escribio)
+                self.assertNotIn("guardados", log)
+                self.assertNotIn("ajustes reefer err", log)
+
+    def test_lo_que_falla_despues_de_guardar_el_reefer_sigue_como_antes(self):
+        pagina = PaginaCma(visibles={self.ABRE, self.GUARDAR}, js={self.TEMP: "ok", self.DEL_PANEL: True})
+        espera_que_falla_tras(pagina, self.GUARDAR)
+        reg, _, log = self.corrida("e57_reefer_guardado")
+        self.assertIs(self.mod._cma_ajustes_reefer(pagina, {"fila": 5}, reg), False)
+        texto = log.read_text(encoding="utf-8")
+        self.assertIn("    ajustes reefer guardados", texto)
+        self.assertIn("    ajustes reefer err: espera inventada que falla", texto)
+
+    def test_i_agree_que_falla_corta(self):
+        # Si falla antes de marcarla (aquí, el JavaScript que baja al final de la página), corta: hasta el encargo 57 la
+        # reserva seguía sin la casilla hasta la guarda. Sin «I Agree» a la vista, corta como antes.
+        m = self.mod
+        for error in self.errores():
+            with self.subTest(error=type(error).__name__):
+                pagina = PaginaCmaQueFalla(error, marca="window.scrollTo", visibles={self.I_AGREE})
+                e, log = self.corta(m._cma_i_agree_en_el_envio, pagina, nombre="e57_agree")
+                self.assertEqual((e.paso, e.buscaba, pagina.clics, pagina.teclas),
+                                 ("«I Agree» de CMA", f"{m.CMA_CASILLA_I_AGREE}, porque el programa falló al llegar a "
+                                                      f"ella o marcarla ({m._texto_error(error)})", [], ["Escape"]))
+                self.assertNotIn("check agree err", log)
+        e, _ = self.corta(m._cma_i_agree_en_el_envio, PaginaCma(), nombre="e57_agree_sin")
+        self.assertEqual((e.paso, e.buscaba), ("«I Agree» de CMA", m.CMA_CASILLA_I_AGREE))
+
+    def test_i_agree_como_antes(self):
+        # La marca, y lo que falle después de marcarla (la espera que sigue), se anota y sigue, como antes.
+        reg, _, log = self.corrida("e57_agree_marcada")
+        pagina = PaginaCma(visibles={self.I_AGREE})
+        espera_que_falla_tras(pagina, self.I_AGREE)
+        self.assertIsNone(self.mod._cma_i_agree_en_el_envio(pagina, reg))
+        self.assertEqual((pagina.clics, pagina.teclas), ([self.I_AGREE], ["Escape"]))
+        texto = log.read_text(encoding="utf-8")
+        self.assertIn("· Avanzando a la pantalla de revisión (Envío de la reserva)...", texto)
+        self.assertIn("    marcado 'I Agree'", texto)
+        self.assertIn("    check agree err: espera inventada que falla", texto)
+
+    def test_lo_que_buscan(self):
+        # Lo que dice el motivo de cada uno (llega a la planilla), tal como lo ve el operador.
+        m = self.mod
+        self.assertEqual((m.CMA_TAMANO_Y_TIPO, m.CMA_CAMPO_PESO, m.CMA_REEFER_GUARDADO, m.CMA_CASILLA_I_AGREE),
+                         ("la opción «40' Reefer High Cube» en el desplegable (por su texto)",
+                          "el campo «Peso por contenedor» (por su etiqueta o su placeholder «Peso»)",
+                          "el panel Reefer con su temperatura guardada (por el botón «Modifique el reefer», la "
+                          "etiqueta «Temperature» y su «Guardar»)",
+                          "la casilla «I Agree» (por su texto)"))
+
+    def test_reservar_cma_corre_los_pasos_que_cortan_antes_de_la_guarda(self):
+        # Los pasos que cortan si el programa falla antes de terminarlos (encargos 56 y 57) corren en reservar_cma, y
+        # antes de la guarda. Que nada se trague su corte lo vigila TestSinClicACiegas.test_nada_se_traga_el_corte.
+        tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
+        f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_cma")
+        pasos = ("_cma_completar_info_extra", "_cma_ajustes_reefer", "_cma_comentarios", "_cma_i_agree_en_el_envio")
+        lineas = {c.func.id: c.lineno for c in ast.walk(f) if isinstance(c, ast.Call)
+                  and getattr(c.func, "id", "") in pasos}
+        self.assertEqual(sorted(lineas), sorted(pasos))
+        self.assertLess(max(lineas.values()), linea_guarda(f))
+
+    def test_los_cuatro_que_fallan_dejan_la_fila_no_enviada_con_su_evidencia(self):
+        # Con los decoradores de reservar_cma, como en una corrida: NO ENVIADA con el motivo, la captura y el HTML del
+        # paso, y sin seguir al paso siguiente (ni a la guarda).
+        m = self.mod
+        html = {"html": "<!DOCTYPE html>\n<html><body>Click &amp; Book inventado</body></html>", "sombras": 0}
+        casos = (("Tamaño y tipo de CMA", m.CMA_TAMANO_Y_TIPO, "abrir el desplegable o elegirla", "high.*cube",
+                  {self.SELECCIONAR}, lambda p, reg: m._cma_completar_info_extra(p, {"fila": 9}, reg)),
+                 ("Peso por contenedor de CMA", m.CMA_CAMPO_PESO, "buscarlo o escribirlo", "peso por contenedor",
+                  {self.SELECCIONAR, self.OPCION}, lambda p, reg: m._cma_completar_info_extra(p, {"fila": 9}, reg)),
+                 ("Ajustes Reefer de CMA", m.CMA_REEFER_GUARDADO, "abrir el panel, escribir la temperatura o guardarla",
+                  self.TEMP, {self.ABRE}, lambda p, reg: m._cma_ajustes_reefer(p, {"fila": 9}, reg)),
+                 ("«I Agree» de CMA", m.CMA_CASILLA_I_AGREE, "llegar a ella o marcarla", "window.scrollTo",
+                  {self.I_AGREE}, lambda p, reg: m._cma_i_agree_en_el_envio(p, reg)))
+        for k, (paso, buscaba, que, marca, visibles, hacer) in enumerate(casos):
+            with self.subTest(paso=paso):
+                pagina = PaginaCmaQueFalla(RuntimeError("falla inventada del JavaScript"), marca=marca,
+                                           visibles=visibles, js={"getHTML": html})
+                pasos = []
+
+                def cruda(page, reserva, creds, reg, on_pausa=None, hacer=hacer):
+                    hacer(page, reg)
+                    pasos.append("siguió")
+                    return ("OK-EJEMPLO", "armada sin el paso")
+                reg, _, log = self.corrida(f"e57_fila_{k}")
+                reservar = m._sin_clic_a_ciegas("cma", plazo_ms=m.CMA_PLAZO_MS)(m._cma_si_se_detuvo(cruda))
+                motivo = (f"{paso}: no encontré {buscaba}, porque el programa falló al {que} (RuntimeError: falla "
+                          f"inventada del JavaScript), así que no pulsé nada. La reserva no se envió; revisa ese paso "
+                          f"en el portal.")
+                self.assertEqual((reservar(pagina, {"fila": 9}, {}, reg), pasos), (("NO ENVIADA", motivo), []))
+                self.assertEqual(pagina.capturas[-1], ("cma_f9_sin_objetivo.png", False))
+                guardado = (log.parent / "cma_f9_sin_objetivo.html").read_text(encoding="utf-8")
+                self.assertIn("Click &amp; Book inventado", guardado)
 
 
 class MarcoCosco:

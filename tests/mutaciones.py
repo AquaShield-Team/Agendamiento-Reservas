@@ -479,7 +479,7 @@ MUTACIONES += [
          viejo='                    if _WEB.get("detener"):\n                        _WEB["detener"].set()',
          nuevo='                    if _WEB.get("detener"):\n                        _WEB["detener"].is_set()'),
     dict(id="login-cierra-antes", pruebas=[CO + "test_modo_login"],
-         viejo='esperar_cierre=lambda: _time.sleep(6))', nuevo='esperar_cierre=lambda: _time.sleep(1))'),
+         viejo='esperar_cierre=lambda: _time.sleep(6), ', nuevo='esperar_cierre=lambda: _time.sleep(1), '),
     dict(id="login-acepta-navieras-desconocidas", pruebas=[CO + "test_modo_login"],
          viejo='navs = [n for n in (d.get("navieras") or []) if n in NAVIERAS]', nuevo='navs = list(d.get("navieras") or [])'),
     dict(id="previa-ociosa-no-se-apaga", pruebas=[AR + "test_instancia_previa_ociosa_se_apaga"],
@@ -1206,7 +1206,7 @@ MUTACIONES += [
          viejo="        \".el-checkbox:has-text('I Agree')\",\n    ]:\n",
          nuevo="        \".el-checkbox:has-text('I Agree')\",\n        \"input[type='checkbox']\",\n    ]:\n"),
     dict(id="cma-i-agree-no-corta", pruebas=[C1 + "test_i_agree_solo_por_su_texto"],
-         viejo='    raise ObjetivoNoEncontrado("«I Agree» de CMA", "la casilla «I Agree» (por su texto)")\n',
+         viejo='    raise ObjetivoNoEncontrado("«I Agree» de CMA", CMA_CASILLA_I_AGREE)\n',
          nuevo="    return False\n"),
 ]
 
@@ -1981,7 +1981,7 @@ MUTACIONES += [
          viejo='        raise ObjetivoNoEncontrado(f"{etiqueta} de CMA", f"la sugerencia del puerto «{ciudad}» (por su texto) que deja "\n                                                         f"el código del puerto en el campo")\n',
          nuevo='        page.keyboard.press("ArrowDown"); esperar(page, 0.4); page.keyboard.press("Enter")\n'),
     dict(id='teclado-cma-tamano', pruebas=[C1 + "test_tamano_y_mercancia_no_eligen_con_el_teclado", FG],
-         viejo='            raise ObjetivoNoEncontrado("Tamaño y tipo de CMA", "la opción «40\' Reefer High Cube» en el desplegable "\n                                                               "(por su texto)" + (f", porque {CMA_SIN_RESPUESTA}"\n                                                                                   if sin_respuesta else ""))\n',
+         viejo='            raise ObjetivoNoEncontrado("Tamaño y tipo de CMA", CMA_TAMANO_Y_TIPO + (f", porque {CMA_SIN_RESPUESTA}"\n                                                                                    if sin_respuesta else ""))\n',
          nuevo='            page.keyboard.press("ArrowDown"); esperar(page, 0.4); page.keyboard.press("Enter")\n'),
     dict(id='teclado-cma-mercancia', pruebas=[C1 + "test_tamano_y_mercancia_no_eligen_con_el_teclado", FG],
          viejo='            raise ObjetivoNoEncontrado("Mercancía de CMA", "la sugerencia que dice «030313» en la lista (por su "\n                                                           "texto)")\n',
@@ -6598,8 +6598,8 @@ MUTACIONES += [
          viejo="        ctx = p.chromium.launch_persistent_context(**opciones)\n",
          nuevo="        ctx = p.chromium.launch_persistent_context(channel=canal, **opciones)\n"),
     dict(id="e53-navegador-login-sin-el-ayudante", pruebas=[UN_LANZADOR, LOGIN_CONSOLA],
-         viejo="        ctx = _lanzar_navegador(p, perfil_dir, headless, canal, reg)\n\n        page = ",
-         nuevo="        ctx = " + DIRECTO.format("perfil_dir") + "\n\n        page = "),
+         viejo="        ctx = _lanzar_navegador(p, perfil_dir, headless, canal, reg)\n        if al_abrir:\n",
+         nuevo="        ctx = " + DIRECTO.format("perfil_dir") + "\n        if al_abrir:\n"),
     dict(id="e53-navegador-consola-sin-el-ayudante", pruebas=[UN_LANZADOR, RESERVAS_CONSOLA],
          viejo="        ctx = _lanzar_navegador(p, perfil_dir, headless, canal, reg)\n        # Traza",
          nuevo="        ctx = " + DIRECTO.format("perfil_dir") + "\n        # Traza"),
@@ -7171,8 +7171,8 @@ MIRA = "        sola = hasta() if hasta and not ev.is_set() else None\n"
 MIRA_TK = "                sola = hasta() if hasta else None\n"
 CANCELA = '        raise CmaCancelada("Cancelado por el operador")\n'
 CORTA_COMENTARIOS = ('        if not escritos:\n'
-                     '            raise ObjetivoNoEncontrado("Comentarios de CMA", f"{CMA_CAMPO_COMENTARIOS}, porque '
-                     'el programa falló al "\n')
+                     '            raise _cma_fallo("Comentarios de CMA", CMA_CAMPO_COMENTARIOS, "buscarlo o escribirlo"'
+                     ', e)\n')
 
 MUTACIONES += [
     # Los comentarios: lo que falla antes de escribirlos no corta, o corta también después; el localizador da por
@@ -7186,7 +7186,9 @@ MUTACIONES += [
          viejo="            ta.fill(COSCO_REMARK)\n            escritos = True\n",
          nuevo="            escritos = True\n            ta.fill(COSCO_REMARK)\n"),
     dict(id="e56-comentarios-motivo-sin-la-falla", pruebas=[COMENTARIOS_FALLAN, NO_ESCRIBE, FILA_COMENTARIOS],
-         viejo='f"buscarlo o escribirlo ({_texto_error(e)})")', nuevo='"buscarlo o escribirlo")'),
+         viejo=CORTA_COMENTARIOS,
+         nuevo=('        if not escritos:\n            raise ObjetivoNoEncontrado("Comentarios de CMA", '
+                'CMA_CAMPO_COMENTARIOS + ", porque el programa falló al buscarlo o escribirlo")\n')),
     dict(id="e56-comentarios-otro-paso", pruebas=[COMENTARIOS_FALLAN, FILA_COMENTARIOS],
          viejo=CORTA_COMENTARIOS,
          nuevo=CORTA_COMENTARIOS.replace('("Comentarios de CMA",', '("Comentarios",')),
@@ -7197,7 +7199,7 @@ MUTACIONES += [
     # La pausa del deslizador: sin mirar la página, sin usar lo que dice, el panel sin pasarle qué mirar, la flecha
     # como si hubiera pasado, la página cerrada como si hubiera pasado, y la pausa vencida sin la espera de después.
     dict(id="e56-deslizador-sin-vigia", pruebas=[DEJA_PASAR, BLOQUEA, A_MITAD_SOLA],
-         viejo='                                "continuar.", hasta=lambda: _cma_como_quedo(page))\n',
+         viejo='                                "continuar.", hasta=_cma_vigia(page))\n',
          nuevo='                                "continuar.")\n'),
     dict(id="e56-deslizador-sin-lo-que-dice-la-pausa", pruebas=[DEJA_PASAR, BLOQUEA],
          viejo="        como = _pausa_del_panel(reg, on_pausa, ", nuevo="        _pausa_del_panel(reg, on_pausa, "),
@@ -7275,4 +7277,131 @@ MUTACIONES += [
     dict(id="e56-tk-pausa-mira-cada-20-s", pruebas=[TK + "test_termina_sola_con_lo_que_dice_hasta"],
          viejo="            while not self.ev_pausa.wait(timeout=2):\n",
          nuevo="            while not self.ev_pausa.wait(timeout=20):\n"),
+]
+
+# --- Encargo 57 (CICLO-cortes-de-cma-y-pausas.md): el tamaño y tipo, el peso, el panel Reefer y «I Agree» de CMA-CGM
+# cortan si el programa falla antes de terminarlos; cada pausa del panel Tkinter espera su propia respuesta; la pausa
+# del deslizador termina sola solo con dos lecturas seguidas sin DataDome; «Detener» detiene también «Solo iniciar
+# sesión»; y la prueba de puertos del encargo 52 ya no depende del reloj del equipo. ---
+TAMANO_FALLA = C1 + "test_tamano_y_tipo_que_falla_corta"
+TAMANO_ELEGIDO = C1 + "test_lo_que_falla_despues_de_elegir_el_tamano_sigue_como_antes"
+PESO_FALLA = C1 + "test_peso_que_falla_corta"
+REEFER_FALLA = C1 + "test_reefer_que_falla_antes_de_guardar_corta"
+REEFER_GUARDADO = C1 + "test_lo_que_falla_despues_de_guardar_el_reefer_sigue_como_antes"
+AGREE_FALLA = C1 + "test_i_agree_que_falla_corta"
+AGREE_MARCADA = C1 + "test_i_agree_como_antes"
+CUATRO = C1 + "test_los_cuatro_que_fallan_dejan_la_fila_no_enviada_con_su_evidencia"
+BUSCAN = C1 + "test_lo_que_buscan"
+PASOS_CMA = C1 + "test_reservar_cma_corre_los_pasos_que_cortan_antes_de_la_guarda"
+UNA_NO_BASTA = PS + "test_una_lectura_sin_datadome_no_basta"
+VIGIA = PS + "test_el_vigia_cuenta_las_lecturas_seguidas"
+CADA_PAUSA = TK + "test_cada_pausa_espera_su_respuesta"
+DETENER_LOGIN = "test_consola.TestEjecutarLogin.test_solo_login_con_detener_no_sigue"
+DETENER_LOGIN_WEB = CO + "test_detener_en_solo_iniciar_sesion"
+TAMANO_CORTA = ('        if not sel_ok:\n'
+                '            raise _cma_fallo("Tamaño y tipo de CMA", CMA_TAMANO_Y_TIPO, "abrir el desplegable o '
+                'elegirla", e)\n')
+REEFER_CORTA = '        if not guardado:\n            raise _cma_fallo("Ajustes Reefer de CMA", CMA_REEFER_GUARDADO,\n'
+AGREE_CORTA = ('        if not marcada:\n'
+               '            raise _cma_fallo("«I Agree» de CMA", CMA_CASILLA_I_AGREE, "llegar a ella o marcarla", e)\n')
+FALLO = '    return ObjetivoNoEncontrado(paso, f"{buscaba}, porque el programa falló al {que} ({_texto_error(e)})")\n'
+VIGIA_PAUSA = '                                "continuar.", hasta=_cma_vigia(page))\n'
+WEB_LOGIN = "se_detuvo=_web_se_detuvo, al_abrir=al_abrir)"
+
+MUTACIONES += [
+    # Los cuatro pasos de CMA-CGM: lo que falla antes no corta, corta también después, o el paso se da por terminado
+    # antes de terminarlo; reservar_cma sin el paso de «I Agree»; el motivo sin la falla o con otro texto.
+    dict(id="e57-tamano-falla-sigue", pruebas=[TAMANO_FALLA, CUATRO], viejo=TAMANO_CORTA,
+         nuevo=TAMANO_CORTA.replace("if not sel_ok:", "if False:")),
+    dict(id="e57-tamano-elegido-corta", pruebas=[TAMANO_ELEGIDO], viejo=TAMANO_CORTA,
+         nuevo=TAMANO_CORTA.replace("if not sel_ok:", "if True:")),
+    dict(id="e57-tamano-sin-elegido-de-entrada", pruebas=[TAMANO_FALLA],
+         viejo="    sel_ok = False\n    try:\n        abierto = False\n", nuevo="    try:\n        abierto = False\n"),
+    dict(id="e57-peso-falla-sigue", pruebas=[PESO_FALLA, CUATRO],
+         viejo='        raise _cma_fallo("Peso por contenedor de CMA", CMA_CAMPO_PESO, "buscarlo o escribirlo", e)\n',
+         nuevo='        reg.info(f"peso err: {str(e)[:50]}")\n'),
+    dict(id="e57-reefer-falla-sigue", pruebas=[REEFER_FALLA, CUATRO], viejo=REEFER_CORTA,
+         nuevo=REEFER_CORTA.replace("if not guardado:", "if False:")),
+    dict(id="e57-reefer-guardado-corta", pruebas=[REEFER_GUARDADO],
+         viejo='        guardado = True\n        reg.info("ajustes reefer guardados")\n',
+         nuevo='        reg.info("ajustes reefer guardados")\n'),
+    dict(id="e57-reefer-guardado-antes-del-clic", pruebas=[REEFER_FALLA],
+         viejo="        btn_g.click(timeout=4000)\n        guardado = True\n",
+         nuevo="        guardado = True\n        btn_g.click(timeout=4000)\n"),
+    dict(id="e57-agree-falla-sigue", pruebas=[AGREE_FALLA, CUATRO], viejo=AGREE_CORTA,
+         nuevo=AGREE_CORTA.replace("if not marcada:", "if False:")),
+    dict(id="e57-agree-marcada-corta", pruebas=[AGREE_MARCADA],
+         viejo="        marcada = _cma_marcar_i_agree(page, reg)\n", nuevo="        _cma_marcar_i_agree(page, reg)\n"),
+    dict(id="e57-reservar-sin-agree", pruebas=[PASOS_CMA], viejo="        _cma_i_agree_en_el_envio(page, reg)\n",
+         nuevo=""),
+    dict(id="e57-fallo-sin-la-falla",
+         pruebas=[TAMANO_FALLA, PESO_FALLA, REEFER_FALLA, AGREE_FALLA, CUATRO, COMENTARIOS_FALLAN, FILA_COMENTARIOS],
+         viejo=FALLO, nuevo='    return ObjetivoNoEncontrado(paso, f"{buscaba}, porque el programa falló al {que}")\n'),
+    dict(id="e57-fallo-otro-texto", pruebas=[CUATRO, FILA_COMENTARIOS], viejo=FALLO,
+         nuevo=FALLO.replace("porque el programa falló al", "porque falló al")),
+    dict(id="e57-tamano-otro-texto", pruebas=[BUSCAN],
+         viejo='CMA_TAMANO_Y_TIPO = "la opción «40\' Reefer High Cube» en el desplegable (por su texto)"\n',
+         nuevo='CMA_TAMANO_Y_TIPO = "la opción del tamaño"\n'),
+    dict(id="e57-peso-otro-texto", pruebas=[BUSCAN],
+         viejo='CMA_CAMPO_PESO = "el campo «Peso por contenedor» (por su etiqueta o su placeholder «Peso»)"\n',
+         nuevo='CMA_CAMPO_PESO = "el campo del peso"\n'),
+    dict(id="e57-reefer-otro-texto", pruebas=[BUSCAN],
+         viejo='CMA_REEFER_GUARDADO = ("el panel Reefer con su temperatura guardada',
+         nuevo='CMA_REEFER_GUARDADO = ("el panel Reefer'),
+    dict(id="e57-agree-otro-texto", pruebas=[BUSCAN],
+         viejo='CMA_CASILLA_I_AGREE = "la casilla «I Agree» (por su texto)"\n',
+         nuevo='CMA_CASILLA_I_AGREE = "la casilla"\n'),
+    # La pausa del deslizador: con una lectura, sin volver a contar desde cero, el bloqueo también con dos, y el panel
+    # mirando como en el encargo 56.
+    dict(id="e57-vigia-una-lectura", pruebas=[DEJA_PASAR, UNA_NO_BASTA, VIGIA, A_MITAD_SOLA],
+         viejo="CMA_LECTURAS_PARA_SEGUIR = 2\n", nuevo="CMA_LECTURAS_PARA_SEGUIR = 1\n"),
+    dict(id="e57-vigia-no-vuelve-a-cero", pruebas=[UNA_NO_BASTA, VIGIA],
+         viejo="        seguidas = seguidas + 1 if como == CMA_DEJO_PASAR else 0\n",
+         nuevo="        seguidas = seguidas + 1 if como == CMA_DEJO_PASAR else seguidas\n"),
+    dict(id="e57-vigia-bloqueo-con-dos", pruebas=[BLOQUEA, VIGIA],
+         viejo="        return None if como == CMA_DEJO_PASAR and seguidas < CMA_LECTURAS_PARA_SEGUIR else como\n",
+         nuevo="        return None if seguidas < CMA_LECTURAS_PARA_SEGUIR else como\n"),
+    dict(id="e57-deslizador-con-una-lectura", pruebas=[DEJA_PASAR, UNA_NO_BASTA, A_MITAD_SOLA], viejo=VIGIA_PAUSA,
+         nuevo='                                "continuar.", hasta=lambda: _cma_como_quedo(page))\n'),
+    # La pausa del panel Tkinter sin apagar lo que dejó el «Ya lo resolví» anterior.
+    dict(id="e57-tk-pausa-sin-apagar", pruebas=[CADA_PAUSA],
+         viejo='            self.ev_pausa.clear()\n            self.cola.put(("pausa", mensaje))\n',
+         nuevo='            self.cola.put(("pausa", mensaje))\n'),
+    # «Detener» en «Solo iniciar sesión»: sin mirarlo entre un inicio de sesión y otro, esperando para cerrar, sin
+    # pasarle el navegador al panel, sin decirlo, con la lista de los que faltan mal, la falla por «Detener» como error,
+    # y el panel web sin pasarle «Detener», sin guardar o soltar el navegador, sin decir «Detenido.» o sin verlo.
+    dict(id="e57-login-sin-mirar-detener", pruebas=[DETENER_LOGIN, DETENER_LOGIN_WEB],
+         viejo="        for clave in navieras:\n            if se_detuvo and se_detuvo():\n                break\n",
+         nuevo="        for clave in navieras:\n"),
+    dict(id="e57-login-espera-con-detener", pruebas=[DETENER_LOGIN],
+         viejo="        if detenido:\n            pass                                # con «Detener», se cierra sin "
+               "esperar\n",
+         nuevo="        if False:\n            pass\n"),
+    dict(id="e57-login-sin-al-abrir", pruebas=[DETENER_LOGIN, DETENER_LOGIN_WEB],
+         viejo="        if al_abrir:\n            al_abrir(ctx)\n", nuevo=""),
+    dict(id="e57-login-sin-decir-detenido", pruebas=[DETENER_LOGIN, DETENER_LOGIN_WEB],
+         viejo='            reg.paso("⛔ Detenido por el operador: cierro el navegador"\n',
+         nuevo='            reg.paso("Fin"\n'),
+    dict(id="e57-login-faltan-todas", pruebas=[DETENER_LOGIN, DETENER_LOGIN_WEB],
+         viejo="            faltan = [NAVIERAS[c][0] for c in navieras if c in NAVIERAS and c not in resultados]\n",
+         nuevo="            faltan = [NAVIERAS[c][0] for c in navieras if c in NAVIERAS]\n"),
+    dict(id="e57-login-detener-como-error", pruebas=[DETENER_LOGIN],
+         viejo="                if se_detuvo and se_detuvo():       # «Detener» le cerró el navegador: no es un error "
+               "del portal\n",
+         nuevo="                if False:\n"),
+    dict(id="e57-web-login-sin-detener", pruebas=[DETENER_LOGIN_WEB], viejo=WEB_LOGIN,
+         nuevo="al_abrir=al_abrir)"),
+    dict(id="e57-web-login-sin-navegador", pruebas=[DETENER_LOGIN_WEB], viejo=WEB_LOGIN,
+         nuevo="se_detuvo=_web_se_detuvo)"),
+    dict(id="e57-web-login-sin-detenido", pruebas=[DETENER_LOGIN_WEB],
+         viejo='        if _web_se_detuvo():\n            _westado("Detenido.")\n',
+         nuevo='        if False:\n            _westado("Detenido.")\n'),
+    dict(id="e57-web-login-navegador-queda", pruebas=[DETENER_LOGIN_WEB],
+         viejo='            _WEB["ctx"] = None\n        if _web_se_detuvo():\n',
+         nuevo="        if _web_se_detuvo():\n"),
+    dict(id="e57-web-se-detuvo-nunca", pruebas=[DETENER_LOGIN_WEB],
+         viejo='    return bool(_WEB.get("detener") and _WEB["detener"].is_set())\n', nuevo="    return False\n"),
+    # El lanzador que no le vuelve a preguntar a quien tiene su puerto (la prueba ya no depende del reloj).
+    dict(id="e57-lanzador-no-vuelve-a-preguntar", pruebas=[SE_SUELTA],
+         viejo="            visto = _panel_en(p, espera=PANEL_ESPERA_LARGA)\n", nuevo="            visto = None\n"),
 ]

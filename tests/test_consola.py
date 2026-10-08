@@ -643,6 +643,38 @@ class TestEjecutarLogin(ConPlanilla):
         self.assertIn("· INICIO · usuario=op_vacio · navieras=one", lineas[0])
         self.assertIn("· 🛡️ Candado de emisión cerrado: modo prueba", lineas[1])
 
+    def test_solo_login_con_detener_no_sigue(self):
+        # Decisión de Marcelo, encargo 57 (CICLO-cortes-de-cma-y-pausas.md): con «Detener» (se_detuvo), no sigue con los
+        # inicios de sesión que faltan, no espera para cerrar y cierra el navegador; al_abrir recibe el navegador apenas
+        # se abre (el panel web lo guarda para que «Detener» lo cierre). Aquí el operador lo pulsa durante el de ONE. Si
+        # el inicio de sesión se cae porque «Detener» le cerró el navegador, no es un error del portal: no hay captura.
+        # Sin se_detuvo (la consola y el panel Tkinter), como antes. Corre después de test_login_por_consola, que pide
+        # su carpeta sin «_2».
+        pulsado, abiertos, esperas = [], [], []
+
+        def rompe(page, creds, reg, on_pausa=None):
+            pulsado.append("one")
+            raise RuntimeError("Target page, context or browser has been closed")
+        with soporte.Navieras(self.mod) as n:
+            self.mod.NAVIERAS["one"] = ("ONE", rompe)
+            res, carpeta = self.mod.ejecutar_login("op_prueba", ["one", "msc", "cosco"],
+                                                   esperar_cierre=lambda: esperas.append(1),
+                                                   se_detuvo=lambda: bool(pulsado), al_abrir=abiertos.append)
+        self.assertEqual((res, n.logins, esperas), ({"one": False}, [], []))
+        self.assertEqual((abiertos, n.pw.contextos[0].cerrado, n.pw.contextos[0].pages[0].capturas),
+                         ([n.pw.contextos[0]], True, []))
+        log = (Path(carpeta) / "log.txt").read_text(encoding="utf-8")
+        self.assertIn("    se cortó con «Detener» (RuntimeError: Target page, context or browser has been closed)", log)
+        self.assertIn("· ⛔ Detenido por el operador: cierro el navegador y no sigo con MSC, COSCO.", log)
+        self.assertNotIn("ERROR inesperado", log)
+        # Pulsado después del último, lo dice sin la lista de los que faltan, y tampoco espera.
+        with soporte.Navieras(self.mod) as n:
+            res, carpeta = self.mod.ejecutar_login("op_prueba", ["one"], esperar_cierre=lambda: esperas.append(1),
+                                                   se_detuvo=lambda: bool(n.logins))
+        log = (Path(carpeta) / "log.txt").read_text(encoding="utf-8")
+        self.assertEqual((res, esperas), ({"one": True}, []))
+        self.assertIn("· ⛔ Detenido por el operador: cierro el navegador.\n", log)
+
 
 class TestCarpetaCorrida(ConPlanilla):
     # Hasta 393f504, dos corridas del mismo segundo compartían carpeta: la segunda escribía en el log de la

@@ -2061,13 +2061,35 @@ def _cma_como_quedo(page):
     """Cómo quedó DataDome mientras el programa espera que el operador deslice la flecha: CMA_DEJO_PASAR si ya dejó
     pasar la página (_cma_es_robotcheck ya no lo ve, y la página sigue abierta), CMA_RESTRINGIO si restringe el acceso
     (_cma_datadome), o None. Es lo que miraba la espera del deslizador desde el encargo 54; desde el encargo 56 lo mira
-    también la pausa del panel, que termina sola con eso (decisión de Marcelo). En logs/, las 8 esperas que esto dio por
+    también la pausa del panel, que termina sola con eso (decisión de Marcelo; desde el encargo 57, por _cma_vigia, que
+    pide dos lecturas seguidas que dejen pasar la página). En logs/, las 8 esperas que esto dio por
     superadas terminaron con la sesión iniciada. Una página cerrada no dejó pasar nada: hasta ahí, si el navegador se
     cerraba entre la espera y la lectura, la espera la daba por superada (leído en el código). Solo lee, con plazo, y
     no levanta: lo que no puede leer cuenta como sin DataDome, como en _cma_es_robotcheck."""
     if _cma_es_robotcheck(page):
         return CMA_RESTRINGIO if _cma_datadome(page) == "bloqueo" else None
     return None if page.is_closed() else CMA_DEJO_PASAR
+
+
+# Cuántas lecturas seguidas sin DataDome necesita la pausa del deslizador para terminar sola (decisión de Marcelo,
+# encargo 57): una sola podría caer en un instante de paso (no medido: hace falta el portal).
+CMA_LECTURAS_PARA_SEGUIR = 2
+
+
+def _cma_vigia(page):
+    """Lo que mira la pausa del deslizador mientras espera al operador ('hasta' de _pausa_del_panel, que el panel llama
+    cada 2 s): lo que dice _cma_como_quedo, pero que DataDome dejó pasar la página lo dice recién en la lectura número
+    CMA_LECTURAS_PARA_SEGUIR seguida que lo ve (decisión de Marcelo, encargo 57, CICLO-cortes-de-cma-y-pausas.md); una
+    lectura con DataDome, o con la página cerrada, vuelve a contar desde cero. El bloqueo, con una sola, como antes. Del
+    encargo 56 al 57 bastaba una. La espera de después de la pausa (con «Ya lo resolví» o al vencer) sigue con una."""
+    seguidas = 0
+
+    def mirar():
+        nonlocal seguidas
+        como = _cma_como_quedo(page)
+        seguidas = seguidas + 1 if como == CMA_DEJO_PASAR else 0
+        return None if como == CMA_DEJO_PASAR and seguidas < CMA_LECTURAS_PARA_SEGUIR else como
+    return mirar
 
 
 def _cma_si_pulso_detener(reg, como=None):
@@ -2102,7 +2124,8 @@ def _cma_pedir_deslizador(page, reg, on_pausa=None, segundos=CMA_ESPERA_DESLIZAD
     DataDome deje pasar la página. (No se debe arrastrar con eventos sintéticos porque DataDome bloquea temporalmente la
     IP.) Con el panel, la pausa queda en log.txt (_pausa_del_panel; decisión de Marcelo, encargo 55), y desde el encargo
     56 termina sola cuando DataDome deja pasar la página o la bloquea: el panel lo mira mientras espera
-    (_cma_como_quedo; decisión de Marcelo). Hasta ahí, mientras el operador no pulsaba «Ya lo resolví», el programa no
+    (_cma_como_quedo; decisión de Marcelo; desde el encargo 57, que la dejó pasar, con dos lecturas seguidas:
+    _cma_vigia). Hasta ahí, mientras el operador no pulsaba «Ya lo resolví», el programa no
     miraba la página. Si la pausa termina con «Ya lo resolví» o al vencer, la espera sigue como antes, hasta
     'segundos'. Si la página pasa al acceso restringido, detiene la corrida de CMA (_cma_detener). «Detener» corta la
     espera, sin volver a mirar la página (_cma_si_pulso_detener: CmaCancelada). True si DataDome dejó pasar la página;
@@ -2130,7 +2153,7 @@ def _cma_pedir_deslizador(page, reg, on_pausa=None, segundos=CMA_ESPERA_DESLIZAD
     como = None
     if on_pausa:
         como = _pausa_del_panel(reg, on_pausa, "CMA CGM: desliza la flecha hacia la derecha en el navegador para "
-                                "continuar.", hasta=lambda: _cma_como_quedo(page))
+                                "continuar.", hasta=_cma_vigia(page))
     else:
         print(aviso_msg)
 
@@ -11130,6 +11153,25 @@ def _cma_esperar_resultado(page, seg, reg, minimo=1.5):
     return "indefinido"
 
 
+# Lo que busca cada paso de CMA que corta si el programa falla antes de terminarlo (_cma_fallo): el motivo de la fila lo
+# nombra, como cuando no lo encuentra.
+CMA_TAMANO_Y_TIPO = "la opción «40' Reefer High Cube» en el desplegable (por su texto)"
+CMA_CAMPO_PESO = "el campo «Peso por contenedor» (por su etiqueta o su placeholder «Peso»)"
+CMA_REEFER_GUARDADO = ("el panel Reefer con su temperatura guardada (por el botón «Modifique el reefer», la etiqueta "
+                       "«Temperature» y su «Guardar»)")
+CMA_CASILLA_I_AGREE = "la casilla «I Agree» (por su texto)"
+
+
+def _cma_fallo(paso, buscaba, que, e):
+    """El corte de un paso de CMA en que el programa falló antes de terminarlo ('que' dice qué estaba haciendo):
+    ObjetivoNoEncontrado, con lo que buscaba y la falla, y la fila queda NO ENVIADA con la captura y el HTML del paso
+    (_sin_clic_a_ciegas). Lo usan los comentarios (decisión de Marcelo, encargo 56, CICLO-pausa-sola-y-comentarios.md),
+    y el tamaño y tipo, el peso, el panel Reefer y «I Agree» (decisión de Marcelo, encargo 57,
+    CICLO-cortes-de-cma-y-pausas.md): hasta ahí, esos cuatro lo anotaban («… err») y la reserva seguía sin ellos hasta
+    la guarda. El motivo empieza por «no encontré», como todo el de _sin_clic_a_ciegas."""
+    return ObjetivoNoEncontrado(paso, f"{buscaba}, porque el programa falló al {que} ({_texto_error(e)})")
+
+
 def _cma_completar_info_extra(page, reserva, reg):
     """Llena 'Detalles de la carga 1' (We need some extra information):
     - Tamaño y tipo: 40' Reefer High Cube
@@ -11137,11 +11179,15 @@ def _cma_completar_info_extra(page, reserva, reg):
     - Peso por contenedor: 22500 KGM
     - Mercancía: 030313 -> Frozen Atlantic Salmon...
     - Clic en 'Mostrar soluciones disponibles'
+    Si el programa falla antes de elegir el tamaño y tipo o de escribir el peso, corta con lo que falló (_cma_fallo;
+    decisión de Marcelo, encargo 57): hasta ahí lo anotaba («tamaño y tipo err», «peso err») y la reserva seguía sin
+    ellos. En logs/ no pasó nunca: las 14 reservas que llegaron a la guarda los eligieron y escribieron.
     """
     reg.paso("CMA · Completando información extra de carga...")
 
     # 1. Tamaño y tipo: 40' Reefer High Cube. Solo por su placeholder o su etiqueta: hasta 83067a1, sin eso,
     # pulsaba el primer desplegable de la página (CICLO-clics-a-ciegas.md).
+    sel_ok = False
     try:
         abierto = False
         for s in [
@@ -11211,12 +11257,13 @@ def _cma_completar_info_extra(page, reserva, reg):
         if not sel_ok:
             # Hasta fb63271 elegía con el teclado (dos veces flecha abajo y Enter) la opción que quedara ahí, fuera
             # cual fuera (CICLO-cola-nueve-items.md).
-            raise ObjetivoNoEncontrado("Tamaño y tipo de CMA", "la opción «40' Reefer High Cube» en el desplegable "
-                                                               "(por su texto)" + (f", porque {CMA_SIN_RESPUESTA}"
-                                                                                   if sin_respuesta else ""))
+            raise ObjetivoNoEncontrado("Tamaño y tipo de CMA", CMA_TAMANO_Y_TIPO + (f", porque {CMA_SIN_RESPUESTA}"
+                                                                                    if sin_respuesta else ""))
 
         esperar(page, 0.8)
     except Exception as e:
+        if not sel_ok:
+            raise _cma_fallo("Tamaño y tipo de CMA", CMA_TAMANO_Y_TIPO, "abrir el desplegable o elegirla", e)
         reg.info(f"tamaño y tipo err: {str(e)[:50]}")
 
     # 2. Cantidad
@@ -11274,10 +11321,10 @@ def _cma_completar_info_extra(page, reserva, reg):
                     continue
         if not peso_ok:
             # Hasta 83067a1 probaba antes el primer campo de cualquier bloque con ese texto.
-            raise ObjetivoNoEncontrado("Peso por contenedor de CMA", "el campo «Peso por contenedor» (por su "
-                                                                     "etiqueta o su placeholder «Peso»)")
+            raise ObjetivoNoEncontrado("Peso por contenedor de CMA", CMA_CAMPO_PESO)
     except Exception as e:
-        reg.info(f"peso err: {str(e)[:50]}")
+        # Después de escribirlo no queda nada que pueda fallar: toda falla de aquí es de antes.
+        raise _cma_fallo("Peso por contenedor de CMA", CMA_CAMPO_PESO, "buscarlo o escribirlo", e)
 
     # 4. Mercancía (HS Code: 030313 -> Frozen Atlantic Salmon...)
     try:
@@ -11674,10 +11721,16 @@ def _cma_ajustes_reefer(page, reserva, reg):
     La temperatura se busca solo dentro del panel visible (CICLO-cola-nueve-items.md), por su etiqueta «Temperature»,
     y se guarda con el botón «Guardar» de ese mismo panel (CICLO-pendientes-con-evidencia.md).
     Deja la captura de la ventana y el HTML del panel abierto (cma_f<fila>_reefer_panel) y de la pantalla tras
-    guardarlo (cma_f<fila>_reefer_guardado), sin clics ni esperas nuevas (CICLO-cma-reefer-y-fecha-maersk.md)."""
+    guardarlo (cma_f<fila>_reefer_guardado), sin clics ni esperas nuevas (CICLO-cma-reefer-y-fecha-maersk.md).
+    Si el programa falla antes de pulsar el «Guardar» del panel, también corta, con lo que falló (_cma_fallo): ninguna
+    reserva llega al botón final sin la temperatura guardada (decisión de Marcelo, encargo 57,
+    CICLO-cortes-de-cma-y-pausas.md). Hasta ahí lo anotaba («ajustes reefer err») y la reserva seguía sin ella; en logs/
+    no pasó nunca: las 14 reservas que llegaron a la guarda la guardaron. Lo que falle después de pulsarlo, como
+    antes."""
     reg.paso("CMA · Configurando Ajustes Reefer...")
     f = reserva["fila"]
     temp = _temp_reserva(reserva)
+    guardado = False
     try:
         # 1. Abrir los ajustes de la sección Reefer: el botón «Modifique el reefer» de su fila. Medido en la corrida
         #    del 2026-09-24 (CICLO-revision-corrida-completa.md): «text=/TO COMPLETE/i» calzaba con la insignia de
@@ -11727,6 +11780,7 @@ def _cma_ajustes_reefer(page, reserva, reg):
         if _cma_cuantos(page, btn_g) != 1 or not btn_g.evaluate(_JS_CMA_REEFER_GUARDAR, timeout=CMA_PLAZO_MS):
             raise ObjetivoNoEncontrado("Guardar los ajustes Reefer de CMA", "el botón «Guardar» del panel Reefer visible")
         btn_g.click(timeout=4000)
+        guardado = True
         reg.info("ajustes reefer guardados")
         esperar(page, 1.5)
         _evidencia_antes_de_la_guarda(page, reg, f"cma_f{f}_reefer_guardado", "tras guardar el panel Reefer",
@@ -11739,6 +11793,9 @@ def _cma_ajustes_reefer(page, reserva, reg):
             pass
         return True
     except Exception as e:
+        if not guardado:
+            raise _cma_fallo("Ajustes Reefer de CMA", CMA_REEFER_GUARDADO,
+                             "abrir el panel, escribir la temperatura o guardarla", e)
         reg.info(f"ajustes reefer err: {str(e)[:50]}")
         return False
 
@@ -11760,7 +11817,28 @@ def _cma_marcar_i_agree(page, reg):
                 return True
         except Exception:
             continue
-    raise ObjetivoNoEncontrado("«I Agree» de CMA", "la casilla «I Agree» (por su texto)")
+    raise ObjetivoNoEncontrado("«I Agree» de CMA", CMA_CASILLA_I_AGREE)
+
+
+def _cma_i_agree_en_el_envio(page, reg):
+    """La pantalla «Envío de la reserva»: cierra lo que haya quedado abierto (Escape), baja al final de la página y
+    marca «I Agree» (_cma_marcar_i_agree). Si el programa falla antes de marcarla, corta con lo que falló (_cma_fallo;
+    decisión de Marcelo, encargo 57, CICLO-cortes-de-cma-y-pausas.md): hasta ahí lo anotaba («check agree err») y la
+    reserva seguía sin la casilla hasta la guarda. En logs/ no pasó nunca: las 14 reservas que llegaron a la guarda la
+    marcaron. Lo que falle después de marcarla, como antes. Hasta el encargo 57 iba escrito dentro de reservar_cma."""
+    reg.paso("Avanzando a la pantalla de revisión (Envío de la reserva)...")
+    marcada = False
+    try:
+        page.keyboard.press("Escape")
+        esperar(page, 0.5)
+        _cma_js(page, "() => window.scrollTo(0, document.body.scrollHeight)")
+        esperar(page, 1.5)
+        marcada = _cma_marcar_i_agree(page, reg)
+        esperar(page, 1.0)
+    except Exception as e:
+        if not marcada:
+            raise _cma_fallo("«I Agree» de CMA", CMA_CASILLA_I_AGREE, "llegar a ella o marcarla", e)
+        reg.info(f"check agree err: {str(e)[:40]}")
 
 
 # El campo de los comentarios de CMA, por lo que lo identifica (_cma_comentarios).
@@ -11836,8 +11914,7 @@ def _cma_comentarios(page, reg):
         raise ObjetivoNoEncontrado("Comentarios de CMA", CMA_CAMPO_COMENTARIOS)
     except Exception as e:
         if not escritos:
-            raise ObjetivoNoEncontrado("Comentarios de CMA", f"{CMA_CAMPO_COMENTARIOS}, porque el programa falló al "
-                                                             f"buscarlo o escribirlo ({_texto_error(e)})")
+            raise _cma_fallo("Comentarios de CMA", CMA_CAMPO_COMENTARIOS, "buscarlo o escribirlo", e)
         reg.info(f"comentarios err: {str(e)[:45]}")
         return False
 
@@ -12061,17 +12138,8 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
         _cma_datadome_a_mitad(page, reg, on_pausa, creds, "tras el panel Reefer", f)
         _cma_comentarios(page, reg)
 
-        # 5. Llegar a la pantalla 'Envío de la reserva'
-        reg.paso("Avanzando a la pantalla de revisión (Envío de la reserva)...")
-        try:
-            page.keyboard.press("Escape")
-            esperar(page, 0.5)
-            _cma_js(page, "() => window.scrollTo(0, document.body.scrollHeight)")
-            esperar(page, 1.5)
-            _cma_marcar_i_agree(page, reg)
-            esperar(page, 1.0)
-        except Exception as e:
-            reg.info(f"check agree err: {str(e)[:40]}")
+        # 5. Llegar a la pantalla 'Envío de la reserva' y marcar «I Agree» (si falla antes, corta: encargo 57)
+        _cma_i_agree_en_el_envio(page, reg)
 
         reg.captura(page, f"cma_f{f}_5_review", full=True)
         _cma_datadome_a_mitad(page, reg, on_pausa, creds, "en «Envío de la reserva»", f)
@@ -12121,7 +12189,13 @@ def cargar_config():
 
 
 def ejecutar_login(usuario, navieras, cfg=None, on_log=None, on_pausa=None,
-                   on_listo=None, esperar_cierre=None):
+                   on_listo=None, esperar_cierre=None, se_detuvo=None, al_abrir=None):
+    """Inicia sesión en cada naviera de 'navieras' con el perfil del operador, y deja el navegador abierto hasta que
+    esperar_cierre vuelve (en la consola, hasta ENTER). En el panel web («Solo iniciar sesión»), 'se_detuvo' dice si el
+    operador pulsó «Detener», y 'al_abrir' recibe el navegador apenas se abre, para que «Detener» lo cierre: con
+    «Detener», no sigue con los inicios de sesión que faltan y cierra el navegador sin esperar (decisión de Marcelo,
+    encargo 57, CICLO-cortes-de-cma-y-pausas.md). Hasta ahí, «Detener» cortaba solo la pausa en curso: el navegador
+    seguía abierto y los inicios de sesión que faltaban, también."""
     if cfg is None:
         cfg = cargar_config()
     opts = cfg.get("opciones", {})
@@ -12147,10 +12221,14 @@ def ejecutar_login(usuario, navieras, cfg=None, on_log=None, on_pausa=None,
     resultados = {}
     with sync_playwright() as p:
         ctx = _lanzar_navegador(p, perfil_dir, headless, canal, reg)
+        if al_abrir:
+            al_abrir(ctx)
 
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
         for clave in navieras:
+            if se_detuvo and se_detuvo():
+                break
             if clave not in NAVIERAS:
                 reg.paso(f"[{clave}] naviera desconocida, se omite"); continue
             nombre, func = NAVIERAS[clave]
@@ -12162,12 +12240,21 @@ def ejecutar_login(usuario, navieras, cfg=None, on_log=None, on_pausa=None,
             try:
                 ok = func(page, creds, reg, on_pausa=on_pausa)
             except Exception as e:
-                reg.info(f"ERROR inesperado: {e}")
-                try: reg.captura(page, f"{clave}_error")
-                except Exception: pass
+                if se_detuvo and se_detuvo():       # «Detener» le cerró el navegador: no es un error del portal
+                    reg.info(f"se cortó con «Detener» ({_texto_error(e)})")
+                else:
+                    reg.info(f"ERROR inesperado: {e}")
+                    try: reg.captura(page, f"{clave}_error")
+                    except Exception: pass
                 ok = False
             reg.paso(f"[{nombre}] resultado={'OK' if ok else 'REVISAR'} (tardó {time.time()-t:.1f}s)")
             resultados[clave] = ok
+
+        detenido = bool(se_detuvo and se_detuvo())
+        if detenido:
+            faltan = [NAVIERAS[c][0] for c in navieras if c in NAVIERAS and c not in resultados]
+            reg.paso("⛔ Detenido por el operador: cierro el navegador"
+                     + (f" y no sigo con {', '.join(faltan)}." if faltan else "."))
 
         reg.paso("===== RESUMEN =====")
         for k, v in resultados.items():
@@ -12180,7 +12267,9 @@ def ejecutar_login(usuario, navieras, cfg=None, on_log=None, on_pausa=None,
             try: on_listo(resultados, str(carpeta))
             except Exception: pass
 
-        if esperar_cierre:
+        if detenido:
+            pass                                # con «Detener», se cierra sin esperar
+        elif esperar_cierre:
             try: esperar_cierre()
             except Exception: pass
         else:
@@ -12705,9 +12794,14 @@ def lanzar_panel():
                 self.cola.put(("fin", None))
 
         def _pausa(self, mensaje, hasta=None):
+            # Cada pausa espera su propia respuesta (decisión de Marcelo, encargo 57, CICLO-cortes-de-cma-y-pausas.md):
+            # antes de pedirla apaga lo que haya dejado un «Ya lo resolví» anterior. Hasta ahí, ev_pausa se apagaba solo
+            # al empezar la corrida, y después del primer «Ya lo resolví» las pausas que seguían no esperaban, en todas
+            # las navieras que pausan.
             # Con 'hasta', la pausa termina sola cuando devuelve algo (decisión de Marcelo, encargo 56: la del
             # deslizador de CMA, cuando DataDome deja pasar la página o la bloquea): la mira cada 2 s mientras espera
             # «Ya lo resolví», y lo dice por la cola, para apagar ese botón.
+            self.ev_pausa.clear()
             self.cola.put(("pausa", mensaje))
             while not self.ev_pausa.wait(timeout=2):
                 sola = hasta() if hasta else None
@@ -13392,21 +13486,33 @@ def _web_worker(hoja, usuario, filas_pedidas):
             _westado("Terminado.")
 
 
+def _web_se_detuvo():
+    """Si el operador pulsó «Detener» en el panel web, en lo que está corriendo."""
+    return bool(_WEB.get("detener") and _WEB["detener"].is_set())
+
+
 def _web_worker_login(usuario, navieras):
     """Modo LOGIN: entra a los portales y deja el navegador abierto para que el
     operador trabaje a mano. Es lo mismo que hacia el boton de cada naviera en
-    el panel de siempre."""
+    el panel de siempre. El navegador queda en _WEB["ctx"], como en las reservas: «Detener» lo cierra, y no sigue con
+    los inicios de sesión que faltan (decisión de Marcelo, encargo 57, CICLO-cortes-de-cma-y-pausas.md)."""
+    def al_abrir(ctx):
+        with _LOCK:
+            _WEB["ctx"] = ctx
     try:
         _westado("Entrando a " + ", ".join(n.upper() for n in navieras) + "…")
         ejecutar_login(usuario, navieras, on_log=_wlog, on_pausa=_web_pausa,
-                       esperar_cierre=lambda: _time.sleep(6))
+                       esperar_cierre=lambda: _time.sleep(6), se_detuvo=_web_se_detuvo, al_abrir=al_abrir)
     except Exception as e:
         _wlog(f"ERROR: {e}")
         _westado("Terminó con error: " + str(e)[:90])
     finally:
         with _LOCK:
             _WEB["corriendo"] = False
-        if not str(_WEB["estado"]).startswith("Terminó con error"):
+            _WEB["ctx"] = None
+        if _web_se_detuvo():
+            _westado("Detenido.")
+        elif not str(_WEB["estado"]).startswith("Terminó con error"):
             _westado("Sesiones abiertas.")
 
 

@@ -820,6 +820,33 @@ class TestPanelCorridas(PanelBase):
         self.assertGreaterEqual(demora, 6)          # deja el navegador abierto 6 s antes de cerrarlo
         self.assertEqual(Path(n.pw.lanzamientos[0]["user_data_dir"]), self.sb / "perfiles" / "op_prueba")
 
+    def test_detener_en_solo_iniciar_sesion(self):
+        # Decisión de Marcelo, encargo 57 (CICLO-cortes-de-cma-y-pausas.md): «Detener» en «Solo iniciar sesión» cierra
+        # el navegador y no sigue con los inicios de sesión que faltan. Aquí el de ONE espera en una pausa del panel
+        # (como el deslizador de CMA-CGM o el validador de COSCO) y el operador pulsa «Detener»: MSC y COSCO no se
+        # intentan, y el panel dice «Detenido.». Mientras inicia sesión, el navegador está donde «Detener» lo cierra
+        # (_WEB["ctx"], como en las reservas). Hasta ahí, «Detener» soltaba solo la pausa: los inicios de sesión que
+        # faltaban seguían, y el navegador quedaba abierto.
+        vio = []
+        with Navieras(self.mod) as n:
+            def login_one(page, creds, reg, on_pausa=None):
+                n.logins.append(("one", creds.get("usuario")))
+                vio.append(self.mod._WEB["ctx"] is n.pw.contextos[0])
+                vio.append(on_pausa("resuelve el paso de prueba"))
+                return False
+            self.mod.NAVIERAS["one"] = ("ONE", login_one)
+            self.srv.json("/api/login", {"usuario": "op_prueba", "navieras": ["one", "msc", "cosco"]})
+            fin = time.time() + 10
+            while time.time() < fin and not self.srv.json("/api/estado")[1]["pausa"]:
+                time.sleep(0.1)
+            self.assertEqual(self.srv.json("/api/detener", {}), (200, {"ok": True}))
+            e = self.srv.esperar_fin(maximo=20)
+        self.assertEqual(([l[0] for l in n.logins], vio), (["one"], [True, self.mod.PAUSA_DETENIDA]))
+        self.assertEqual((e["estado"], self.mod._WEB["ctx"]), ("Detenido.", None))
+        self.assertTrue(n.pw.contextos[0].cerrado)
+        self.assertTrue(any("⛔ Detenido por el operador: cierro el navegador y no sigo con MSC, COSCO." in l
+                            for l in e["lineas"]))
+
 
 class TestPausaDelPanel(soporte.CasoAQ):
     """Cómo termina la pausa del panel web (_web_pausa), para que quede en log.txt (decisión de Marcelo, encargo 55,
@@ -927,18 +954,26 @@ def metodo_del_panel_tkinter(mod, nombre):
 
 
 class EventoTkinter:
-    """El ev_pausa del panel Tkinter: «Ya lo resolví» llega en la espera 'pulsa' (0, 1…; None: nunca). Más de TOPE
-    esperas hacen caer la prueba: la pausa seguía esperando."""
+    """El ev_pausa del panel Tkinter: «Ya lo resolví» llega en la espera 'pulsa' (0, 1…; None: nunca), o en cada una de
+    las de una tupla (encargo 57), y el evento queda puesto hasta que alguien lo apaga (clear), como un
+    threading.Event. Más de TOPE esperas hacen caer la prueba: la pausa seguía esperando."""
     TOPE = 50
 
     def __init__(self, pulsa=None):
-        self.pulsa, self.esperas = pulsa, []
+        self.pulsas = set(pulsa) if isinstance(pulsa, tuple) else set() if pulsa is None else {pulsa}
+        self.esperas, self.puesto, self.apagadas = [], False, 0
 
     def wait(self, timeout=None):
         self.esperas.append(timeout)
         if len(self.esperas) > self.TOPE:
             raise AssertionError(f"la pausa siguió esperando: {len(self.esperas)} esperas")
-        return self.pulsa is not None and len(self.esperas) > self.pulsa
+        if len(self.esperas) - 1 in self.pulsas:
+            self.puesto = True
+        return self.puesto
+
+    def clear(self):
+        self.puesto = False
+        self.apagadas += 1
 
 
 class TestPausaDelPanelTkinter(soporte.CasoAQ):
@@ -964,6 +999,18 @@ class TestPausaDelPanelTkinter(soporte.CasoAQ):
                 self.assertIsNone(r)
                 self.assertEqual((len(miradas), len(yo.ev_pausa.esperas), list(yo.cola.queue)[1:]),
                                  (2 if con_hasta else 0, 3, []))
+
+    def test_cada_pausa_espera_su_respuesta(self):
+        # Decisión de Marcelo, encargo 57 (CICLO-cortes-de-cma-y-pausas.md): dos pausas en la misma corrida, cada una
+        # con su «Ya lo resolví» (en la segunda espera de cada una), y cada una espera el suyo. Hasta ahí, ev_pausa se
+        # apagaba solo al empezar la corrida: la segunda pausa volvía en su primera espera, con el evento todavía puesto
+        # por el primer «Ya lo resolví», en todas las navieras.
+        pausa = metodo_del_panel_tkinter(self.mod, "_pausa")
+        yo = types.SimpleNamespace(cola=queue.Queue(), ev_pausa=EventoTkinter(pulsa=(1, 3)))
+        self.assertIsNone(pausa(yo, "resuelve el primer paso"))
+        self.assertIsNone(pausa(yo, "resuelve el segundo paso"))
+        self.assertEqual((len(yo.ev_pausa.esperas), yo.ev_pausa.apagadas, list(yo.cola.queue)),
+                         (4, 2, [("pausa", "resuelve el primer paso"), ("pausa", "resuelve el segundo paso")]))
 
     def test_la_cola_apaga_el_boton(self):
         procesar = metodo_del_panel_tkinter(self.mod, "procesar_cola")
@@ -1168,18 +1215,32 @@ class TestArranqueDelPanel(unittest.TestCase):
     def test_puerto_que_se_suelta_mientras_pregunta(self):
         # Si el puerto se suelta mientras el lanzador le vuelve a preguntar a quien lo tenía (un panel que se estaba
         # apagando, por ejemplo), lo vuelve a probar y lo toma, como hasta hoy (hasta el encargo 52, después de
-        # taskkill). Aquí el ocupante acepta sin contestar y suelta el puerto a los 2 s.
+        # taskkill). Aquí el ocupante escucha sin contestar (nadie contesta a las preguntas de este puerto) y suelta el
+        # puerto durante la segunda pregunta, antes de que ella vuelva: la prueba no depende del reloj del equipo
+        # (encargo 57, CICLO-cortes-de-cma-y-pausas.md). Hasta ahí lo soltaba un threading.Timer a los 2 s, mientras la
+        # segunda pregunta de verdad esperaba: la pregunta volvía con el reset de la conexión y, con el equipo cargado,
+        # el lanzador probaba el puerto antes de que Windows lo soltara, y tomaba el siguiente (5 de 30 corridas con la
+        # CPU ocupada; 0 de 20 con el equipo quieto).
         mod, _ = soporte.cargar()
         p = puertos_seguidos()
         ocupante = socket.socket()
         ocupante.bind(("127.0.0.1", p))
         ocupante.listen(5)
-        threading.Timer(2.0, ocupante.close).start()
+        preguntas, real = [], mod._panel_en
+
+        def panel_en(q, espera=1.0):
+            if q != p:
+                return real(q, espera)
+            preguntas.append(espera)
+            if espera == mod.PANEL_ESPERA_LARGA:
+                ocupante.close()                # se suelta mientras el lanzador le vuelve a preguntar
+            return None
+        mod._panel_en = panel_en
         self._falsos("")
         try:
             hilo, puerto = self.levantar(mod, p)
             try:
-                self.assertEqual((puerto, self.llamadas), (p, []))
+                self.assertEqual((puerto, self.llamadas, preguntas), (p, [], [1.0, mod.PANEL_ESPERA_LARGA]))
                 self.assertNotIn(self.AVISO_AJENO.format(p), mod._WEB["log"])
             finally:
                 self.cerrar(mod, hilo)
