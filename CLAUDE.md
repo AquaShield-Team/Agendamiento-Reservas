@@ -298,12 +298,20 @@ cerrado:
     programa falla antes de elegir la sugerencia «030313» (`CMA_MERCANCIA`), corta con `_cma_fallo`; hasta ahí,
     «mercancía err» y la reserva seguía. Las 14 de `logs/` que llegaron a la guarda la eligieron; las 5 del 21-09 que
     la anotaron y reintentaron la información extra no llegaron a la guarda: con el corte, quedan NO ENVIADA ahí.
-  - **La cantidad sigue como antes, por un FRENA SI del encargo 58:** sus selectores (`.el-input-number input`,
-    `input[role='spinbutton']`, un placeholder «Cantidad») no calzan con el campo del portal, que es un `input` sin
-    tipo, sin clase y sin placeholder dentro del `.el-form-item` con la etiqueta «Cantidad» y el valor 1 (medido en los
-    59 HTML guardados con el formulario). En las 14 reservas que llegaron a la guarda, `log.txt` no trae ningún
-    «cantidad:»: el paso nunca la escribió, y la reserva fue con el 1 del portal. Cortar como los otros pasos las habría
-    dejado NO ENVIADA a las 14; lo decide Marcelo.
+  - **La cantidad no se escribe: el programa comprueba que dice 1** (decisión de Marcelo, encargo 59,
+    `CICLO-tarde-08-10-y-cantidad.md`: cada fila de la planilla es una reserva de un contenedor). En el lugar del paso
+    que la escribía, después del tamaño y tipo y antes del peso, `_cma_cantidad_es_uno` lee con `_JS_CMA_CANTIDAD` el
+    único `.el-form-item` cuya etiqueta es «Cantidad» y su única casilla, hasta `CMA_LECTURAS_CANTIDAD` veces (6), cada
+    0,5 s, sin clics ni teclas (`_cma_lo_que_falta_de_la_cantidad`). Si no dice 1, NO ENVIADA (`ObjetivoNoEncontrado`,
+    «Cantidad de CMA», con `CMA_CANTIDAD` y lo que faltó), con la captura y el HTML del paso; si la lectura falla, corta
+    con `_cma_fallo`. La cantidad de la fila (`cant`) ya no la usa CMA.
+    - Medido en los 67 HTML guardados que traen el campo (del 25-09 al 08-10): un solo ítem, con un solo `input`, que
+      dice 1. Corriendo ese JavaScript en un Chromium sin red sobre los 65 HTML de las 10 reservas que llegaron a la
+      guarda, en cada paso guardado, todos dicen 1, y la guarda con el valor cambiado a 2, sin el campo o con el campo
+      repetido corta. Las 5 reservas del 21-09 que llegaron a la guarda no tienen HTML, y el OCR de sus capturas no lee
+      el valor del campo: con ellas no se pudo medir.
+    - Hasta el encargo 59, el paso buscaba el campo con selectores que no calzan con el del portal (un campo numérico o
+      un placeholder «Cantidad»), así que nunca lo escribió: ninguna reserva de `logs/` trae un «cantidad:».
 - **CMA comprueba que el portal guardó la temperatura** (decisión de Marcelo, encargo 58,
   `CICLO-temperatura-y-puerto.md`): después del «Guardar» del panel Reefer y de su evidencia
   (`cma_f<fila>_reefer_guardado`), `_cma_temperatura_guardada` lee la página con `_JS_CMA_TEMPERATURA_GUARDADA` hasta
@@ -462,6 +470,13 @@ cerrado:
   diciendo desde qué puerto la arma COSCO y qué dice la fila (`_con_el_puerto_de_cosco`, por fuera de todos los
   decoradores de `reservar_cosco`; decisión de Marcelo, encargo 50, `CICLO-msc-segundo-intento.md`: el mapa se
   mantiene). Hasta ahí, solo lo decía el campo «Origin City» del formulario.
+- **El tipo de contenedor de MAERSK todavía es la primera opción que trae «40» y «Reefer»** (`_mk_contenedor`):
+  escribe «40 Reefer» y pulsa la primera de las opciones a la vista que traen las dos palabras. En las 15 corridas de
+  `logs/` del 21-09 al 02-10 fue «40 Reefer High». El 08-10, en las dos corridas de la tarde, fue «40 Reefer Standard
+  Shipper own» (la anotación corta el texto a 30 caracteres): el contenedor del embarcador. Con él, «Additional
+  details» no trae el bloque del retiro del contenedor vacío (depósito, fecha y referencia), y la fila quedó NO
+  ENVIADA en la fecha de retiro (encargo 59, `CICLO-tarde-08-10-y-cantidad.md`). Cómo elige el tipo lo decide Marcelo:
+  la lista de opciones no se guarda en ningún HTML.
 - **MAERSK elige la fecha de retiro con la regla de Marcelo** (`CICLO-maersk-retiro-y-terminos.md`): el primer día hábil
   después del día en que se corre el programa (`_mk_dia_de_retiro`, `_mk_dia_habil`: de lunes a viernes y sin los
   feriados de Chile) y, si no está habilitado en el calendario, el siguiente día hábil habilitado
@@ -645,7 +660,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 723 pruebas al 2026-10-08 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 730 pruebas al 2026-10-08 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -971,7 +986,7 @@ línea cambian). De arriba hacia abajo:
    acceso o su página no termina de cargar (encargo 54), cuando DataDome interrumpe una reserva de CMA-CGM a mitad de
    camino (encargo 55), o cuando CMA-CGM no puede escribir sus comentarios (encargo 56), falla antes de terminar el
    tamaño y tipo, el peso, el panel Reefer o «I Agree» (encargo 57) o la mercancía, o la página no muestra la
-   temperatura guardada (encargo 58). `DETENIDO`, con «Detener»: en
+   temperatura guardada (encargo 58), o su campo «Cantidad» no dice 1 (encargo 59). `DETENIDO`, con «Detener»: en
    COSCO y, desde el encargo 56, en la espera del deslizador de CMA-CGM. `REVISAR`, entre otros (en MAERSK
    y en COSCO, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el motivo dice hasta qué fecha buscó (ver
    «Ampliar la búsqueda»). Después: `EMITIDA`, `ENVIADA – REVISAR EN PORTAL`,
