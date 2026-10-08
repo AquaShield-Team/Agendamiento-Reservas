@@ -2337,13 +2337,19 @@ class LocFalso:
         return "40' Reefer High Cube"
 
 
+# La marca del JavaScript que lee el campo «Cantidad» de CMA (_JS_CMA_CANTIDAD, encargo 59).
+CANTIDAD = "=== 'Cantidad'"
+
+
 class PaginaCma(soporte.PaginaFalsa):
     """Página falsa de CMA: 'visibles' son los selectores que existen; 'js' responde a cada JavaScript según
-    una marca de su texto (uno sin marca devuelve None). Anota los clics y las teclas."""
+    una marca de su texto (uno sin marca devuelve None). Anota los clics y las teclas. Desde el encargo 59, el campo
+    «Cantidad» dice 1, como en lo medido, salvo que 'js' diga otra cosa (CANTIDAD)."""
 
     def __init__(self, visibles=(), js=None):
         super().__init__()
-        self.visibles, self.js, self.clics, self.teclas, self.filtros = set(visibles), dict(js or {}), [], [], []
+        self.visibles, self.clics, self.teclas, self.filtros = set(visibles), [], [], []
+        self.js = {**{CANTIDAD: [["1"]]}, **dict(js or {})}
         self.keyboard = types.SimpleNamespace(press=self.teclas.append,
                                               type=lambda t, delay=None: self.teclas.append(t))
 
@@ -2427,6 +2433,24 @@ class PaginaCmaQueGuarda(PaginaCma):
 
     def evaluate(self, js, *a):
         if "Operando en" in js:
+            self.leidas += 1
+            return self.lecturas[min(self.leidas, len(self.lecturas)) - 1]
+        return super().evaluate(js, *a)
+
+    def wait_for_timeout(self, ms):
+        self.esperas_ms.append(ms)
+
+
+class PaginaCmaConCantidad(PaginaCma):
+    """La de CMA con el campo «Cantidad» (encargo 59): el JavaScript que lo lee responde, en cada lectura, la que sigue
+    de 'lecturas' (la última se repite), y las cuenta; anota cada espera."""
+
+    def __init__(self, lecturas, **k):
+        super().__init__(**k)
+        self.lecturas, self.leidas, self.esperas_ms = list(lecturas), 0, []
+
+    def evaluate(self, js, *a):
+        if CANTIDAD in js:
             self.leidas += 1
             return self.lecturas[min(self.leidas, len(self.lecturas)) - 1]
         return super().evaluate(js, *a)
@@ -3160,6 +3184,9 @@ console.log(JSON.stringify(f()));
                          ("la sugerencia que dice «030313» en la lista (por su texto)",
                           "la temperatura guardada en la página (el panel Reefer cerrado, su fila sin «to complete» y "
                           "la temperatura en «Operando en»)"))
+        # El del encargo 59.
+        self.assertEqual(m.CMA_CANTIDAD,
+                         "el campo «Cantidad» con 1 contenedor (cada fila de la planilla es una reserva de un contenedor)")
 
     def test_reservar_cma_corre_los_pasos_que_cortan_antes_de_la_guarda(self):
         # Los pasos que cortan si el programa falla antes de terminarlos (encargos 56 y 57) corren en reservar_cma, y
@@ -3417,6 +3444,145 @@ console.log(JSON.stringify(f()));
         orden = ["btn_g.click(", 'f"cma_f{f}_reefer_guardado"', "_cma_temperatura_guardada(page, reg, temp)",
                  'page.keyboard.press("Escape")']
         self.assertEqual(sorted(orden, key=donde), orden)
+
+    # --- Encargo 59 (CICLO-tarde-08-10-y-cantidad.md): la cantidad no se escribe; el programa comprueba que el campo
+    # «Cantidad» dice 1, y si no, la fila queda NO ENVIADA con el motivo, la captura y el HTML (decisión de Marcelo:
+    # cada fila de la planilla es una reserva de un contenedor). Lo medido en los 67 HTML que lo traen: un solo campo,
+    # con una sola casilla, que dice 1.
+    def test_lo_que_falta_para_decir_un_contenedor(self):
+        f = self.mod._cma_lo_que_falta_de_la_cantidad
+        for leido in ([["1"]], [[" 1 "]]):
+            with self.subTest(leido=leido):
+                self.assertEqual(f(leido), "")
+        casos = (([["2"]], "el campo «Cantidad» dice «2»"), ([["01"]], "el campo «Cantidad» dice «01»"),
+                 ([["1,5"]], "el campo «Cantidad» dice «1,5»"), ([[""]], "el campo «Cantidad» está vacío"),
+                 ([[None]], "el campo «Cantidad» está vacío"), ([["   "]], "el campo «Cantidad» está vacío"),
+                 ([], "no hay ningún campo «Cantidad»"), (None, "no hay ningún campo «Cantidad»"),
+                 ({"1": 1}, "no hay ningún campo «Cantidad»"),
+                 ([["1"], ["1"]], "hay 2 campos «Cantidad» y no uno solo"),
+                 ([[]], "el campo «Cantidad» trae 0 casillas y no una sola"),
+                 ([["1", "1"]], "el campo «Cantidad» trae 2 casillas y no una sola"),
+                 ([None], "el campo «Cantidad» trae 0 casillas y no una sola"))
+        for leido, falta in casos:
+            with self.subTest(leido=leido):
+                self.assertEqual(f(leido), falta)
+
+    def cantidad(self, casos):
+        """Corre _JS_CMA_CANTIDAD sobre documentos falsos, uno por caso: la lista de sus .el-form-item, cada uno
+        [texto de su .el-form-item__label o None si no la tiene, [valor de cada campo que trae]]."""
+        guion = (
+            "function armar(items) {\n"
+            "  const its = items.map(([lab, vals]) => ({\n"
+            "    querySelector: s => (s === '.el-form-item__label' && lab !== null ? {textContent: lab} : null),\n"
+            "    querySelectorAll: s => (s === 'input, select, textarea' ? vals.map(v => ({value: v})) : [])}));\n"
+            "  global.document = {querySelectorAll: s => (s === '.el-form-item' ? its : [])};\n"
+            "}\n"
+            "const f = " + self.mod._JS_CMA_CANTIDAD + ";\n"
+            + f"console.log(JSON.stringify({json.dumps(casos)}.map(c => (armar(c), f()))));\n")
+        return correr_node(self, guion)
+
+    def test_js_cantidad_por_lo_medido(self):
+        self.assertEqual(self.cantidad([
+            # Lo medido: entre los campos de la carga, uno con la etiqueta «Cantidad» y su casilla con 1. Los otros
+            # campos no cuentan, y la etiqueta se compara entera, con los espacios de a uno.
+            [["Tamaño y tipo", ["40' Reefer High Cube"]], [" Cantidad ", ["1"]], ["Peso por contenedor", ["22500"]],
+             ["Cantidad de bultos", ["3"]], [None, ["7"]]],
+            # Dos campos «Cantidad», o uno con dos casillas o sin ninguna: los devuelve como son.
+            [["Cantidad", ["1"]], ["Cantidad", ["2", None]], ["Cantidad", []]],
+            [],
+        ]), [[["1"]], [["1"], ["2", ""], []], []])
+
+    def test_cantidad_que_no_dice_uno_corta(self):
+        # Si en CMA_LECTURAS_CANTIDAD lecturas, cada 0,5 s, el campo no dice 1, corta con lo que faltó en la última, sin
+        # escribirla ni pulsar nada más: ni el peso. Hasta el encargo 59, la buscaba con selectores que no calzan con su
+        # campo y, si la veía, la escribía.
+        m = self.mod
+        for k, (leido, falta) in enumerate((([["2"]], "el campo «Cantidad» dice «2»"),
+                                             ([], "no hay ningún campo «Cantidad»"),
+                                             ([["1"], ["1"]], "hay 2 campos «Cantidad» y no uno solo"))):
+            with self.subTest(falta=falta):
+                pagina = PaginaCmaConCantidad([leido], visibles={self.SELECCIONAR, self.OPCION},
+                                              js={"peso por contenedor": True})
+                e, log = self.corta(m._cma_completar_info_extra, pagina, {"fila": 5, "cant": "1"},
+                                    nombre=f"e59_cantidad_{k}")
+                self.assertEqual((e.paso, e.buscaba),
+                                 ("Cantidad de CMA", f"{m.CMA_CANTIDAD}: {falta} (lo leí 6 veces, cada 0,5 s)"))
+                self.assertEqual((pagina.leidas, pagina.clics, pagina.teclas, pagina.esperas_ms),
+                                 (6, [self.SELECCIONAR, self.OPCION], [], [1000, 800] + [500] * 5))
+                self.assertIn("    tamaño y tipo: 40' Reefer High Cube seleccionado", log)
+                self.assertNotIn("cantidad:", log)
+                self.assertNotIn("peso contenedor", log)
+
+    def test_cantidad_que_dice_uno_sigue(self):
+        # Con 1, sigue al peso sin escribirla, aunque la fila traiga otra cantidad, y lo dice en log.txt. Si tarda en
+        # decir 1, la espera: aquí, en la primera lectura, en la tercera y en la última. La página no tiene el peso: ahí
+        # corta, con el corte de siempre.
+        m = self.mod
+        for lecturas in ([[["1"]]], [[]] * 2 + [[["1"]]], [[["0"]]] * 5 + [[["1"]]]):
+            n = len(lecturas)
+            for cant in ("1", "3"):
+                with self.subTest(lecturas=n, cant=cant):
+                    pagina = PaginaCmaConCantidad(lecturas, visibles={self.SELECCIONAR, self.OPCION})
+                    e, log = self.corta(m._cma_completar_info_extra, pagina, {"fila": 5, "cant": cant},
+                                        nombre=f"e59_cantidad_uno_{n}_{cant}")
+                    self.assertEqual((e.paso, pagina.leidas, pagina.clics, pagina.teclas, pagina.esperas_ms),
+                                     ("Peso por contenedor de CMA", n, [self.SELECCIONAR, self.OPCION], [],
+                                      [1000, 800] + [500] * (n - 1)))
+                    self.assertIn(f"    cantidad: el campo «Cantidad» dice 1, un contenedor; no la escribo (lectura "
+                                  f"{n})", log)
+
+    def test_la_lectura_de_la_cantidad_que_falla_corta(self):
+        # Si la lectura falla, o no vuelve en CMA_PLAZO_MS, corta como los otros pasos (_cma_fallo).
+        m = self.mod
+        for error in self.errores():
+            with self.subTest(error=type(error).__name__):
+                pagina = PaginaCmaQueFalla(error, marca=CANTIDAD, visibles={self.SELECCIONAR, self.OPCION},
+                                           js={"peso por contenedor": True})
+                e, log = self.corta(m._cma_completar_info_extra, pagina, {"fila": 5}, nombre="e59_cantidad_falla")
+                self.assertEqual((e.paso, e.buscaba, pagina.clics),
+                                 ("Cantidad de CMA", f"{m.CMA_CANTIDAD}, porque el programa falló al leerla "
+                                                     f"({m._texto_error(error)})", [self.SELECCIONAR, self.OPCION]))
+                self.assertNotIn("peso contenedor", log)
+
+    def test_la_cantidad_deja_la_fila_no_enviada_con_su_evidencia(self):
+        # Con los decoradores de reservar_cma, como en una corrida: NO ENVIADA con el motivo, la captura y el HTML del
+        # paso, y sin seguir al paso siguiente.
+        m = self.mod
+        html = {"html": "<!DOCTYPE html>\n<html><body>Click &amp; Book inventado</body></html>", "sombras": 0}
+        pagina = PaginaCmaConCantidad([[["2"]]], visibles={self.SELECCIONAR, self.OPCION},
+                                      js={"peso por contenedor": True, "getHTML": html})
+        pasos = []
+
+        def cruda(page, reserva, creds, reg, on_pausa=None):
+            m._cma_completar_info_extra(page, {"fila": 9}, reg)
+            pasos.append("siguió")
+            return ("OK-EJEMPLO", "armada sin el paso")
+        reg, _, log = self.corrida("e59_fila")
+        reservar = m._sin_clic_a_ciegas("cma", plazo_ms=m.CMA_PLAZO_MS)(m._cma_si_se_detuvo(cruda))
+        motivo = (f"Cantidad de CMA: no encontré {m.CMA_CANTIDAD}: el campo «Cantidad» dice «2» (lo leí 6 veces, cada "
+                  f"0,5 s), así que no pulsé nada. La reserva no se envió; revisa ese paso en el portal.")
+        self.assertEqual((reservar(pagina, {"fila": 9}, {}, reg), pasos), (("NO ENVIADA", motivo), []))
+        self.assertEqual(pagina.capturas[-1], ("cma_f9_sin_objetivo.png", False))
+        guardado = (log.parent / "cma_f9_sin_objetivo.html").read_text(encoding="utf-8")
+        self.assertIn("Click &amp; Book inventado", guardado)
+
+    def test_la_cantidad_va_tras_el_tamano_y_antes_del_peso_sin_escribirla(self):
+        # La comprobación va donde iba el paso que la escribía: después del tamaño y tipo y antes del peso. Y el paso ya
+        # no busca el campo con los selectores de antes (no calzan con el del portal) ni lo escribe.
+        fuente = Path(self.mod.__file__).read_text(encoding="utf-8")
+        f = next(n for n in ast.parse(fuente).body
+                 if isinstance(n, ast.FunctionDef) and n.name == "_cma_completar_info_extra")
+        texto = ast.get_source_segment(fuente, f)
+        lineas = texto.splitlines()
+
+        def donde(t):
+            (i,) = [k for k, linea in enumerate(lineas) if t in linea]
+            return i
+        orden = ["tamaño y tipo: {txt_sel} seleccionado", "_cma_cantidad_es_uno(page, reg)", "peso_kg = _peso_reefer()"]
+        self.assertEqual(sorted(orden, key=donde), orden)
+        for viejo in ("inp_cant", "el-input-number", "spinbutton", 'reserva.get("cant"'):
+            with self.subTest(viejo=viejo):
+                self.assertFalse(viejo in texto, f"«{viejo}» sigue en _cma_completar_info_extra")
 
 
 class MarcoCosco:

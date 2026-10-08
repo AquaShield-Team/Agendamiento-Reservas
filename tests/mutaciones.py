@@ -7512,3 +7512,90 @@ MUTACIONES += [
          viejo="        if _puerto_libre(puerto):\n            return True\n",
          nuevo="        if False:\n            return True\n"),
 ]
+
+# --- Encargo 59 (CICLO-tarde-08-10-y-cantidad.md): la cantidad de CMA no se escribe; el programa comprueba que el campo
+# «Cantidad» dice 1, y si no, la fila queda NO ENVIADA (decisión de Marcelo).
+FALTA_C = C1 + "test_lo_que_falta_para_decir_un_contenedor"
+JS_C = C1 + "test_js_cantidad_por_lo_medido"
+NO_UNO = C1 + "test_cantidad_que_no_dice_uno_corta"
+UNO = C1 + "test_cantidad_que_dice_uno_sigue"
+LEE_FALLA = C1 + "test_la_lectura_de_la_cantidad_que_falla_corta"
+FILA_E59 = C1 + "test_la_cantidad_deja_la_fila_no_enviada_con_su_evidencia"
+ORDEN_C = C1 + "test_la_cantidad_va_tras_el_tamano_y_antes_del_peso_sin_escribirla"
+LLAMA_C = "    _cma_cantidad_es_uno(page, reg)\n"
+PASO_3 = "    # 3. Peso por contenedor (el de config.json)\n"
+PASO_4_M = "    # 4. Mercancía (HS Code: 030313 -> Frozen Atlantic Salmon...)\n"
+ENTRE_C = "        if n < CMA_LECTURAS_CANTIDAD:\n            esperar(page, 0.5)\n"
+CORTA_C = ('    raise ObjetivoNoEncontrado("Cantidad de CMA", f"{CMA_CANTIDAD}: {falta} (lo leí '
+           '{CMA_LECTURAS_CANTIDAD} veces, "\n                                                  f"cada 0,5 s)")\n')
+LO_DICE_C = ('            reg.info(f"cantidad: el campo «Cantidad» dice 1, un contenedor; no la escribo (lectura '
+             '{n})")\n')
+FILTRO_C = "return lab && txt(lab) === 'Cantidad'; })\n"
+
+MUTACIONES += [
+    # La comprobación: sin ella, antes del tamaño, después del peso, o con la cantidad escrita como antes.
+    dict(id="e59-sin-comprobar-la-cantidad", pruebas=[NO_UNO, UNO, FILA_E59, ORDEN_C], viejo=LLAMA_C, nuevo=""),
+    dict(id="e59-cantidad-antes-del-tamano", pruebas=[NO_UNO, ORDEN_C],
+         cambios=[(LLAMA_C, ""), ('    reg.paso("CMA · Completando información extra de carga...")\n',
+                                  '    reg.paso("CMA · Completando información extra de carga...")\n' + LLAMA_C)]),
+    dict(id="e59-cantidad-despues-del-peso", pruebas=[NO_UNO, ORDEN_C],
+         cambios=[(LLAMA_C, ""), (PASO_4_M, LLAMA_C + PASO_4_M)]),
+    dict(id="e59-escribe-la-de-la-fila", pruebas=[UNO, ORDEN_C],
+         viejo=LLAMA_C + "\n" + PASO_3,
+         nuevo=(LLAMA_C + "    page.locator(\".el-form-item:has-text('Cantidad') input\").first.fill(\n"
+                "        str(reserva.get(\"cant\") or 1))\n\n" + PASO_3)),
+    # La lectura que falla y se traga, o con otro texto; el corte que no corta; el «dice 1» que no se mira.
+    dict(id="e59-lectura-se-traga-la-falla", pruebas=[LEE_FALLA],
+         viejo='            raise _cma_fallo("Cantidad de CMA", CMA_CANTIDAD, "leerla", e)\n',
+         nuevo="            return\n"),
+    dict(id="e59-lectura-falla-con-otro-texto", pruebas=[LEE_FALLA],
+         viejo='            raise _cma_fallo("Cantidad de CMA", CMA_CANTIDAD, "leerla", e)\n',
+         nuevo='            raise _cma_fallo("Cantidad de CMA", CMA_CANTIDAD, "escribirla", e)\n'),
+    dict(id="e59-cantidad-no-corta", pruebas=[NO_UNO, FILA_E59], viejo=CORTA_C,
+         nuevo='    reg.info(f"cantidad: {falta}")\n'),
+    dict(id="e59-sin-mirar-lo-que-falta", pruebas=[NO_UNO, FILA_E59],
+         viejo="        if not falta:\n            reg.info(f\"cantidad:",
+         nuevo="        if True:\n            reg.info(f\"cantidad:"),
+    # Lo que falta: varios campos o varias casillas que pasan, sin quitar los espacios, cualquier valor, un número que
+    # se lee, lo que no es una lista, o None como texto.
+    dict(id="e59-falta-varios-campos-pasan", pruebas=[FALTA_C, NO_UNO],
+         viejo="    if len(items) != 1:\n", nuevo="    if not items:\n"),
+    dict(id="e59-falta-varias-casillas-pasan", pruebas=[FALTA_C],
+         viejo="    if len(valores) != 1:\n", nuevo="    if not valores:\n"),
+    dict(id="e59-falta-sin-quitar-espacios", pruebas=[FALTA_C],
+         viejo='    valor = str(valores[0] if valores[0] is not None else "").strip()\n',
+         nuevo='    valor = str(valores[0] if valores[0] is not None else "")\n'),
+    dict(id="e59-falta-cualquier-valor", pruebas=[FALTA_C, NO_UNO, FILA_E59],
+         viejo='    if valor != "1":\n', nuevo="    if not valor:\n"),
+    dict(id="e59-falta-por-su-numero", pruebas=[FALTA_C],
+         viejo='    if valor != "1":\n', nuevo='    if valor.lstrip("0") != "1":\n'),
+    dict(id="e59-falta-cualquier-coleccion", pruebas=[FALTA_C],
+         viejo="    items = leido if isinstance(leido, list) else []\n", nuevo="    items = list(leido or [])\n"),
+    dict(id="e59-falta-none-como-texto", pruebas=[FALTA_C],
+         viejo='    valor = str(valores[0] if valores[0] is not None else "").strip()\n',
+         nuevo="    valor = str(valores[0]).strip()\n"),
+    # El JavaScript: la etiqueta por una parte, sin juntar los espacios, solo input, el primero, o null como texto.
+    dict(id="e59-js-etiqueta-por-una-parte", pruebas=[JS_C], viejo=FILTRO_C,
+         nuevo="return lab && txt(lab).startsWith('Cantidad'); })\n"),
+    dict(id="e59-js-sin-juntar-espacios", pruebas=[JS_C],
+         viejo="' ').trim();\n    return [...document.querySelectorAll('.el-form-item')]",
+         nuevo="' ');\n    return [...document.querySelectorAll('.el-form-item')]"),
+    dict(id="e59-js-solo-input", pruebas=[JS_C], viejo="it.querySelectorAll('input, select, textarea')",
+         nuevo="it.querySelectorAll('input')"),
+    dict(id="e59-js-solo-el-primero", pruebas=[JS_C], viejo=FILTRO_C,
+         nuevo="return lab && txt(lab) === 'Cantidad'; }).slice(0, 1)\n"),
+    dict(id="e59-js-null-como-texto", pruebas=[JS_C], viejo="c.value == null ? '' : String(c.value)",
+         nuevo="String(c.value)"),
+    # Las lecturas: una sola, cada 2 s, una espera de más tras la última, o sin decirlo en log.txt.
+    dict(id="e59-una-lectura", pruebas=[NO_UNO, UNO], viejo="CMA_LECTURAS_CANTIDAD = 6\n",
+         nuevo="CMA_LECTURAS_CANTIDAD = 1\n"),
+    dict(id="e59-lecturas-cada-2-s", pruebas=[NO_UNO, UNO], viejo=ENTRE_C, nuevo=ENTRE_C.replace("0.5", "2.0")),
+    dict(id="e59-espera-tras-la-ultima", pruebas=[NO_UNO], viejo=ENTRE_C, nuevo="        esperar(page, 0.5)\n"),
+    dict(id="e59-sin-decir-la-cantidad", pruebas=[UNO], viejo=LO_DICE_C,
+         nuevo=LO_DICE_C.replace("cantidad: el campo", "el campo")),
+    # Lo que busca, con otro texto (la prueba de la fila arma su motivo con la constante: no la ve).
+    dict(id="e59-cantidad-otro-texto", pruebas=[BUSCAN],
+         viejo='CMA_CANTIDAD = "el campo «Cantidad» con 1 contenedor (cada fila de la planilla es una reserva de un '
+               'contenedor)"\n',
+         nuevo='CMA_CANTIDAD = "el campo «Cantidad»"\n'),
+]

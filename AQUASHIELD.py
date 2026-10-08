@@ -11161,6 +11161,62 @@ CMA_REEFER_GUARDADO = ("el panel Reefer con su temperatura guardada (por el bot�
                        "«Temperature» y su «Guardar»)")
 CMA_CASILLA_I_AGREE = "la casilla «I Agree» (por su texto)"
 CMA_MERCANCIA = "la sugerencia que dice «030313» en la lista (por su texto)"
+CMA_CANTIDAD = "el campo «Cantidad» con 1 contenedor (cada fila de la planilla es una reserva de un contenedor)"
+
+# Lo que dice el campo «Cantidad» de los detalles de la carga (decisión de Marcelo, encargo 59,
+# CICLO-tarde-08-10-y-cantidad.md). Medido en los 67 HTML guardados de CMA que lo traen, del 25-09 al 08-10 (65 de las
+# 10 reservas que llegaron a la guarda, en cada paso guardado hasta la guarda): un solo .el-form-item cuya etiqueta
+# (.el-form-item__label) es «Cantidad», con un solo input, que dice 1. Devuelve, de cada
+# uno de esos ítems, el valor de cada campo que trae. Solo lee lo que trae el HTML guardado: no mira si algo se ve.
+_JS_CMA_CANTIDAD = r"""()=>{
+    const txt = e => (e.textContent || '').replace(/\s+/g, ' ').trim();
+    return [...document.querySelectorAll('.el-form-item')]
+        .filter(it => { const lab = it.querySelector('.el-form-item__label'); return lab && txt(lab) === 'Cantidad'; })
+        .map(it => [...it.querySelectorAll('input, select, textarea')]
+            .map(c => c.value == null ? '' : String(c.value)));
+}"""
+
+# Cuántas veces lee el campo _cma_cantidad_es_uno, cada 0,5 s, antes de cortar (unos 3 s). Hipótesis: en los 67 HTML
+# medidos ya decía 1, también en los de antes de elegir el tamaño y tipo; si se rehace un instante después de elegirlo
+# no está medido.
+CMA_LECTURAS_CANTIDAD = 6
+
+
+def _cma_lo_que_falta_de_la_cantidad(leido):
+    """Qué le falta a lo que leyó _JS_CMA_CANTIDAD ('leido') para decir que la reserva es de un contenedor, o "" si el
+    único campo «Cantidad» dice 1."""
+    items = leido if isinstance(leido, list) else []
+    if len(items) != 1:
+        return "no hay ningún campo «Cantidad»" if not items else f"hay {len(items)} campos «Cantidad» y no uno solo"
+    valores = items[0] if isinstance(items[0], list) else []
+    if len(valores) != 1:
+        return f"el campo «Cantidad» trae {len(valores)} casillas y no una sola"
+    valor = str(valores[0] if valores[0] is not None else "").strip()
+    if valor != "1":
+        return f"el campo «Cantidad» dice «{valor[:20]}»" if valor else "el campo «Cantidad» está vacío"
+    return ""
+
+
+def _cma_cantidad_es_uno(page, reg):
+    """Comprueba que el campo «Cantidad» dice 1 (_JS_CMA_CANTIDAD), leyéndolo hasta CMA_LECTURAS_CANTIDAD veces, cada
+    0,5 s, sin escribirlo: cada fila de la planilla es una reserva de un contenedor (decisión de Marcelo, encargo 59,
+    CICLO-tarde-08-10-y-cantidad.md). Si no dice 1, corta (ObjetivoNoEncontrado), con lo que faltó en la última lectura,
+    y la fila queda NO ENVIADA con la captura y el HTML del paso; si la lectura falla, corta con _cma_fallo. Solo lee:
+    ni clics ni teclas. Hasta ahí, el paso de la cantidad buscaba el campo con selectores que no calzan con el del
+    portal, así que nunca lo escribió (FRENA SI del encargo 58), y la reserva iba con lo que el portal mostrara."""
+    for n in range(1, CMA_LECTURAS_CANTIDAD + 1):
+        try:
+            leido = _cma_js(page, _JS_CMA_CANTIDAD)
+        except Exception as e:
+            raise _cma_fallo("Cantidad de CMA", CMA_CANTIDAD, "leerla", e)
+        falta = _cma_lo_que_falta_de_la_cantidad(leido)
+        if not falta:
+            reg.info(f"cantidad: el campo «Cantidad» dice 1, un contenedor; no la escribo (lectura {n})")
+            return
+        if n < CMA_LECTURAS_CANTIDAD:
+            esperar(page, 0.5)
+    raise ObjetivoNoEncontrado("Cantidad de CMA", f"{CMA_CANTIDAD}: {falta} (lo leí {CMA_LECTURAS_CANTIDAD} veces, "
+                                                  f"cada 0,5 s)")
 
 
 def _cma_fallo(paso, buscaba, que, e):
@@ -11176,7 +11232,7 @@ def _cma_fallo(paso, buscaba, que, e):
 def _cma_completar_info_extra(page, reserva, reg):
     """Llena 'Detalles de la carga 1' (We need some extra information):
     - Tamaño y tipo: 40' Reefer High Cube
-    - Cantidad: 1 (o la de la planilla)
+    - Cantidad: comprueba que dice 1, sin escribirla
     - Peso por contenedor: 22500 KGM
     - Mercancía: 030313 -> Frozen Atlantic Salmon...
     - Clic en 'Mostrar soluciones disponibles'
@@ -11185,7 +11241,9 @@ def _cma_completar_info_extra(page, reserva, reg):
     ellos. En logs/ no pasó nunca: las 14 reservas que llegaron a la guarda los eligieron y escribieron. Desde el
     encargo 58, la mercancía también (decisión de Marcelo, CICLO-temperatura-y-puerto.md): hasta ahí, «mercancía err»;
     las 14 la eligieron, y las 5 del 21-09 que no llegaron a la guarda la anotaron y reintentaron la información extra.
-    La cantidad sigue como antes: su campo no lo encuentran sus selectores (FRENA SI del encargo 58).
+    Desde el encargo 59, la cantidad no se escribe: si el campo «Cantidad» no dice 1, corta (_cma_cantidad_es_uno;
+    decisión de Marcelo, CICLO-tarde-08-10-y-cantidad.md). Hasta ahí sus selectores no encontraban el campo (FRENA SI
+    del encargo 58), y la reserva iba con lo que el portal mostrara.
     """
     reg.paso("CMA · Completando información extra de carga...")
 
@@ -11270,17 +11328,9 @@ def _cma_completar_info_extra(page, reserva, reg):
             raise _cma_fallo("Tamaño y tipo de CMA", CMA_TAMANO_Y_TIPO, "abrir el desplegable o elegirla", e)
         reg.info(f"tamaño y tipo err: {str(e)[:50]}")
 
-    # 2. Cantidad
-    cant = str(reserva.get("cant", 1) or 1)
-    try:
-        inp_cant = page.locator(".el-input-number input, input[role='spinbutton'], input[placeholder*='Cantidad' i]").first
-        if _cma_se_ve(page, inp_cant):
-            val_actual = (inp_cant.input_value() or "").strip()
-            if val_actual != cant:
-                inp_cant.fill(cant)
-            reg.info(f"cantidad: {cant}")
-    except Exception:
-        pass
+    # 2. Cantidad: solo comprueba que dice 1 (encargo 59). Hasta ahí la buscaba con selectores que no calzan con su
+    # campo (un campo numérico o un placeholder), y la escribía si la veía.
+    _cma_cantidad_es_uno(page, reg)
 
     # 3. Peso por contenedor (el de config.json)
     try:
