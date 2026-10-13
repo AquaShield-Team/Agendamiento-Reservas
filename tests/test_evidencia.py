@@ -268,7 +268,10 @@ class TestCadaReservadorLaDeja(soporte.CasoAQ):
                                           + ["_evidencia_sin_sugerencia"]
                                           # Desde el encargo 48, New Booking de COSCO sin su formulario
                                           # (test_clics.TestCosco, CICLO-calendario-cosco-y-cma.md).
-                                          + ["_cosco_sin_formulario"]))
+                                          + ["_cosco_sin_formulario"]
+                                          # Desde el encargo 62, MAERSK con la lista de tipos de contenedor, antes de
+                                          # elegir (test_clics.TestContenedorMaersk, CICLO-maersk-contenedor.md).
+                                          + ["_mk_elegir_contenedor"]))
 
 
 class TestHtmlSinObjetivo(ConRegistro):

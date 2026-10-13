@@ -6828,6 +6828,179 @@ class TestReferenciaMaersk(ConRegistro):
                          "ref_txt = str(reserva.get('comentario') or '').strip() or COSCO_REMARK")
 
 
+class PaginaContenedor(soporte.PaginaFalsa):
+    """«Booking Information» falsa de MAERSK para el tipo de contenedor. El campo «Select container type and size» anota
+    lo que se le escribe (o falla con 'falla_campo'). La lista (mc-option a la vista) responde, por lectura, lo de
+    'lecturas' (la última se repite). El clic en una opción queda con el texto que esa posición tiene en la última
+    lectura (o falla con 'falla_clic'). Lo escrito, cada captura y cada clic quedan en orden en 'acciones'. Otro
+    selector u otro JavaScript quedan en 'prohibidos' aunque el programa se trague el error: cada prueba exige esa lista
+    vacía."""
+
+    def __init__(self, mod, lecturas, falla_campo=None, falla_clic=None):
+        super().__init__(url="https://portal.invalid/book")
+        self.mod, self.lecturas = mod, [list(x) for x in lecturas]
+        self.falla_campo, self.falla_clic = falla_campo, falla_clic
+        self.acciones, self.prohibidos, self.ultima, self.main_frame, self.pesos = [], [], [], None, []
+
+    def leer(self):
+        self.ultima = self.lecturas.pop(0) if len(self.lecturas) > 1 else self.lecturas[0]
+        return list(self.ultima)
+
+    def get_by_placeholder(self, texto):
+        if texto != "Select container type and size":
+            self.prohibidos.append(("placeholder", texto))
+            raise AssertionError("campo inesperado")
+        pagina = self
+
+        def escribir(t, **k):
+            if pagina.falla_campo:
+                raise RuntimeError(pagina.falla_campo)
+            pagina.acciones.append(("escribe", t))
+        campo = types.SimpleNamespace(scroll_into_view_if_needed=lambda **k: None, click=lambda **k: None,
+                                      type=escribir)
+        return types.SimpleNamespace(first=campo)
+
+    def locator(self, sel):
+        if sel == ":root":
+            return super().locator(sel)
+        pagina = self
+        if sel == "#mc-input-weight":                  # el peso, que _mk_contenedor llena después del tipo
+            peso = types.SimpleNamespace(scroll_into_view_if_needed=lambda **k: None, click=lambda **k: None,
+                                         fill=lambda v, **k: pagina.pesos.append(v))
+            return types.SimpleNamespace(first=peso)
+        if sel != "mc-option:visible":
+            self.prohibidos.append(("locator", sel))
+            raise AssertionError("selector inesperado")
+
+        def opcion(i):
+            def pulsar(**k):
+                if pagina.falla_clic:
+                    raise RuntimeError(pagina.falla_clic)
+                pagina.acciones.append(("clic", pagina.ultima[i]))
+            return types.SimpleNamespace(click=pulsar)
+        return types.SimpleNamespace(all_text_contents=self.leer, nth=opcion)
+
+    def screenshot(self, path=None, full_page=False, timeout=None):
+        super().screenshot(path=path, full_page=full_page, timeout=timeout)
+        self.acciones.append(("captura", Path(path).name))
+
+    def evaluate(self, js, *a):
+        if js == self.mod._JS_HTML_COMPLETO:
+            return {}
+        self.prohibidos.append("evaluate")
+        raise AssertionError("JavaScript inesperado")
+
+    def content(self):
+        return "<body>contenedor sintetico</body>"
+
+
+class TestContenedorMaersk(ConRegistro):
+    """El tipo de contenedor de MAERSK: la única opción cuyo texto entero es «40 Reefer High», con la evidencia de la
+    lista antes de elegir (decisión de Marcelo, encargo 62, CICLO-maersk-contenedor.md). Hasta ahí pulsaba la primera
+    opción con «40» y «Reefer»: el 08-10, en las dos corridas, fue «40 Reefer Standard Shipper own», y la fila quedó NO
+    ENVIADA más adelante, en la fecha de retiro, que esa pantalla ya no traía."""
+    ALTA = "40 Reefer High"
+    PROPIO = "40 Reefer Standard Shipper own"
+
+    def elegir(self, pagina, nombre):
+        reg, vistas, log = self.corrida(nombre)
+        det = []
+        self.mod._mk_contenedor(pagina, {"fila": 10, "contenedor": "40 HC REEFER"}, True, reg, det)
+        return det, log.read_text(encoding="utf-8")
+
+    def cortar(self, pagina, nombre):
+        reg, _, _ = self.corrida(nombre)
+        with self.assertRaises(self.mod.ObjetivoNoEncontrado) as e:
+            self.mod._mk_contenedor(pagina, {"fila": 10, "contenedor": "40 HC REEFER"}, True, reg, [])
+        self.assertEqual(pagina.prohibidos, [])
+        self.assertNotIn("clic", [a[0] for a in pagina.acciones])
+        return e.exception.paso, e.exception.buscaba
+
+    def test_el_contenedor_es_el_de_las_filas(self):
+        self.assertEqual(self.mod.MK_CONTENEDOR, self.ALTA)
+
+    def test_elige_la_unica_con_el_texto_entero(self):
+        # La primera de la lista es la que elegía la regla de antes; las demás traen «40 Reefer High» dentro de otro
+        # texto. El texto se compara en una línea, sin los espacios de más.
+        pagina = PaginaContenedor(self.mod, [[self.PROPIO, "40 Reefer High Shipper own", " 40 Reefer\n  High ",
+                                              "40 Reefer Standard"]])
+        det, log = self.elegir(pagina, "elige")
+        self.assertEqual(pagina.prohibidos, [])
+        self.assertEqual(pagina.acciones, [("escribe", "40 Reefer"), ("captura", "mk_f10_contenedor.png"),
+                                           ("clic", " 40 Reefer\n  High ")])
+        self.assertEqual(det[0], "cont=40 Reefer High")
+        self.assertEqual(len(pagina.pesos), 1)                         # y sigue con el peso, como antes
+        self.assertIn("contenedor: 1 de las 4 opciones dicen «40 Reefer High»", log)
+        self.assertIn("contenedor tipo: 40 Reefer High", log)
+        self.assertIn("evidencia con la lista de tipos de contenedor: mk_f10_contenedor.png", log)
+
+    def test_espera_la_lista_quieta(self):
+        # La lista llega de a poco: decide con dos lecturas iguales seguidas, y la evidencia es de esa lista.
+        pagina = PaginaContenedor(self.mod, [[], [self.PROPIO], [self.PROPIO, self.ALTA], [self.PROPIO, self.ALTA]])
+        det, _ = self.elegir(pagina, "quieta")
+        self.assertEqual(pagina.acciones, [("escribe", "40 Reefer"), ("captura", "mk_f10_contenedor.png"),
+                                           ("clic", self.ALTA)])
+        self.assertEqual(det[0], "cont=40 Reefer High")
+
+    def test_sin_una_sola_no_pulsa_nada(self):
+        casos = (([], "la lista no apareció"),
+                 ([self.PROPIO], f"hay 0 entre 1: «{self.PROPIO}»"),
+                 ([self.ALTA, self.ALTA], "hay 2 entre 2: «40 Reefer High», «40 Reefer High»"),
+                 (["40 reefer high"], "hay 0 entre 1: «40 reefer high»"),
+                 (["40 Reefer High Cube"], "hay 0 entre 1: «40 Reefer High Cube»"))
+        for lista, cuantas in casos:
+            with self.subTest(lista=lista):
+                pagina = PaginaContenedor(self.mod, [lista])
+                self.assertEqual(self.cortar(pagina, f"sin_una_{len(lista)}_{lista[:1]}"),
+                                 ("Tipo de contenedor de MAERSK",
+                                  f"una sola opción «40 Reefer High» en la lista de tipos de contenedor ({cuantas})"))
+                self.assertEqual(pagina.acciones, [("escribe", "40 Reefer"), ("captura", "mk_f10_contenedor.png")])
+
+    def test_si_la_lista_cambia_mientras_guarda_no_elige(self):
+        pagina = PaginaContenedor(self.mod, [[self.ALTA], [self.ALTA], [self.PROPIO, self.ALTA]])
+        self.assertEqual(self.cortar(pagina, "cambia"),
+                         ("Tipo de contenedor de MAERSK", "la opción «40 Reefer High» de la lista que guardé en la "
+                                                          "evidencia: la lista cambió mientras la guardaba"))
+
+    def test_el_campo_o_el_clic_que_fallan_cortan(self):
+        pagina = PaginaContenedor(self.mod, [[self.ALTA]], falla_campo="el campo está deshabilitado")
+        self.assertEqual(self.cortar(pagina, "campo"),
+                         ("Tipo de contenedor de MAERSK", "el campo «Select container type and size» para escribir "
+                                                          "«40 Reefer» (RuntimeError: el campo está deshabilitado)"))
+        self.assertEqual(pagina.acciones, [])
+        pagina = PaginaContenedor(self.mod, [[self.ALTA]], falla_clic="otro elemento recibiría el clic")
+        self.assertEqual(self.cortar(pagina, "clic"),
+                         ("Tipo de contenedor de MAERSK", "la opción «40 Reefer High», que no aceptó el clic "
+                                                          "(RuntimeError: otro elemento recibiría el clic)"))
+
+    def test_la_reserva_queda_no_enviada_con_su_evidencia(self):
+        # Por el decorador de reservar_maersk: NO ENVIADA con el motivo, la captura y el HTML del paso.
+        pagina = PaginaContenedor(self.mod, [[self.PROPIO]])
+        reg, vistas, log = self.corrida("decorador")
+
+        def reservar(page, reserva, creds, reg_, on_pausa=None):
+            self.mod._mk_contenedor(page, reserva, True, reg_, [])
+            return ("OK-EJEMPLO", "no debería llegar")
+        r = self.mod._sin_clic_a_ciegas("mk")(reservar)(pagina, {"fila": 10, "contenedor": "40 HC REEFER"}, {}, reg)
+        self.assertEqual(r, ("NO ENVIADA", f"Tipo de contenedor de MAERSK: no encontré una sola opción «40 Reefer "
+                                           f"High» en la lista de tipos de contenedor (hay 0 entre 1: "
+                                           f"«{self.PROPIO}»), así que no pulsé nada. La reserva no se envió; revisa "
+                                           f"ese paso en el portal."))
+        self.assertEqual([a for a in pagina.acciones if a[0] == "captura"],
+                         [("captura", "mk_f10_contenedor.png"), ("captura", "mk_f10_sin_objetivo.png")])
+
+    def test_reservar_maersk_elige_asi_antes_de_la_guarda(self):
+        tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
+        funcs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+        f = funcs["reservar_maersk"]
+        llamadas = [n for n in ast.walk(f) if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_mk_contenedor"]
+        self.assertEqual([ast.unparse(n) for n in llamadas], ["_mk_contenedor(page, reserva, es_reefer, reg, det)"])
+        self.assertLess(llamadas[0].lineno, linea_guarda(f))
+        self.assertEqual([ast.unparse(n) for n in ast.walk(funcs["_mk_contenedor"]) if isinstance(n, ast.Call)
+                          and getattr(n.func, "id", "") == "_mk_elegir_contenedor"],
+                         ["_mk_elegir_contenedor(page, reg, det, reserva.get('fila', ''), clave)"])
+
+
 class PaginaServicios(soporte.PaginaFalsa):
     """«Recommended services» falsa de MAERSK para «Continue»: _JS_MK_CONTINUAR responde, por lectura, lo que dice
     'vistos' (una lista; la última se repite; una excepción, la levanta). _JS_MK_CONTINUAR_PULSAR da el botón si

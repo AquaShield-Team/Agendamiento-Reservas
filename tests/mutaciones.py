@@ -7825,3 +7825,53 @@ MUTACIONES += [
     dict(id="e61-bat-sin-pausa", archivo="Iniciar AQUASHIELD_EMISION.bat", pruebas=[BAT_BLOQUE],
          viejo="    echo.\n    pause\n    exit /b 1\n", nuevo="    echo.\n    exit /b 1\n"),
 ]
+
+# --- Encargo 62 (CICLO-maersk-contenedor.md): MAERSK elige la única opción «40 Reefer High», el contenedor de las
+# filas, con la evidencia de la lista antes de elegir; si no hay exactamente una, NO ENVIADA sin pulsar nada (decisión
+# de Marcelo). Hasta ahí pulsaba la primera opción con «40» y «Reefer».
+TCM = "test_clics.TestContenedorMaersk."
+CM_ES = TCM + "test_el_contenedor_es_el_de_las_filas"
+CM_ELIGE = TCM + "test_elige_la_unica_con_el_texto_entero"
+CM_QUIETA = TCM + "test_espera_la_lista_quieta"
+CM_SIN_UNA = TCM + "test_sin_una_sola_no_pulsa_nada"
+CM_CAMBIA = TCM + "test_si_la_lista_cambia_mientras_guarda_no_elige"
+CM_FALLA = TCM + "test_el_campo_o_el_clic_que_fallan_cortan"
+CM_DECORADOR = TCM + "test_la_reserva_queda_no_enviada_con_su_evidencia"
+CM_LLAMADA = TCM + "test_reservar_maersk_elige_asi_antes_de_la_guarda"
+EV_SOLO_AHI = LD + "test_solo_ahi"
+
+MUTACIONES += [
+    dict(id="e62-otro-contenedor", pruebas=[CM_ES, CM_ELIGE], viejo='MK_CONTENEDOR = "40 Reefer High"\n',
+         nuevo='MK_CONTENEDOR = "40 Reefer Standard"\n'),
+    dict(id="e62-basta-que-lo-traiga", pruebas=[CM_ELIGE],
+         viejo="    exactas = [i for i, t in enumerate(textos) if t == MK_CONTENEDOR]\n",
+         nuevo="    exactas = [i for i, t in enumerate(textos) if MK_CONTENEDOR in t]\n"),
+    dict(id="e62-la-primera-de-varias", pruebas=[CM_SIN_UNA], viejo="    if len(exactas) != 1:\n",
+         nuevo="    if not exactas:\n"),
+    dict(id="e62-sin-juntar-los-espacios", pruebas=[CM_ELIGE],
+         viejo='    return op, [" ".join((t or "").split()) for t in op.all_text_contents()]\n',
+         nuevo='    return op, [(t or "").strip() for t in op.all_text_contents()]\n'),
+    dict(id="e62-sin-esperar-la-lista-quieta", pruebas=[CM_QUIETA], viejo="        if textos and textos == anterior:\n",
+         nuevo="        if textos:\n"),
+    dict(id="e62-sin-evidencia", pruebas=[CM_ELIGE, CM_SIN_UNA, CM_DECORADOR, EV_SOLO_AHI],
+         viejo=('    _evidencia_antes_de_la_guarda(page, reg, f"mk_f{fila}_contenedor", "con la lista de tipos de '
+                'contenedor",\n                                  completa=False)\n'),
+         nuevo=""),
+    dict(id="e62-elige-de-otra-lista", pruebas=[CM_CAMBIA], viejo="    if despues != textos:\n",
+         nuevo="    if False:\n"),
+    dict(id="e62-el-campo-que-falla-sigue", pruebas=[CM_FALLA],
+         viejo=('        raise ObjetivoNoEncontrado(MK_TIPO_CONTENEDOR, f"el campo «Select container type and size» '
+                'para'),
+         nuevo=('        return\n        raise ObjetivoNoEncontrado(MK_TIPO_CONTENEDOR, f"el campo «Select container '
+                'type and size» para')),
+    dict(id="e62-el-clic-que-falla-sin-motivo", pruebas=[CM_FALLA],
+         viejo='"la opción «{MK_CONTENEDOR}», que no aceptó el clic "', nuevo='"la opción «{MK_CONTENEDOR}» "'),
+    dict(id="e62-motivo-sin-las-opciones", pruebas=[CM_SIN_UNA, CM_DECORADOR],
+         viejo='(f"hay {n} entre {len(textos)}: {vistas}" if textos else "la lista no apareció")',
+         nuevo='(f"hay {n}" if textos else "la lista no apareció")'),
+    dict(id="e62-como-antes", pruebas=[CM_ELIGE, CM_LLAMADA],
+         viejo="    _mk_elegir_contenedor(page, reg, det, reserva.get(\"fila\", \"\"), clave)\n",
+         nuevo=("    cand = page.locator(\"mc-option:visible\")\n"
+                "    page.get_by_placeholder(\"Select container type and size\").first.type(clave)\n"
+                "    cand.nth(0).click(timeout=3000)\n    det.append(\"cont=\" + MK_CONTENEDOR)\n")),
+]

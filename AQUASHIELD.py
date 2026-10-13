@@ -10598,13 +10598,92 @@ def _mk_fecha(page, reserva, reg, det):
     return puesta
 
 
+# El tipo de contenedor de MAERSK (decisión de Marcelo, encargo 62, CICLO-maersk-contenedor.md): la única opción de la
+# lista cuyo texto entero es este, el contenedor de las filas (40 pies, reefer, high cube: «40 HC REEFER» en las 36
+# filas de las planillas de este equipo, que no traen columna de contenedor). Hasta el encargo 62 pulsaba la primera
+# opción que traía «40» y «Reefer»: en las 19 de logs/ del 21-09 al 02-10 fue esta, y las 7 que llegaron a la guarda
+# la eligieron; el 08-10, en las 2 corridas, fue «40 Reefer Standard Shipper own» (el contenedor del embarcador), sin
+# el retiro del contenedor vacío en «Additional details», y la fila quedó NO ENVIADA en la fecha de retiro.
+MK_CONTENEDOR = "40 Reefer High"
+MK_TIPO_CONTENEDOR = "Tipo de contenedor de MAERSK"
+# Cuántas veces lee la lista, una cada 0,5 s, hasta que dos lecturas seguidas den lo mismo (llega de a poco, como la de
+# las sugerencias: _mk_ciudad). Hipótesis, sin medir: la lista de opciones no se guardó nunca hasta el encargo 62.
+MK_LECTURAS_CONTENEDOR = 12
+
+
+def _mk_opciones_de_contenedor(page):
+    """Las opciones a la vista de la lista (mc-option) y el texto de cada una, el de text_content (sin raíces shadow,
+    como lo leía el programa) y en una línea."""
+    op = page.locator("mc-option:visible")
+    return op, [" ".join((t or "").split()) for t in op.all_text_contents()]
+
+
+def _mk_sin_un_contenedor(textos):
+    """Lo que buscaba _mk_contenedor cuando la lista no trae una sola «40 Reefer High», para el motivo de la NO
+    ENVIADA: cuántas la traen y cuáles había (hasta 8, cada una recortada)."""
+    n = sum(t == MK_CONTENEDOR for t in textos)
+    vistas = ", ".join(f"«{t[:40]}»" for t in textos[:8]) + (", …" if len(textos) > 8 else "")
+    return (f"una sola opción «{MK_CONTENEDOR}» en la lista de tipos de contenedor ("
+            + (f"hay {n} entre {len(textos)}: {vistas}" if textos else "la lista no apareció") + ")")
+
+
+def _mk_elegir_contenedor(page, reg, det, fila, clave):
+    """Escribe 'clave' en el campo del tipo y tamaño del contenedor, espera la lista quieta (dos lecturas iguales
+    seguidas, hasta MK_LECTURAS_CONTENEDOR), deja su evidencia (mk_f<fila>_contenedor: la captura de la ventana y el
+    HTML de la página y de sus marcos, como las listas de sugerencias) y pulsa la única opción cuyo texto entero es
+    MK_CONTENEDOR. Si no hay exactamente una, si la lista cambió mientras guardaba la evidencia o si el campo o el clic
+    fallan, corta sin pulsar nada (ObjetivoNoEncontrado): la reserva queda NO ENVIADA, con la captura y el HTML de
+    _sin_clic_a_ciegas (decisión de Marcelo, encargo 62)."""
+    try:
+        cc = page.get_by_placeholder("Select container type and size").first
+        cc.scroll_into_view_if_needed(timeout=3000)
+        cc.click(timeout=4000)
+        cc.type(clave, delay=90)
+    except Exception as e:
+        reg.info(f"contenedor err: {str(e)[:50]}")
+        raise ObjetivoNoEncontrado(MK_TIPO_CONTENEDOR, f"el campo «Select container type and size» para escribir "
+                                                      f"«{clave}» ({_texto_error(e)})")
+    esperar(page, 1.2)
+    op, textos, anterior = None, [], None
+    for vuelta in range(MK_LECTURAS_CONTENEDOR):
+        esperar(page, 0.5)
+        try:
+            op, textos = _mk_opciones_de_contenedor(page)
+        except Exception:
+            op, textos = None, []
+        if textos and textos == anterior:
+            break
+        anterior = textos
+    _evidencia_antes_de_la_guarda(page, reg, f"mk_f{fila}_contenedor", "con la lista de tipos de contenedor",
+                                  completa=False)
+    exactas = [i for i, t in enumerate(textos) if t == MK_CONTENEDOR]
+    reg.info(f"contenedor: {len(exactas)} de las {len(textos)} opciones dicen «{MK_CONTENEDOR}»")
+    if len(exactas) != 1:
+        raise ObjetivoNoEncontrado(MK_TIPO_CONTENEDOR, _mk_sin_un_contenedor(textos))
+    # La evidencia toma su tiempo: si la lista ya no es la que dejó, no elige de otra.
+    try:
+        _, despues = _mk_opciones_de_contenedor(page)
+    except Exception:
+        despues = []
+    if despues != textos:
+        raise ObjetivoNoEncontrado(MK_TIPO_CONTENEDOR, f"la opción «{MK_CONTENEDOR}» de la lista que guardé en la "
+                                                      f"evidencia: la lista cambió mientras la guardaba")
+    try:
+        op.nth(exactas[0]).click(timeout=3000)
+    except Exception as e:
+        raise ObjetivoNoEncontrado(MK_TIPO_CONTENEDOR, f"la opción «{MK_CONTENEDOR}», que no aceptó el clic "
+                                                      f"({_texto_error(e)})")
+    reg.info(f"contenedor tipo: {MK_CONTENEDOR}")
+    det.append("cont=" + MK_CONTENEDOR)
+
+
 def _mk_contenedor(page, reserva, es_reefer, reg, det):
-    """Rellena tipo/tamaño de contenedor, cantidad y peso en el form de MAERSK."""
+    """Rellena tipo/tamaño de contenedor, cantidad y peso en el form de MAERSK. El tipo, con _mk_elegir_contenedor: la
+    única opción «40 Reefer High» (encargo 62)."""
     cont = (reserva.get("contenedor") or "").upper()
     cant = str(reserva.get("cant") or "1").strip() or "1"
-    # El tipo/tamaño es un mc-typeahead: se escribe una palabra clave y se
-    # elige la opción (mc-option) que calce.
-    import re as _re
+    # El tipo/tamaño es un mc-typeahead: se escribe una palabra clave (la misma de antes del encargo 62) y se elige la
+    # opción (mc-option) por su texto entero.
     toks = []
     for n in ("45", "40", "20"):
         if n in cont:
@@ -10614,27 +10693,7 @@ def _mk_contenedor(page, reserva, es_reefer, reg, det):
     elif "HIGH" in cont or "HC" in cont:
         toks.append("High")
     clave = " ".join(toks) or "40"
-    try:
-        cc = page.get_by_placeholder("Select container type and size").first
-        cc.scroll_into_view_if_needed(timeout=3000)
-        cc.click(timeout=4000)
-        cc.type(clave, delay=90)
-        esperar(page, 1.2)
-        ok = ""
-        for _ in range(8):
-            esperar(page, 0.5)
-            cand = page.locator("mc-option:visible")
-            for t in toks:
-                cand = cand.filter(has_text=_re.compile(_re.escape(t), _re.I))
-            if cand.count() == 0 and toks:
-                cand = page.locator("mc-option:visible").filter(has_text=_re.compile(_re.escape(toks[0]), _re.I))
-            if cand.count():
-                ok = (cand.first.text_content() or "").strip()[:30]
-                cand.first.click(timeout=3000); break
-        reg.info(f"contenedor tipo: {ok or 'sin opción'}")
-        if ok: det.append("cont=" + ok)
-    except Exception as e:
-        reg.info(f"contenedor err: {str(e)[:50]}")
+    _mk_elegir_contenedor(page, reg, det, reserva.get("fila", ""), clave)
     # cantidad (si no es 1)
     if cant and cant != "1":
         try:
