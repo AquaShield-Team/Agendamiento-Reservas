@@ -38,6 +38,7 @@ _para_borrar/
 !/.gitattributes
 !/AQUASHIELD.py
 !/AQUASHIELD_EMISION.py
+!/actualizar.py
 !/Iniciar AQUASHIELD.bat
 !/Iniciar AQUASHIELD_EMISION.bat
 !/config.example.json

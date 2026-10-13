@@ -1023,7 +1023,7 @@ class TestLeeme(unittest.TestCase):
         texto = ruta.read_text(encoding="utf-8")
         nombrados = sorted(set(re.findall(r"`([^`]+\.(?:bat|exe|py))`", texto)))
         self.assertEqual(nombrados, ["AQUASHIELD.py", "AQUASHIELD_EMISION.py", "Iniciar AQUASHIELD.bat",
-                                     "Iniciar AQUASHIELD_EMISION.bat"])
+                                     "Iniciar AQUASHIELD_EMISION.bat", "actualizar.py"])
         self.assertEqual([n for n in nombrados if not (soporte.FUENTES / n).exists()], [])
         self.assertNotIn(".exe", texto)
 
@@ -1040,8 +1040,9 @@ class TestLanzadores(unittest.TestCase):
         for nombre, programa in (("Iniciar AQUASHIELD.bat", "AQUASHIELD.py"),
                                  ("Iniciar AQUASHIELD_EMISION.bat", "AQUASHIELD_EMISION.py")):
             with self.subTest(lanzador=nombre):
-                # De soporte.FUENTES: el censo deja ahí el .bat mutado.
-                lineas = (soporte.FUENTES / nombre).read_text(encoding="utf-8").split("\n")
+                # De soporte.FUENTES: el censo deja ahí el .bat mutado. Desde el encargo 60 la lógica va en un bloque,
+                # con sangría.
+                lineas = [l.strip() for l in (soporte.FUENTES / nombre).read_text(encoding="utf-8").split("\n")]
                 instala = [i for i, l in enumerate(lineas) if "holidays" in l and not l.upper().startswith("REM")]
                 abre = [i for i, l in enumerate(lineas) if l == f'start "" pythonw "{programa}"']
                 self.assertEqual([lineas[i] for i in instala], [self.LINEA])

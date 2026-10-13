@@ -25,8 +25,9 @@ from pathlib import Path
 
 TESTS = Path(__file__).resolve().parent
 RAIZ = TESTS.parent
+# El actualizador y la lista de lo que se versiona, desde el encargo 60: sus pruebas los leen de soporte.FUENTES.
 FUENTES_PROGRAMA = ["AQUASHIELD.py", "AQUASHIELD_EMISION.py", "Iniciar AQUASHIELD.bat",
-                    "Iniciar AQUASHIELD_EMISION.bat", "config.example.json"]
+                    "Iniciar AQUASHIELD_EMISION.bat", "config.example.json", "actualizar.py", ".gitignore"]
 PLANILLA_TEMPORAL_REAL = Path(tempfile.gettempdir()) / "aquashield_planilla.xlsx"
 TRABAJO = Path(tempfile.mkdtemp(prefix="aquashield_mut_"))
 

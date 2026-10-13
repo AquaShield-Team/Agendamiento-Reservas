@@ -13888,6 +13888,28 @@ def _modo_de_la_pagina(pagina, panel):
             f"la página (F5) para ver el modo del panel, y vuelve a armarlas.")
 
 
+# Lo que dijo actualizar.py al abrir (decisión de Marcelo, encargo 60, CICLO-actualizar-desde-estable.md): los dos
+# .bat lo corren antes del panel, y deja en logs/ si actualizó, si ya estaba al día o por qué no actualizó. El panel lo
+# muestra solo si es de este inicio: de hace a lo más AVISO_ACTUALIZACION_SEG s (hipótesis: el .bat instala lo que
+# falte entre los dos, y pip con red puede tardar). El texto lo arma actualizar.py, la fuente única.
+ACTUALIZACION = "actualizacion.json"
+AVISO_ACTUALIZACION_SEG = 600
+
+
+def _aviso_de_actualizacion(ahora=None):
+    """El texto de logs/actualizacion.json si es de este inicio, o None (sin el archivo, viejo o malformado)."""
+    try:
+        datos = json.loads((BASE / "logs" / ACTUALIZACION).read_bytes().decode("utf-8"))
+        texto, cuando = datos["texto"], float(datos["cuando"])
+    except Exception:
+        return None
+    if not isinstance(texto, str) or not texto.strip():
+        return None
+    if not 0 <= (time.time() if ahora is None else ahora) - cuando <= AVISO_ACTUALIZACION_SEG:
+        return None
+    return " ".join(texto.split())[:400]
+
+
 def lanzar_web(puerto=8765, abrir=True):
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from urllib.parse import urlparse, parse_qs
@@ -14225,6 +14247,9 @@ def lanzar_web(puerto=8765, abrir=True):
     puerto = srv.server_address[1]
 
     _SRV_ACTUAL = srv
+    aviso = _aviso_de_actualizacion()
+    if aviso:
+        _avisar_en_pantalla_y_log(aviso)
 
     # Watchdog de inactividad: si el usuario cerró el navegador y no hay reservas corriendo,
     # apaga el servidor en segundo plano tras 90 segundos para no dejar procesos huérfanos.

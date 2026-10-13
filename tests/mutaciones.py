@@ -141,10 +141,10 @@ MUTACIONES += [
     dict(id="bat-holidays-frena", archivo="Iniciar AQUASHIELD_EMISION.bat", pruebas=[LANZ_BAT],
          viejo=HOLIDAYS_BAT + "\n", nuevo=HOLIDAYS_BAT + "\npause\n"),
     dict(id="bat-holidays-despues-del-panel", archivo="Iniciar AQUASHIELD.bat", pruebas=[LANZ_BAT],
-         viejo=HOLIDAYS_BAT + '\n\nREM Abre el panel (sin ventana negra de consola)\n'
-               'start "" pythonw "AQUASHIELD.py"\n',
-         nuevo='REM Abre el panel (sin ventana negra de consola)\nstart "" pythonw "AQUASHIELD.py"\n\n' + HOLIDAYS_BAT
-               + "\n"),
+         viejo=HOLIDAYS_BAT + '\n\n  REM Abre el panel, sin ventana negra de consola\n'
+               '  start "" pythonw "AQUASHIELD.py"\n',
+         nuevo=('REM Abre el panel, sin ventana negra de consola\n  start "" pythonw "AQUASHIELD.py"\n\n  '
+                + HOLIDAYS_BAT + "\n")),
 ]
 
 # --- Planilla: lectores y escritura ---
@@ -7598,4 +7598,113 @@ MUTACIONES += [
          viejo='CMA_CANTIDAD = "el campo «Cantidad» con 1 contenedor (cada fila de la planilla es una reserva de un '
                'contenedor)"\n',
          nuevo='CMA_CANTIDAD = "el campo «Cantidad»"\n'),
+]
+
+# --- Encargo 60 (CICLO-actualizar-desde-estable.md): al abrir, los equipos de los colegas traen la última versión de la
+# rama «estable» (actualizar.py), sin pisar nada propio; el de desarrollo, en «main», no se actualiza (decisión de
+# Marcelo).
+TA = "test_actualizar.TestActualizar."
+TRAE = TA + "test_trae_la_version_estable_sin_tocar_lo_propio_del_equipo"
+AL_DIA = TA + "test_al_dia_no_cambia_nada"
+EN_MAIN = TA + "test_el_equipo_de_desarrollo_en_main_no_se_actualiza_ni_busca"
+SOLO_ESTABLE = TA + "test_solo_avanza_lo_que_marcelo_pone_en_estable"
+SIN_RED = TA + "test_sin_red_abre_con_la_que_tiene"
+CAMBIO_PROPIO = TA + "test_un_cambio_en_un_archivo_del_programa_no_se_pisa"
+COMMIT_PROPIO = TA + "test_un_commit_propio_no_se_pierde"
+IGNORADO = TA + "test_un_archivo_propio_ignorado_donde_la_version_pone_uno_no_se_pisa"
+EN_EL_CAMINO = TA + "test_una_carpeta_o_un_archivo_propio_en_el_camino_no_se_pisan"
+YA_VERSIONADO = TA + "test_lo_que_ya_versionaba_la_vieja_no_cuenta_como_propio"
+OPERACION = TA + "test_una_operacion_de_git_a_medias_no_se_toca"
+ABIERTO = TA + "test_un_archivo_abierto_vuelve_todo_a_la_version_que_tenia"
+CLAVES = TA + "test_no_pide_ni_guarda_credenciales"
+NO_CLON = TA + "test_una_carpeta_que_no_es_un_clon_no_se_actualiza"
+SIN_ARGUMENTOS = TA + "test_sin_argumentos_actualiza_su_propia_carpeta"
+TL = "test_actualizar.TestLosLanzadores."
+BAT_BLOQUE = TL + "test_el_bat_actualiza_antes_de_abrir_y_todo_en_un_bloque"
+BAT_CMD = TL + "test_en_cmd_abre_la_version_nueva_aunque_la_actualizacion_reescriba_el_bat"
+GITIGNORE_ACT = TL + "test_gitignore_versiona_el_actualizador"
+TP = "test_actualizar.TestAvisoEnElPanel."
+AVISO_FRESCO = TP + "test_lo_dice_si_es_de_este_inicio"
+AVISO_MAL = TP + "test_sin_archivo_o_malformado_no_dice_nada"
+AVISO_AL_ABRIR = TP + "test_el_panel_lo_muestra_al_abrir"
+ACT = "actualizar.py"
+CORRE_ACT = "  python actualizar.py\n"
+
+MUTACIONES += [
+    # La rama: cualquiera se actualiza, se actualiza main, o se trae main.
+    dict(id="e60-cualquier-rama", archivo=ACT, pruebas=[EN_MAIN], viejo="    if rama != RAMA:\n",
+         nuevo="    if not rama:\n"),
+    dict(id="e60-la-rama-main", archivo=ACT, pruebas=[TRAE, EN_MAIN], viejo='RAMA = "estable"\n',
+         nuevo='RAMA = "main"\n'),
+    dict(id="e60-trae-main", archivo=ACT, pruebas=[SOLO_ESTABLE],
+         viejo='f"+refs/heads/{RAMA}:refs/remotes/{REMOTO}/{RAMA}"',
+         nuevo='f"+refs/heads/main:refs/remotes/{REMOTO}/{RAMA}"'),
+    # La búsqueda: sin buscar, sin ver que falló, o con el ayudante de credenciales del equipo.
+    dict(id="e60-no-busca", archivo=ACT, pruebas=[TRAE],
+         viejo='    codigo, _, error = g("fetch", "--no-tags", "--quiet", REMOTO,\n',
+         nuevo='    codigo, error = 0, ""\n    (lambda *a, **k: None)(REMOTO,\n'),
+    dict(id="e60-sin-red-sigue", archivo=ACT, pruebas=[SIN_RED],
+         viejo='    if codigo:\n        return sin_actualizar(f"no pude buscar la versión nueva',
+         nuevo='    if False:\n        return sin_actualizar(f"no pude buscar la versión nueva'),
+    dict(id="e60-con-el-ayudante-de-claves", archivo=ACT, pruebas=[CLAVES],
+         viejo='SIN_CLAVES = ("-c", "credential.helper=", "-c", "core.askPass=")\n',
+         nuevo='SIN_CLAVES = ("-c", "core.askPass=")\n'),
+    # Lo que impide actualizar: un clon que no es, una operación a medias, commits o cambios propios, lo ocupado.
+    dict(id="e60-no-mira-si-es-un-clon", archivo=ACT, pruebas=[NO_CLON],
+         viejo='    if not (carpeta / ".git").exists():\n', nuevo="    if False:\n"),
+    dict(id="e60-sin-operaciones", archivo=ACT, pruebas=[OPERACION],
+         viejo=('OPERACIONES = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "rebase-merge", '
+                '"rebase-apply",\n               "index.lock")\n'),
+         nuevo="OPERACIONES = ()\n"),
+    dict(id="e60-al-dia-sin-mirar", archivo=ACT, pruebas=[AL_DIA], viejo="    if nuevo == viejo:\n",
+         nuevo="    if False:\n"),
+    dict(id="e60-commits-propios-sigue", archivo=ACT, pruebas=[COMMIT_PROPIO],
+         viejo='    if g("merge-base", "--is-ancestor", viejo, nuevo)[0] != 0:\n', nuevo="    if False:\n"),
+    dict(id="e60-cambios-propios-sigue", archivo=ACT, pruebas=[CAMBIO_PROPIO], viejo="    if sucias:\n",
+         nuevo="    if False:\n"),
+    dict(id="e60-no-mira-lo-ocupado", archivo=ACT, pruebas=[IGNORADO, EN_EL_CAMINO],
+         viejo="    tramo = ocupada(g, viejo, nuevo)\n", nuevo="    tramo = None\n"),
+    dict(id="e60-ocupada-sin-las-carpetas-de-la-vieja", archivo=ACT, pruebas=[YA_VERSIONADO],
+         viejo="            if tramo in viejas or (i < len(partes) and tramo in carpetas):\n",
+         nuevo="            if tramo in viejas:\n"),
+    dict(id="e60-ocupada-solo-la-ruta-entera", archivo=ACT, pruebas=[EN_EL_CAMINO],
+         viejo="        for i in range(1, len(partes) + 1):\n",
+         nuevo="        for i in range(len(partes), len(partes) + 1):\n"),
+    # La escritura a medias: sin volver, o volviendo a la otra versión.
+    dict(id="e60-no-vuelve", archivo=ACT, pruebas=[ABIERTO],
+         viejo="            faltan = igualar(g, en, nuevo if en == viejo else viejo, rutas)\n",
+         nuevo="            faltan = []\n"),
+    dict(id="e60-vuelve-a-la-otra", archivo=ACT, pruebas=[ABIERTO],
+         viejo="            faltan = igualar(g, en, nuevo if en == viejo else viejo, rutas)\n",
+         nuevo="            faltan = igualar(g, nuevo, viejo, rutas)\n"),
+    # Lo que dice, y de qué carpeta.
+    dict(id="e60-otro-texto", archivo=ACT, pruebas=[TRAE],
+         viejo='"actualizada", f"⟳ AQUASHIELD se actualizó a la versión estable {nuevo[:7]} "',
+         nuevo='"actualizada", f"AQUASHIELD se actualizó {nuevo[:7]} "'),
+    dict(id="e60-la-carpeta-de-donde-lo-llaman", archivo=ACT, pruebas=[SIN_ARGUMENTOS],
+         viejo="    carpeta = Path(__file__).resolve().parent\n", nuevo="    carpeta = Path.cwd()\n"),
+    # Los .bat: sin el actualizador, sin el bloque, o abriendo aunque quedó a medias.
+    dict(id="e60-bat-sin-actualizar", archivo="Iniciar AQUASHIELD.bat", pruebas=[BAT_BLOQUE, BAT_CMD],
+         viejo=CORRE_ACT, nuevo=""),
+    dict(id="e60-bat-emision-sin-actualizar", archivo="Iniciar AQUASHIELD_EMISION.bat", pruebas=[BAT_BLOQUE, BAT_CMD],
+         viejo=CORRE_ACT, nuevo=""),
+    dict(id="e60-bat-sin-bloque", archivo="Iniciar AQUASHIELD.bat", pruebas=[BAT_BLOQUE, BAT_CMD],
+         cambios=[('cd /d "%~dp0"\n(\n', 'cd /d "%~dp0"\n'), ('  exit /b 0\n)\n', '  exit /b 0\n')]),
+    dict(id="e60-bat-abre-a-medias", archivo="Iniciar AQUASHIELD_EMISION.bat", pruebas=[BAT_BLOQUE],
+         viejo="  if errorlevel 3 (\n    pause\n    exit /b 3\n  )\n", nuevo=""),
+    dict(id="e60-sin-versionar-el-actualizador", archivo=".gitignore", pruebas=[GITIGNORE_ACT],
+         viejo="!/actualizar.py\n", nuevo=""),
+    # El aviso del panel: de cualquier inicio, sin mirar el texto, sin juntar sus espacios, o sin mostrarlo.
+    dict(id="e60-aviso-de-cualquier-inicio", pruebas=[AVISO_FRESCO], viejo="AVISO_ACTUALIZACION_SEG = 600\n",
+         nuevo="AVISO_ACTUALIZACION_SEG = 6000\n"),
+    dict(id="e60-aviso-del-futuro", pruebas=[AVISO_FRESCO],
+         viejo="    if not 0 <= (time.time() if ahora is None else ahora) - cuando <= AVISO_ACTUALIZACION_SEG:\n",
+         nuevo="    if not (time.time() if ahora is None else ahora) - cuando <= AVISO_ACTUALIZACION_SEG:\n"),
+    dict(id="e60-aviso-sin-mirar-el-texto", pruebas=[AVISO_MAL],
+         viejo="    if not isinstance(texto, str) or not texto.strip():\n", nuevo="    if False:\n"),
+    dict(id="e60-aviso-sin-juntar-espacios", pruebas=[AVISO_FRESCO], viejo='    return " ".join(texto.split())[:400]\n',
+         nuevo="    return texto[:400]\n"),
+    dict(id="e60-el-panel-no-lo-muestra", pruebas=[AVISO_AL_ABRIR],
+         viejo="    aviso = _aviso_de_actualizacion()\n    if aviso:\n        _avisar_en_pantalla_y_log(aviso)\n",
+         nuevo=""),
 ]
