@@ -35,8 +35,9 @@ licencia: todos los derechos reservados** (decisiones de Marcelo, encargo 44, `C
 - **Los equipos de los colegas se actualizan solos desde la rama `estable`** (decisión de Marcelo, encargo 60,
   `CICLO-actualizar-desde-estable.md`). `estable` la avanza solo Marcelo, después de probar, y solo hacia adelante
   (`push origin <commit>:refs/heads/estable`, sin forzar; LEEME.md, «Instalar y mantenerlo al día»); `main` recibe
-  cada ciclo. Los colegas clonan con `-b estable`. Al abrir, los dos `.bat` corren `actualizar.py`, que trae
-  `origin/estable` y avanza con `git merge --ff-only` en ese mismo inicio, y deja lo que pasó en
+  cada ciclo. Los colegas clonan con `-b estable` (mientras `estable` no exista en GitHub, ese clon falla: «Remote
+  branch estable not found», medido el 2026-10-13, encargo 61). Al abrir, los dos `.bat` corren `actualizar.py`, que
+  trae `origin/estable` y avanza con `git merge --ff-only` en ese mismo inicio, y deja lo que pasó en
   `logs/actualizacion.json`, que el panel muestra al abrir (`_aviso_de_actualizacion`, si es de los últimos
   `AVISO_ACTUALIZACION_SEG` s).
   - **Solo se actualiza un clon en la rama `estable`:** este equipo, en `main`, nunca (ni busca la versión nueva).
@@ -616,7 +617,10 @@ cerrado:
 Requiere Python 3.13 (de Microsoft Store en esta máquina), `playwright`, `openpyxl` y `holidays` (los `.bat` los
 instalan si faltan; holidays con `--timeout 5 --retries 0`, para no frenar el arranque sin red: así se rinde en unos
 6 s, y sin esos límites tardó 69 s, medido el 2026-09-29). `opencv-python` + `numpy` solo para el puzzle de COSCO
-(import perezoso).
+(import perezoso). Después de instalar playwright y openpyxl, y antes de holidays, los `.bat` comprueban que se
+importen: si no, dicen qué falta y cómo instalarlo a mano, y esperan una tecla sin abrir el panel (encargo 61). Hasta
+ahí, sin red en el primer arranque, pip fallaba, `pythonw` moría al importar playwright y la ventana se cerraba sin
+decir nada (medido en un clon nuevo con un Python limpio).
 
 ```bash
 python AQUASHIELD.py                          # panel web en http://127.0.0.1:8765 (modo normal)
@@ -686,7 +690,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 751 pruebas al 2026-10-13 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 765 pruebas al 2026-10-13 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -1337,6 +1341,25 @@ que reintenta `os.replace` hasta 20 veces si Windows lo niega un instante. Hasta
 escritorio abría `config.json` con `open(w)`, que lo trunca al abrir (`CICLO-cola-siete-items.md`). Todo
 operador nace con todas las navieras. En
 «opciones», las dos plantillas traen también `peso_reefer_kg` (22500) y `temperatura_reefer_c` (-20).
+
+**Sin `config.json`, el panel web lo crea desde `config.example.json`** (decisión de Marcelo, encargo 61,
+`CICLO-clon-nuevo-y-config.md`). `/api/config` y `/api/credenciales` leen con `_config_del_panel`:
+- si falta, `_crear_config_desde_el_ejemplo` copia la plantilla byte a byte, a un temporal y con `os.rename`, que en
+  Windows no pisa un `config.json` que aparezca entretanto (reintenta si Windows lo niega un instante). Lo dice en el
+  registro del panel, y `/api/config` trae ese aviso (`aviso`) hasta que se guardan credenciales;
+- si no lo puede crear o leer (sin la plantilla, sin poder escribir, un JSON roto, otra codificación, otra forma, sin
+  poder abrirlo), `ConfigDelPanel` dice qué falta y cómo resolverlo, sin el texto del archivo (un JSON roto, con su
+  línea y su columna), y el servidor lo contesta como texto con un 500;
+- la página lo muestra a la vista en `#aviso-panel`, bajo la nota del modo (`notaVisible`, `avisoFijo`), y lo usa
+  también para lo que antes iba solo al registro plegado: Credenciales abre su cuadro con el motivo, y «Entrar a los
+  portales» y «Armar» dicen ahí por qué no siguieron. Sin la configuración, la nota del modo dice «Modo sin leer».
+- Solo el panel web lo crea: el candado (`_llaves_abiertas`) y la consola siguen leyendo con `cargar_config`, que no
+  crea nada (`test_web.TestPanelSinConfig.test_el_candado_y_la_consola_no_lo_crean`); `test_candado` no cambió.
+
+Hasta ahí, en un clon recién hecho, sin `config.json`, esas dos rutas contestaban 500 y la página lo anotaba solo en el
+registro plegado (que antes de cargar una planilla ni se muestra): Operador vacío, «Solo iniciar sesión» con la lista
+vacía, Credenciales sin su cuadro y «Armar» sin nada a la vista. Medido en un clon nuevo del repositorio público, con un
+Python sin las librerías de este equipo; con `config.json` copiado, el mismo clon funcionó entero.
 
 Desde el encargo 44, «opciones» trae también lo que el programa traía escrito y es de la cuenta:
 - `contratos_por_defecto` (`one_usa`, `one_otros`, `msc` y `hyundai`): el contrato que va cuando ni la fila ni las

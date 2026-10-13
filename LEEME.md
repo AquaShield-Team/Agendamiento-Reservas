@@ -69,9 +69,15 @@ dejarlo (aquí, `C:\AQUASHIELD`):
 git clone -b estable https://github.com/AquaShield-Team/Agendamiento-Reservas.git "C:\AQUASHIELD"
 ```
 
-Copia `config.example.json` como `config.json` y escribe tus credenciales desde el panel (ver «Credenciales y
-opciones»). Si ya tenías un clon en `main`, pásalo a `estable` en la misma carpeta, sin perder tu `config.json`, tus
-perfiles ni tus registros (git no los versiona):
+Si git contesta «Remote branch estable not found», Marcelo todavía no creó la rama: avísale. Después, abre
+`Iniciar AQUASHIELD.bat` con doble clic. La primera vez, la ventana negra instala las librerías de Python que faltan
+(hace falta internet); si no puede, lo dice y espera una tecla, sin abrir el panel. Al abrirse, el panel crea
+`config.json` desde `config.example.json`, sin credenciales, y lo dice en un aviso bajo la nota del modo: escribe las
+tuyas en Credenciales (ver «Credenciales y opciones»). Si al panel le falta algo para empezar, ese aviso dice qué y cómo
+resolverlo.
+
+Si ya tenías un clon en `main`, pásalo a `estable` en la misma carpeta, sin perder tu `config.json`, tus perfiles ni
+tus registros (git no los versiona):
 
 ```
 git -C "C:\AQUASHIELD" fetch origin
@@ -125,8 +131,10 @@ recargarla (F5).
 ## Credenciales y opciones
 
 Usuario, clave y contrato de cada naviera se guardan en `config.json`, junto al programa y en texto plano. Se
-editan desde el panel, en **Credenciales de los portales**. `config.example.json` es la plantilla, sin
-credenciales.
+editan desde el panel, en **Credenciales de los portales** (la llave, arriba a la derecha). `config.example.json` es
+la plantilla, sin credenciales: si falta `config.json`, el panel lo crea desde ella. Si `config.json` no se puede leer
+(por ejemplo, después de editarlo a mano), el panel lo dice, con la línea donde está el error, y no arma reservas hasta
+que se corrija.
 
 En `config.json`, dentro de «opciones», están también el peso bruto por contenedor reefer (`peso_reefer_kg`,
 22500) y la temperatura reefer (`temperatura_reefer_c`, -20). La temperatura de la planilla, si la fila la trae,
