@@ -7,6 +7,7 @@ Con git de verdad, sobre repositorios inventados en la sandbox: un origen local 
 y el clon del colega. El actualizador corre como lo corre el .bat, en un proceso aparte, desde soporte.FUENTES (el
 censo deja ahí su copia mutada), con --carpeta apuntando al clon."""
 import json
+import re
 import os
 import shutil
 import socket
@@ -323,6 +324,23 @@ def sin_bloque(bat):
     return "\n".join(lineas[:i] + [x[2:] if x.startswith("  ") else x for x in lineas[i + 1:j]] + lineas[j + 1:])
 
 
+def sin_chequeo(bat):
+    """El mismo .bat sin el chequeo de las librerías (el control)."""
+    sin = re.sub(r"  REM Sin playwright u openpyxl.*?\n  \)\n\n", "", bat, count=1, flags=re.S)
+    assert sin != bat, "no encontré el chequeo de las librerías en el .bat"
+    return sin
+
+
+def correr(args, cwd, env_extra, timeout=60):
+    """Como soporte.hijo, con la entrada vacía: «pause» no espera una tecla."""
+    env = {k: v for k, v in os.environ.items() if k != soporte.LLAVE_ENTORNO}
+    env.update(env_extra, PYTHONIOENCODING="utf-8")
+    p = soporte._POPEN(args, cwd=str(cwd), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                       stderr=subprocess.PIPE)
+    out, err = p.communicate(timeout=timeout)
+    return p.returncode, out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
+
+
 class TestLosLanzadores(unittest.TestCase):
     """Los dos .bat corren el actualizador antes de abrir el panel, en un solo bloque que cmd lee entero."""
 
@@ -342,8 +360,20 @@ class TestLosLanzadores(unittest.TestCase):
                 i = bloque.index("python actualizar.py")
                 self.assertEqual(bloque[i + 1:i + 5], ["if errorlevel 3 (", "pause", "exit /b 3", ")"])
                 self.assertLess(i, min(k for k, x in enumerate(bloque) if "pip install" in x))
-                # Un paréntesis en un comentario del bloque lo cerraría antes de tiempo.
-                self.assertEqual([x for x in bloque if x.upper().startswith("REM") and ("(" in x or ")" in x)], [])
+                # Un paréntesis en un comentario del bloque lo cerraría antes de tiempo, y uno en un echo, también.
+                self.assertEqual([x for x in bloque if x.upper().startswith(("REM", "ECHO"))
+                                  and ("(" in x or ")" in x)], [])
+                # Sin playwright u openpyxl el panel no abre: después de instalarlas y antes de abrirlo, el .bat lo dice
+                # y espera una tecla (encargo 61). Antes de holidays, que sin red no frena el arranque (test_consola).
+                k = bloque.index('python -c "import playwright, openpyxl" 2>nul')
+                fin = bloque.index(")", k)
+                self.assertEqual(bloque[k + 1], "if errorlevel 1 (")
+                self.assertEqual(bloque[fin - 2:fin], ["pause", "exit /b 1"])
+                self.assertIn("echo   python -m pip install --user playwright openpyxl", bloque[k:fin])
+                instala = [n for n, x in enumerate(bloque) if x.startswith("python") and "pip install" in x]
+                self.assertEqual([("playwright" in bloque[n], "openpyxl" in bloque[n]) for n in instala if n < k],
+                                 [(True, False), (False, True)])
+                self.assertLess(fin, bloque.index(f'start "" pythonw "{programa}"'))
 
     def test_en_cmd_abre_la_version_nueva_aunque_la_actualizacion_reescriba_el_bat(self):
         # El camino real: cmd corre el .bat en un clon inventado, y la actualización que corre adentro le agrega 40
@@ -388,6 +418,39 @@ class TestLosLanzadores(unittest.TestCase):
         time.sleep(2)                          # por si cmd lo abriera otra vez
         errores = [x for x in error.splitlines() if "no se reconoce" in x or "inesperado" in x]
         return codigo, (marca.read_text(encoding="utf-8").split() if marca.exists() else None), errores
+
+    def test_sin_las_librerias_lo_dice_y_no_abre(self):
+        # Medido en el encargo 61, en un clon nuevo con un Python sin las librerías de este equipo y sin red: pip no las
+        # instala, pythonw muere al importar playwright, y el .bat salía sin decir nada: no se abría ningún panel. Ahora
+        # lo dice y espera una tecla. Control: el mismo .bat sin el chequeo abre el programa igual (aquí, un sustituto
+        # que anota que abrió). Sin red de verdad: pip le pregunta a un puerto local donde nadie escucha.
+        raiz = carpeta_corta("aq_lib_")
+        self.addCleanup(borrar, raiz)
+        (raiz / "u").mkdir()
+        env = {"PYTHONUSERBASE": str(raiz / "u"), "PIP_INDEX_URL": "http://127.0.0.1:9/simple", "PIP_RETRIES": "0",
+               "PIP_TIMEOUT": "3", "PIP_DISABLE_PIP_VERSION_CHECK": "1", "PIP_NO_INPUT": "1",
+               "PIP_CACHE_DIR": str(raiz / "cache"), "GIT_CEILING_DIRECTORIES": str(raiz)}
+        if correr(["python", "-c", "import playwright, openpyxl"], raiz, env)[0] == 0:
+            self.skipTest("este Python trae playwright y openpyxl fuera de la carpeta de paquetes del usuario")
+        sustituto = ('import pathlib\n(pathlib.Path(__file__).resolve().parent / "marca.txt").write_text("abrio")\n')
+        for nombre, programa in (("Iniciar AQUASHIELD.bat", "AQUASHIELD.py"),
+                                 ("Iniciar AQUASHIELD_EMISION.bat", "AQUASHIELD_EMISION.py")):
+            bat = (soporte.FUENTES / nombre).read_bytes().decode("ascii")
+            for chequeo in (True, False):
+                with self.subTest(bat=nombre, chequeo=chequeo):
+                    carpeta = raiz / f"{programa[:-3]}_{chequeo}"
+                    carpeta.mkdir()
+                    shutil.copyfile(ACTUALIZAR, carpeta / "actualizar.py")
+                    (carpeta / programa).write_bytes(sustituto.encode())
+                    (carpeta / nombre).write_bytes((bat if chequeo else sin_chequeo(bat)).encode("ascii"))
+                    _, salida, _ = correr(["cmd", "/d", "/c", str(carpeta / nombre)], carpeta, env, timeout=180)
+                    marca = carpeta / "marca.txt"
+                    for _ in range(6 if chequeo else 60):     # pythonw corre aparte: se espera su marca
+                        if marca.exists():
+                            break
+                        time.sleep(0.5)
+                    dice = "AQUASHIELD no puede abrir: faltan las librerias playwright u openpyxl de Python" in salida
+                    self.assertEqual((dice, marca.exists()), (True, False) if chequeo else (False, True))
 
     def test_gitignore_versiona_el_actualizador(self):
         lineas = (soporte.FUENTES / ".gitignore").read_text(encoding="utf-8").splitlines()

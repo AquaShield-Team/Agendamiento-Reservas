@@ -13726,6 +13726,92 @@ def _escribir_config(cfg, ruta):
     return _reemplazar(tmp, ruta)          # Windows lo niega a veces un instante (antivirus)
 
 
+# La plantilla de config.json, versionada, sin credenciales: el panel web crea config.json desde ella si falta.
+CONFIG_EJEMPLO = "config.example.json"
+CONFIG_CREADA = ("No había config.json en la carpeta del programa: lo creé desde config.example.json, sin "
+                 "credenciales. Escribe las tuyas en Credenciales (la llave, arriba a la derecha).")
+_CONFIG = {"creada": None}      # el aviso de que el panel creó config.json, hasta que se guardan credenciales
+
+
+class ConfigDelPanel(Exception):
+    """Lo que el panel web no puede leer de config.json, dicho para quien lo usa: qué falta y cómo resolverlo."""
+
+
+def _config_del_panel():
+    """config.json para el panel web (decisión de Marcelo, encargo 61, CICLO-clon-nuevo-y-config.md). Si falta, lo crea
+    desde config.example.json, sin credenciales, y lo dice en el registro del panel: es lo que LEEME.md pedía hacer a
+    mano. Si no lo puede crear o leer, levanta ConfigDelPanel con qué falta y cómo resolverlo, que la página muestra a
+    la vista. Hasta ahí, sin config.json, /api/config y /api/credenciales fallaban con un 500, y la página lo anotaba
+    solo en el registro plegado: en un clon recién hecho, Credenciales, Operador, «Solo iniciar sesión» y «Armar las
+    reservas» no hacían nada a la vista (medido en un clon nuevo, con un Python sin las librerías de este equipo). Solo
+    el panel web lo crea: el candado y la consola siguen leyendo con cargar_config, que no crea nada."""
+    ruta = BASE / "config.json"
+    if not ruta.exists():
+        _crear_config_desde_el_ejemplo(ruta)
+    try:
+        cfg = cargar_config()
+    except UnicodeDecodeError:
+        raise ConfigDelPanel("config.json no se puede leer: no está guardado en UTF-8. Ábrelo con el Bloc de notas y "
+                             "guárdalo con la codificación UTF-8.") from None
+    except json.JSONDecodeError as e:
+        # Sin el texto del archivo: trae las credenciales. Solo el lugar y el motivo.
+        raise ConfigDelPanel(f"config.json no se puede leer: no es un JSON válido (línea {e.lineno}, columna "
+                             f"{e.colno}: {e.msg}). Corrígelo, o cámbiale el nombre (config.roto.json, por ejemplo) "
+                             f"y recarga la página: el panel crea uno nuevo desde config.example.json, sin "
+                             f"credenciales.") from None
+    except OSError as e:
+        raise ConfigDelPanel(f"No pude abrir config.json: {e.strerror or type(e).__name__}. Cierra el programa que "
+                             f"lo tenga abierto y recarga la página.") from None
+    if not (isinstance(cfg, dict) and isinstance(cfg.get("usuarios", {}), dict)
+            and isinstance(cfg.get("opciones", {}), dict)):
+        raise ConfigDelPanel("config.json no tiene la forma de config.example.json: tiene que ser un objeto, con "
+                             "«usuarios» y «opciones» como objetos. Corrígelo, o cámbiale el nombre y recarga la "
+                             "página: el panel crea uno nuevo, sin credenciales.")
+    return cfg
+
+
+def _crear_config_desde_el_ejemplo(ruta, intentos=20, pausa=0.05):
+    """Copia config.example.json a 'ruta', byte a byte, si la plantilla es un objeto JSON. Escribe a un temporal y lo
+    renombra: en Windows, os.rename no pisa un archivo que ya existe, así que si otro lo creó entretanto, queda el suyo.
+    Reintenta si Windows niega el renombre un instante, como _reemplazar. Si no puede, ConfigDelPanel."""
+    try:
+        datos = (BASE / CONFIG_EJEMPLO).read_bytes()
+        plantilla = json.loads(datos.decode("utf-8"))
+    except FileNotFoundError:
+        raise ConfigDelPanel("Falta config.json, y tampoco está config.example.json para crearlo. Vuelve a instalar "
+                             "el programa como dice LEEME.md («Instalar y mantenerlo al día»).") from None
+    except (OSError, ValueError):
+        plantilla = None
+    if not isinstance(plantilla, dict):
+        raise ConfigDelPanel("Falta config.json, y config.example.json, del que se crea, no se puede leer. Vuelve a "
+                             "instalar el programa como dice LEEME.md («Instalar y mantenerlo al día»).")
+    tmp = ruta.with_suffix(".json.nuevo")
+    try:
+        tmp.write_bytes(datos)
+        for intento in range(intentos):
+            try:
+                _os.rename(tmp, ruta)
+                break
+            except FileExistsError:
+                return                       # otro lo creó entretanto: no se pisa
+            except PermissionError:
+                if intento == intentos - 1:
+                    raise
+                _time.sleep(pausa)
+    except OSError as e:
+        raise ConfigDelPanel(f"Falta config.json y no pude crearlo en la carpeta del programa "
+                             f"({e.strerror or type(e).__name__}). Copia config.example.json como config.json en esa "
+                             f"carpeta y recarga la página.") from None
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+    _CONFIG["creada"] = CONFIG_CREADA
+    _avisar_en_pantalla_y_log(CONFIG_CREADA)
+
+
 # Cuántos segundos espera el lanzador a un panel de AQUASHIELD: la segunda pregunta a quien no dejó libre su puerto (un
 # panel ocupado, con la máquina cargada, puede tardar más de 1 s en contestar; revisión del encargo 51), y que el panel
 # ocioso al que le pidió apagarse suelte su puerto (sin carga, a los 0,52 s, medido 5 veces; encargo 52). Hipótesis: no
@@ -13950,16 +14036,19 @@ def lanzar_web(puerto=8765, abrir=True):
                 if u.path == "/fuentes.css":
                     return self._env(200, "text/css; charset=utf-8", CSS_FUENTES)
                 if u.path == "/api/config":
-                    cfg = cargar_config()
+                    # Si falta config.json, lo crea desde la plantilla; si no lo puede leer, dice qué falta y cómo
+                    # resolverlo, y la página lo muestra a la vista (_config_del_panel, encargo 61).
+                    cfg = _config_del_panel()
                     return self._json({
                         "version": VERSION,
                         "modo_emision": es_modo_emision(),
+                        "aviso": _CONFIG["creada"] or "",
                         "usuarios": list(cfg.get("usuarios", {}).keys()),
                         "navieras": [{"clave": k, "nombre": v[0],
                                       "reserva": k in RESERVADORES}
                                      for k, v in NAVIERAS.items()]})
                 if u.path == "/api/credenciales":
-                    cfg = cargar_config()
+                    cfg = _config_del_panel()
                     usuario = (q.get("usuario") or [""])[0]
                     datos = cfg.get("usuarios", {}).get(usuario, {})
                     # La clave NUNCA sale del proceso, ni por localhost: se informa
@@ -14044,7 +14133,7 @@ def lanzar_web(puerto=8765, abrir=True):
                     usuario = (d.get("usuario") or "").strip()
                     if not usuario:
                         return self._json({"error": "falta el nombre del operador"}, 400)
-                    cfg = cargar_config()
+                    cfg = _config_del_panel()
                     dest = cfg.setdefault("usuarios", {}).setdefault(usuario, {})
                     dest.setdefault("descripcion", usuario)
                     # Un operador nuevo nace con las SIETE navieras, igual que en el
@@ -14071,6 +14160,7 @@ def lanzar_web(puerto=8765, abrir=True):
                             actual.setdefault("clave", "")
                     # Escritura atomica, con el mismo ayudante que el panel de escritorio.
                     _escribir_config(cfg, BASE / "config.json")
+                    _CONFIG["creada"] = None        # ya tiene credenciales: el aviso de que se creó deja de mostrarse
                     return self._json({"ok": True, "operadores": list(cfg["usuarios"].keys())})
 
                 if u.path == "/api/correr":
@@ -14399,6 +14489,7 @@ HTML_INDEX = r"""<!doctype html>
             que la confirma. La emisión la haces tú, en el portal.
             <br><span class="rs-version">v<span id="ver">—</span></span>
           </p>
+          <p class="rs-aviso" id="aviso-panel" role="alert" hidden></p>
         </div>
 
         <!-- ── PANEL DERECHO: control y feed ─────────────────────────────── -->
@@ -14490,13 +14581,29 @@ let MODO_PAGINA = null;   // el modo que pintó el aviso al cargar la página; n
 
 async function api(ruta, opts) {
   const r = await fetch(ruta, opts || {});
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) { const e = new Error(await r.text()); e.status = r.status; throw e; }
   return r.json();
 }
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 function estado(t) { $("#estado").textContent = t; }
+// Lo que falta para empezar, o por qué un botón no hizo nada, a la vista: en el aviso bajo la nota del modo, que se ve
+// siempre. El registro va plegado, y antes de cargar una planilla ni siquiera se muestra, y el estado lo pisa el sondeo
+// cada segundo: lo que se decía solo ahí, nadie lo veía (encargo 61). Un texto vacío lo esconde; cada botón lo limpia
+// al empezar.
+function notaVisible(texto) {
+  const a = $("#aviso-panel");
+  if (!a) return;
+  a.textContent = texto ? "⚠ " + texto : "";
+  a.hidden = !texto;
+}
+function avisoFijo(texto, cls, etiqueta) {
+  notaVisible(texto);
+  feed(texto, cls || "f-alerta", etiqueta || "REVISAR");
+}
+const SIN_OPERADOR = "Todavía no hay ningún operador en config.json: créalo en Credenciales (la llave, arriba a la " +
+                     "derecha), con «+ Nuevo operador».";
 
 /* Un widget "apagado" no es solo gris: no responde al clic. El aria-disabled
    es la fuente de verdad — lo lee el CSS y lo lee este guardia. */
@@ -14615,10 +14722,10 @@ function seleccion() {
 // mientras su panel se cerraba, y otro del otro modo se abría en el mismo puerto, mostraría el aviso de antes (decisión
 // de Marcelo, encargo 52). El servidor lo vuelve a mirar al recibir la corrida: la página le manda el modo que muestra.
 async function mismoModo() {
-  let modo = null;
-  try { modo = (await api("/api/config")).modo_emision; } catch (e) {}
+  let modo = null, motivo = "";
+  try { modo = (await api("/api/config")).modo_emision; } catch (e) { if (e.status) motivo = e.message; }
   if (typeof modo === "boolean" && modo === MODO_PAGINA) return true;
-  feed(avisoDeModo(MODO_PAGINA, modo), "f-alerta", "REVISAR");
+  avisoFijo(avisoDeModo(MODO_PAGINA, modo) + (motivo ? " El panel no pudo leer su configuración: " + motivo : ""));
   estado("Recarga la página antes de armar");
   return false;
 }
@@ -14635,6 +14742,7 @@ $("#wg-armar").onclick = async () => {
   if (apagado($("#wg-armar"))) return;
   const filas = seleccion();
   if (!filas.length) return;
+  notaVisible("");
   if (!(await mismoModo())) return;
   $("#log").innerHTML = ""; CURSOR = 0;
 
@@ -14664,7 +14772,7 @@ $("#wg-armar").onclick = async () => {
     });
     CORRIENDO = true; HUBO_CORRIDA = true; pintarWidgets();
   } catch (e) {
-    feed("No pude arrancar: " + e.message, "f-alerta", "REVISAR");
+    avisoFijo("No pude arrancar: " + e.message);
     estado("Error al iniciar");
   }
 };
@@ -14893,6 +15001,7 @@ function chip(fila, tipo, txt) {
         nm.innerHTML = `<b>🛡️ Modo Seguro Activo:</b> Cada reserva se llena completa y se detiene en la pantalla final antes de confirmar.<br><span class="rs-version">v<span id="ver">${esc(d.version)}</span> · <span style="background:#10b981;color:#fff;padding:2px 6px;border-radius:4px;font-weight:bold;font-size:10px;">MODO SEGURO</span></span>`;
       }
     }
+    notaVisible(d.aviso || (d.usuarios.length ? "" : SIN_OPERADOR));
     const u = $("#usuario");
     u.innerHTML = "";
     d.usuarios.forEach(x => {
@@ -14906,7 +15015,8 @@ function chip(fila, tipo, txt) {
     $("#entrar").onclick = async (ev) => {
       ev.stopPropagation();
       const navs = [...document.querySelectorAll("[data-nav]")].filter(c => c.checked).map(c => c.dataset.nav);
-      if (!navs.length) { feed("Marca al menos una naviera", "f-info", "AVISO"); return; }
+      notaVisible("");
+      if (!navs.length) { avisoFijo("Marca al menos una naviera", "f-info", "AVISO"); return; }
       $("#log").innerHTML = ""; CURSOR = 0;
       try {
         await api("/api/login", {
@@ -14914,12 +15024,22 @@ function chip(fila, tipo, txt) {
           body: JSON.stringify({ usuario: $("#usuario").value, navieras: navs })
         });
         CORRIENDO = true; pintarWidgets();
-      } catch (e) { feed("No pude entrar: " + e.message, "f-alerta", "REVISAR"); }
+      } catch (e) { avisoFijo("No pude entrar: " + e.message); }
     };
     // el clic dentro de la lista no debe replegarla
     $("#navs").addEventListener("click", ev => ev.stopPropagation());
     pintarWidgets();
-  } catch (e) { estado("No pude leer la configuración"); }
+  } catch (e) {
+    // Sin la configuración no sabe en qué modo está el panel, ni sus operadores: lo dice a la vista, también en la
+    // lista de «Solo iniciar sesión», y no arma reservas (mismoModo), encargo 61.
+    const texto = "No pude leer la configuración: " + e.message;
+    const nm = $("#nota-modo");
+    if (nm) nm.innerHTML = "<b>Modo sin leer:</b> el panel no pudo leer su configuración, y no arma reservas hasta " +
+                           "que la lea.";
+    $("#navs").innerHTML = `<p class="nota">${esc(texto)}</p>`;
+    avisoFijo(texto);
+    estado("No pude leer la configuración");
+  }
 })();
 
 // ---------- tema y año del pie ----------
@@ -15021,9 +15141,20 @@ $("#cred-cerrar").onclick = $("#cred-cancelar").onclick = () => dlg.close();
 $("#cred-op").onchange = () => abrirCred($("#cred-op").value, true);
 
 async function abrirCred(usuario, yaAbierto) {
+  notaVisible("");
   try {
     CRED = await api("/api/credenciales?usuario=" + encodeURIComponent(usuario));
-  } catch (e) { feed("No pude leer las credenciales: " + e.message, "f-alerta", "REVISAR"); return; }
+  } catch (e) {
+    // El cuadro se abre igual, con el motivo: el botón nunca queda sin respuesta (encargo 61).
+    const texto = "No pude leer las credenciales: " + e.message;
+    avisoFijo(texto);
+    CRED = null;
+    $("#cred-op").innerHTML = "";
+    $("#cred-filas").innerHTML = "";
+    $("#cred-estado").textContent = texto;
+    if (!yaAbierto) dlg.showModal();
+    return;
+  }
   const op = $("#cred-op");
   op.innerHTML = "";
   (CRED.operadores.length ? CRED.operadores : [usuario].filter(Boolean)).forEach(x => {
@@ -15038,7 +15169,7 @@ async function abrirCred(usuario, yaAbierto) {
                  placeholder="${n.tiene_clave ? "guardada · en blanco la conserva" : "sin clave"}"></td>
       <td><input data-c="contrato" value="${esc(n.contrato)}" autocomplete="off"></td>
     </tr>`).join("");
-  $("#cred-estado").textContent = "";
+  $("#cred-estado").textContent = op.options.length ? "" : SIN_OPERADOR;
   if (!yaAbierto) dlg.showModal();
 }
 
@@ -15890,6 +16021,15 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
     padding-top: 12px;
 }
 .rs-nota b { color: var(--text-primary); }
+/* Lo que falta para empezar, a la vista (encargo 61) */
+.rs-aviso {
+    margin: 10px 0 0; padding: 8px 10px;
+    font-size: 11.6px; line-height: 1.45;
+    color: var(--text-primary);
+    background: var(--bg-card-hover);
+    border-left: 3px solid var(--danger);
+    border-radius: 4px;
+}
 .rs-version { font-family: var(--font-mono); font-size: 10px; letter-spacing: .5px; }
 
 /* ── Tarjetas de la columna derecha ───────────────────────────────────────── */

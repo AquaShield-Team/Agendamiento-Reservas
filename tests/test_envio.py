@@ -704,22 +704,30 @@ class TestLecturaDelPanel(soporte.CasoAQ):
         a = re.search(r"^function avisoDeModo\(pagina, panel\) \{\n.*?\n\}\n", js, re.S | re.M)
         self.assertIsNotNone(f, "no encontré mismoModo en JS_INDEX")
         self.assertIsNotNone(a, "no encontré avisoDeModo en JS_INDEX")
+        # El aviso va a la vista, no solo al registro plegado (avisoFijo, encargo 61), y si el panel contestó con un
+        # error (su configuración no se lee: «error500»), dice también su motivo. Sin respuesta («error»), no.
+        g = re.search(r"^function avisoFijo\(texto, cls, etiqueta\) \{\n.*?\n\}\n", js, re.S | re.M)
+        self.assertIsNotNone(g, "no encontré avisoFijo en JS_INDEX")
         casos = [[False, False], [True, True], [False, True], [True, False], [False, "error"], [None, False],
-                 [None, "error"], [False, "false"], [True, None]]
-        guion = ("let MODO_PAGINA = null, RESPUESTA = null, AVISOS = [], ESTADOS = [], RUTAS = [];\n"
+                 [None, "error"], [False, "false"], [True, None], [None, "error500"]]
+        guion = ("let MODO_PAGINA = null, RESPUESTA = null, AVISOS = [], ESTADOS = [], RUTAS = [], NOTAS = [];\n"
                  "async function api(ruta) {\n"
                  "  RUTAS.push(ruta);\n"
                  "  if (RESPUESTA === 'error') throw new Error('sin respuesta');\n"
+                 "  if (RESPUESTA === 'error500') {\n"
+                 "    const e = new Error('config.json roto'); e.status = 500; throw e;\n"
+                 "  }\n"
                  "  return { modo_emision: RESPUESTA };\n"
                  "}\n"
                  "function feed(t, c, e) { AVISOS.push([t, c, e]); }\n"
+                 "function notaVisible(t) { NOTAS.push(t); }\n"
                  "function estado(t) { ESTADOS.push(t); }\n"
-                 + f.group(0) + a.group(0) +
+                 + f.group(0) + a.group(0) + g.group(0) +
                  "(async () => {\n"
                  "  const salida = [];\n"
                  f"  for (const [pagina, panel] of {json.dumps(casos)}) {{\n"
-                 "    MODO_PAGINA = pagina; RESPUESTA = panel; AVISOS = []; ESTADOS = []; RUTAS = [];\n"
-                 "    salida.push([await mismoModo(), AVISOS, ESTADOS, RUTAS]);\n"
+                 "    MODO_PAGINA = pagina; RESPUESTA = panel; AVISOS = []; ESTADOS = []; RUTAS = []; NOTAS = [];\n"
+                 "    salida.push([await mismoModo(), AVISOS, ESTADOS, RUTAS, NOTAS]);\n"
                  "  }\n"
                  "  console.log(JSON.stringify(salida));\n"
                  "})();\n")
@@ -727,10 +735,13 @@ class TestLecturaDelPanel(soporte.CasoAQ):
         for pagina, panel in casos:
             dijo = panel if isinstance(panel, bool) else None
             if isinstance(pagina, bool) and pagina is dijo:
-                esperado.append([True, [], [], ["/api/config"]])
+                esperado.append([True, [], [], ["/api/config"], []])
             else:
-                esperado.append([False, [[self.aviso_de_modo(pagina, dijo), "f-alerta", "REVISAR"]],
-                                 ["Recarga la página antes de armar"], ["/api/config"]])
+                aviso = self.aviso_de_modo(pagina, dijo)
+                if panel == "error500":
+                    aviso += " El panel no pudo leer su configuración: config.json roto"
+                esperado.append([False, [[aviso, "f-alerta", "REVISAR"]], ["Recarga la página antes de armar"],
+                                 ["/api/config"], [aviso]])
         self.assertEqual(correr_node(self, guion), esperado)
 
     def test_armar_pregunta_el_modo_y_lo_manda(self):
@@ -754,6 +765,150 @@ class TestLecturaDelPanel(soporte.CasoAQ):
                 self.assertGreater(boton.find(despues), pregunta)
         self.assertIn('body: JSON.stringify({ hoja: HOJA_ACT, usuario: $("#usuario").value, filas, '
                       'modo: MODO_PAGINA })', boton)
+
+
+# Un DOM falso para correr en Node lo que la página hace con sus elementos: cada selector da siempre el mismo elemento.
+DOM_FALSO = """
+class El {
+  constructor() { this.textContent = ""; this._html = ""; this.hidden = false; this.options = []; this.value = "";
+                  this.abierto = 0; }
+  set innerHTML(v) { this._html = v; if (v === "") this.options = []; }
+  get innerHTML() { return this._html; }
+  appendChild(o) { this.options.push(o); }
+  addEventListener() {}
+  showModal() { this.abierto++; }
+}
+const EL = {};
+const $ = s => (EL[s] = EL[s] || new El());
+let MARCADAS = [];
+const document = { createElement: () => ({}), querySelectorAll: () => MARCADAS };
+let FEED = [], ESTADOS = [], RUTAS = [], RESPUESTAS = {};
+function feed(t, c, e) { FEED.push([t, c, e]); }
+function estado(t) { ESTADOS.push(t); }
+function pintarWidgets() {}
+async function api(ruta) {
+  RUTAS.push(ruta);
+  const r = RESPUESTAS[ruta.split("?")[0]];
+  if (r instanceof Error) throw r;
+  return r;
+}
+function fallo(texto, status) { const e = new Error(texto); e.status = status; return e; }
+const aviso = () => [$("#aviso-panel").textContent, $("#aviso-panel").hidden];
+"""
+
+
+class TestLoQueFaltaALaVista(soporte.CasoAQ):
+    """Lo que falta para empezar, o por qué un botón no hizo nada, se ve en el panel (decisión de Marcelo, encargo 61,
+    CICLO-clon-nuevo-y-config.md): en el aviso bajo la nota del modo, que siempre se ve. Medido en un clon nuevo: sin
+    config.json, la página decía por qué solo en el registro plegado (y antes de cargar una planilla ni lo mostraba), y
+    Credenciales, Operador, «Solo iniciar sesión» y «Armar» no hacían nada a la vista. Se corre en Node, con un DOM
+    falso."""
+
+    def trozo(self, patron):
+        m = re.search(patron, self.mod.JS_INDEX, re.S | re.M)
+        self.assertIsNotNone(m, f"no encontré {patron[:40]} en JS_INDEX")
+        return m.group(0)
+
+    def funciones(self):
+        return (self.trozo(r"^function esc\(s\) \{\n.*?\n\}\n")
+                + self.trozo(r"^function notaVisible\(texto\) \{\n.*?\n\}\n")
+                + self.trozo(r"^function avisoFijo\(texto, cls, etiqueta\) \{\n.*?\n\}\n")
+                + self.trozo(r"^const SIN_OPERADOR = .*?;\n"))
+
+    def test_el_aviso_se_ve_y_va_al_registro(self):
+        guion = (DOM_FALSO + self.funciones() +
+                 "const salida = [aviso()];\n"
+                 "avisoFijo('falta algo'); salida.push(aviso());\n"
+                 "avisoFijo('marca una', 'f-info', 'AVISO'); salida.push(aviso());\n"
+                 "notaVisible(''); salida.push(aviso());\n"
+                 "console.log(JSON.stringify([salida, FEED]));\n")
+        self.assertEqual(correr_node(self, guion),
+                         [[["", False], ["⚠ falta algo", False], ["⚠ marca una", False], ["", True]],
+                          [["falta algo", "f-alerta", "REVISAR"], ["marca una", "f-info", "AVISO"]]])
+        self.assertEqual(self.mod.HTML_INDEX.count('<p class="rs-aviso" id="aviso-panel" role="alert" hidden></p>'), 1)
+        self.assertEqual(self.mod.CSS_INDEX.count(".rs-aviso {"), 1)
+
+    def test_al_cargar_dice_lo_que_falta(self):
+        arranque = self.trozo(r"^// ---------- arranque ----------\n\(async \(\) => \{\n.*?\n\}\)\(\);\n")
+        arranque = "const arranque = " + arranque.split("\n", 1)[1][:-len("();\n")] + ";\n"
+        casos = [{"error": "config.json roto"},
+                 {"aviso": "lo creé", "usuarios": ["usuario1"]},
+                 {"aviso": "", "usuarios": []},
+                 {"aviso": "", "usuarios": ["usuario1"]}]
+        guion = (DOM_FALSO + self.funciones() + "let MODO_PAGINA = null, CURSOR = 0, CORRIENDO = false;\n" + arranque +
+                 "(async () => {\n"
+                 "  const salida = [];\n"
+                 f"  for (const c of {json.dumps(casos)}) {{\n"
+                 "    for (const k in EL) delete EL[k];\n"
+                 "    FEED = []; ESTADOS = [];\n"
+                 "    RESPUESTAS['/api/config'] = c.error ? fallo(c.error, 500) :\n"
+                 "      { version: 'v', modo_emision: false, aviso: c.aviso, usuarios: c.usuarios, navieras: [] };\n"
+                 "    await arranque();\n"
+                 "    salida.push([aviso(), $('#nota-modo').innerHTML, $('#navs').innerHTML, [...FEED], [...ESTADOS],\n"
+                 "                 $('#usuario').options.length]);\n"
+                 "  }\n"
+                 "  // «Entrar a los portales», con la página cargada: sin naviera marcada, y con el login que falla.\n"
+                 "  await $('#entrar').onclick({ stopPropagation() {} });\n"
+                 "  const sinMarcar = aviso();\n"
+                 "  MARCADAS = [{ checked: true, dataset: { nav: 'one' } }];\n"
+                 "  RESPUESTAS['/api/login'] = fallo('Usuario x no está', 500);\n"
+                 "  await $('#entrar').onclick({ stopPropagation() {} });\n"
+                 "  salida.push([sinMarcar, aviso()]);\n"
+                 "  console.log(JSON.stringify(salida));\n"
+                 "})();\n")
+        r = correr_node(self, guion)
+        texto = "No pude leer la configuración: config.json roto"
+        sin_operador = ("Todavía no hay ningún operador en config.json: créalo en Credenciales (la llave, arriba a la "
+                        "derecha), con «+ Nuevo operador».")
+        self.assertEqual(r[0], [["⚠ " + texto, False], "<b>Modo sin leer:</b> el panel no pudo leer su configuración, "
+                                "y no arma reservas hasta que la lea.", f'<p class="nota">{texto}</p>',
+                                [[texto, "f-alerta", "REVISAR"]], ["No pude leer la configuración"], 0])
+        self.assertEqual([x[0] for x in r[1:4]], [["⚠ lo creé", False], ["⚠ " + sin_operador, False], ["", True]])
+        self.assertEqual([x[1].startswith("<b>🛡️ Modo Seguro Activo:</b>") for x in r[1:4]], [True] * 3)
+        self.assertEqual([x[3] for x in r[1:4]], [[], [], []])           # lo que dijo el panel ya está en su registro
+        self.assertEqual(r[4], [["⚠ Marca al menos una naviera", False],
+                                ["⚠ No pude entrar: Usuario x no está", False]])
+
+    def test_credenciales_sin_leer_abren_el_cuadro_con_el_motivo(self):
+        abrir = self.trozo(r"^async function abrirCred\(usuario, yaAbierto\) \{\n.*?\n\}\n")
+        guion = (DOM_FALSO + self.funciones() + "let CRED = null; const dlg = $('#dlg-cred');\n" + abrir +
+                 "(async () => {\n"
+                 "  $('#cred-op').appendChild({}); $('#cred-filas').innerHTML = '<tr>vieja</tr>';\n"
+                 "  RESPUESTAS['/api/credenciales'] = fallo('config.json roto', 500);\n"
+                 "  await abrirCred('usuario1');\n"
+                 "  const roto = [dlg.abierto, $('#cred-estado').textContent, $('#cred-op').options.length,\n"
+                 "                $('#cred-filas').innerHTML, aviso(), [...FEED], CRED];\n"
+                 "  await abrirCred('usuario1', true);\n"
+                 "  roto.push(dlg.abierto);\n"
+                 "  RESPUESTAS['/api/credenciales'] = { operadores: [], navieras: [] };\n"
+                 "  await abrirCred('');\n"
+                 "  const vacio = [dlg.abierto, $('#cred-estado').textContent, aviso()];\n"
+                 "  RESPUESTAS['/api/credenciales'] = { operadores: ['usuario1'], navieras: [] };\n"
+                 "  await abrirCred('usuario1');\n"
+                 "  console.log(JSON.stringify([roto, vacio, [dlg.abierto, $('#cred-estado').textContent]]));\n"
+                 "})();\n")
+        texto = "No pude leer las credenciales: config.json roto"
+        sin_operador = ("Todavía no hay ningún operador en config.json: créalo en Credenciales (la llave, arriba a la "
+                        "derecha), con «+ Nuevo operador».")
+        self.assertEqual(correr_node(self, guion),
+                         [[1, texto, 0, "", ["⚠ " + texto, False], [[texto, "f-alerta", "REVISAR"]], None, 1],
+                          [2, sin_operador, ["", True]], [3, ""]])
+
+    def test_armar_y_entrar_avisan_a_la_vista(self):
+        js = self.mod.JS_INDEX
+        for trozo in ('avisoFijo("No pude arrancar: " + e.message);', 'avisoFijo("No pude entrar: " + e.message);',
+                      'if (!navs.length) { avisoFijo("Marca al menos una naviera", "f-info", "AVISO"); return; }'):
+            with self.subTest(trozo=trozo):
+                self.assertEqual(js.count(trozo), 1)
+        for viejo in ('feed("No pude arrancar', 'feed("No pude entrar', 'feed("Marca al menos',
+                      'feed("No pude leer las credenciales'):
+            with self.subTest(viejo=viejo):
+                self.assertNotIn(viejo, js)
+        # Armar limpia el aviso antes de preguntar el modo, como cada botón al empezar.
+        m = re.search(r'^\$\("#wg-armar"\)\.onclick = async \(\) => \{\n(.*?)\n\};\n', js, re.S | re.M)
+        boton = m.group(1)
+        self.assertLess(boton.index('notaVisible("");'), boton.index("if (!(await mismoModo())) return;"))
+        self.assertIn('if (!r.ok) { const e = new Error(await r.text()); e.status = r.status; throw e; }', js)
 
 
 if __name__ == "__main__":

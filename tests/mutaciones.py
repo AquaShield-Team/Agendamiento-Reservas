@@ -415,9 +415,9 @@ MUTACIONES += [
          nuevo='            self._env(404, "text/plain; charset=utf-8", "nada")\n\n        # ---------------- POST'),
     dict(id="web-config-sin-reservadores", pruebas=[RU + "test_config_del_panel"],
          viejo='"reserva": k in RESERVADORES}', nuevo='"reserva": False}'),
-    dict(id="web-config-ausente-otro-aviso", pruebas=[RU + "test_config_ausente_da_500"],
-         viejo='raise FileNotFoundError("No existe config.json (copia config.example.json y pon tus credenciales).")',
-         nuevo='raise FileNotFoundError("Falta la configuración.")'),
+    dict(id="web-config-ausente-otro-aviso", pruebas=[RU + "test_config_ausente_sin_plantilla_lo_dice"],
+         viejo='"Falta config.json, y tampoco está config.example.json para crearlo. Vuelve a instalar "',
+         nuevo='"Falta la configuración. Vuelve a instalar "'),
     dict(id="web-ruta-renombrada",
          pruebas=[RU + "test_rutas_del_js_existen_en_el_servidor", PL + "test_descarga_de_resultados"],
          viejo='if u.path == "/api/descargar":', nuevo='if u.path == "/api/descargas":'),
@@ -7707,4 +7707,121 @@ MUTACIONES += [
     dict(id="e60-el-panel-no-lo-muestra", pruebas=[AVISO_AL_ABRIR],
          viejo="    aviso = _aviso_de_actualizacion()\n    if aviso:\n        _avisar_en_pantalla_y_log(aviso)\n",
          nuevo=""),
+]
+
+# --- Encargo 61 (CICLO-clon-nuevo-y-config.md): un clon recién hecho llega a «Modo Seguro Activo» y carga sus
+# credenciales desde el panel; si algo falta, el panel dice qué y cómo resolverlo, y nunca queda mudo (decisión de
+# Marcelo). Sin config.json, el panel lo crea desde config.example.json; si no puede leerlo, lo dice a la vista; y sin
+# playwright u openpyxl, el .bat lo dice y espera.
+SC = "test_web.TestPanelSinConfig."
+CREA = SC + "test_lo_crea_desde_la_plantilla_y_lo_dice"
+CRED_CREA = SC + "test_credenciales_sin_config_tambien_lo_crean"
+NO_PISA = SC + "test_no_pisa_un_config_que_aparece_entretanto"
+REINTENTA = SC + "test_reintenta_si_windows_niega_el_renombre"
+NO_CREA = SC + "test_si_no_puede_crearlo_lo_dice"
+PLANTILLA_ROTA = SC + "test_plantilla_que_no_se_lee"
+ROTO = SC + "test_config_que_no_se_lee_lo_dice_sin_mostrarlo"
+NO_ABRE = SC + "test_config_que_no_se_abre_lo_dice"
+CANDADO_NO_CREA = SC + "test_el_candado_y_la_consola_no_lo_crean"
+MODO_ARMAR = "test_envio.TestLecturaDelPanel.test_el_panel_vuelve_a_leer_su_modo_antes_de_armar"
+VF = "test_envio.TestLoQueFaltaALaVista."
+SE_VE = VF + "test_el_aviso_se_ve_y_va_al_registro"
+AL_CARGAR = VF + "test_al_cargar_dice_lo_que_falta"
+CUADRO = VF + "test_credenciales_sin_leer_abren_el_cuadro_con_el_motivo"
+BOTONES = VF + "test_armar_y_entrar_avisan_a_la_vista"
+BAT_LIB = TL + "test_sin_las_librerias_lo_dice_y_no_abre"
+CHEQUEO_BAT = '  python -c "import playwright, openpyxl" 2>nul\n  if errorlevel 1 (\n'
+
+MUTACIONES += [
+    # El servidor: no lo crea, no lo dice, no limpia el aviso, lo reescribe en vez de copiarlo, lo pisa o no reintenta.
+    dict(id="e61-no-lo-crea", pruebas=[CREA, CRED_CREA],
+         viejo="    if not ruta.exists():\n        _crear_config_desde_el_ejemplo(ruta)\n", nuevo=""),
+    dict(id="e61-la-pagina-no-sabe-que-lo-creo", pruebas=[CREA], viejo='"aviso": _CONFIG["creada"] or "",',
+         nuevo='"aviso": "",'),
+    dict(id="e61-el-aviso-no-se-limpia", pruebas=[CREA],
+         viejo='                    _CONFIG["creada"] = None        # ya tiene credenciales', nuevo="#"),
+    dict(id="e61-crearlo-sin-decirlo", pruebas=[CREA], viejo="    _avisar_en_pantalla_y_log(CONFIG_CREADA)\n",
+         nuevo=""),
+    dict(id="e61-lo-reescribe", pruebas=[CREA], viejo="        tmp.write_bytes(datos)\n",
+         nuevo="        tmp.write_bytes(json.dumps(plantilla).encode())\n"),
+    dict(id="e61-credenciales-sin-crearlo", pruebas=[CRED_CREA],
+         viejo='                if u.path == "/api/credenciales":\n                    cfg = _config_del_panel()\n',
+         nuevo='                if u.path == "/api/credenciales":\n                    cfg = cargar_config()\n'),
+    dict(id="e61-guardar-sin-crearlo", pruebas=[CRED_CREA],
+         viejo='"falta el nombre del operador"}, 400)\n                    cfg = _config_del_panel()\n',
+         nuevo='"falta el nombre del operador"}, 400)\n                    cfg = cargar_config()\n'),
+    dict(id="e61-pisa-el-que-aparece", pruebas=[NO_PISA], viejo="                _os.rename(tmp, ruta)\n",
+         nuevo="                _os.replace(tmp, ruta)\n"),
+    dict(id="e61-no-reintenta", pruebas=[REINTENTA],
+         viejo="def _crear_config_desde_el_ejemplo(ruta, intentos=20, pausa=0.05):",
+         nuevo="def _crear_config_desde_el_ejemplo(ruta, intentos=1, pausa=0.05):"),
+    dict(id="e61-deja-el-temporal", pruebas=[NO_CREA],
+         viejo="        if tmp.exists():\n            try:\n                tmp.unlink()\n",
+         nuevo="        if False:\n            try:\n                tmp.unlink()\n"),
+    dict(id="e61-sin-crear-otro-aviso", pruebas=[NO_CREA],
+         viejo='"Falta config.json y no pude crearlo en la carpeta del programa "',
+         nuevo='"No pude crear config.json "'),
+    dict(id="e61-plantilla-sin-forma", pruebas=[PLANTILLA_ROTA], viejo="    if not isinstance(plantilla, dict):\n",
+         nuevo="    if plantilla is None:\n"),
+    dict(id="e61-plantilla-rota-sin-motivo", pruebas=[PLANTILLA_ROTA], viejo="    except (OSError, ValueError):\n",
+         nuevo="    except OSError:\n"),
+    # Lo que no se lee: sin el motivo, mostrando el texto del archivo, o sin mirar la forma.
+    dict(id="e61-muestra-el-archivo", pruebas=[ROTO], viejo='f"{e.colno}: {e.msg}). Corrígelo',
+         nuevo='f"{e.colno}: {e.msg}; {e.doc[:120]}). Corrígelo'),
+    dict(id="e61-sin-el-motivo-de-la-codificacion", pruebas=[ROTO],
+         viejo="    except UnicodeDecodeError:\n        raise ConfigDelPanel(",
+         nuevo="    except UnicodeError:\n        raise\n        raise ConfigDelPanel("),
+    dict(id="e61-sin-mirar-las-opciones", pruebas=[ROTO],
+         viejo='\n            and isinstance(cfg.get("opciones", {}), dict)):', nuevo="):"),
+    dict(id="e61-sin-mirar-la-forma", pruebas=[ROTO], viejo='    if not (isinstance(cfg, dict) and isinstance(',
+         nuevo='    if False and (isinstance(cfg, dict) and isinstance('),
+    dict(id="e61-no-se-abre-sin-motivo", pruebas=[NO_ABRE],
+         viejo='"No pude abrir config.json: {e.strerror or type(e).__name__}. Cierra el programa que "',
+         nuevo='"No pude abrir config.json: {e}. Cierra el programa que "'),
+    dict(id="e61-el-candado-lo-crea", pruebas=[CANDADO_NO_CREA],
+         viejo='    ruta = BASE / "config.json"\n    if not ruta.exists():\n        raise FileNotFoundError(',
+         nuevo=('    ruta = BASE / "config.json"\n    if not ruta.exists():\n'
+                '        _crear_config_desde_el_ejemplo(ruta)\n'
+                '    if not ruta.exists():\n        raise FileNotFoundError(')),
+    # La página: el aviso no se ve, no dice lo que dijo el panel, no lo pinta al cargar, ni en Credenciales ni en los
+    # botones.
+    dict(id="e61-aviso-que-no-se-esconde", pruebas=[SE_VE], viejo="  a.hidden = !texto;\n",
+         nuevo="  a.hidden = false;\n"),
+    dict(id="e61-aviso-siempre-alerta", pruebas=[SE_VE],
+         viejo='  feed(texto, cls || "f-alerta", etiqueta || "REVISAR");',
+         nuevo='  feed(texto, "f-alerta", "REVISAR");'),
+    dict(id="e61-sin-el-aviso-en-la-pagina", pruebas=[SE_VE],
+         viejo='<p class="rs-aviso" id="aviso-panel" role="alert" hidden></p>', nuevo=""),
+    dict(id="e61-armar-solo-al-registro", pruebas=[MODO_ARMAR],
+         viejo='  avisoFijo(avisoDeModo(MODO_PAGINA, modo) + (motivo ?',
+         nuevo='  feed(avisoDeModo(MODO_PAGINA, modo) + (motivo ?'),
+    dict(id="e61-armar-sin-el-motivo", pruebas=[MODO_ARMAR], viejo="catch (e) { if (e.status) motivo = e.message; }",
+         nuevo="catch (e) {}"),
+    dict(id="e61-al-cargar-solo-el-estado", pruebas=[AL_CARGAR],
+         viejo='    avisoFijo(texto);\n    estado("No pude leer la configuración");\n',
+         nuevo='    estado("No pude leer la configuración");\n'),
+    dict(id="e61-sin-el-motivo-en-la-lista", pruebas=[AL_CARGAR],
+         viejo='    $("#navs").innerHTML = `<p class="nota">${esc(texto)}</p>`;\n', nuevo=""),
+    dict(id="e61-sin-decir-que-lo-creo", pruebas=[AL_CARGAR],
+         viejo='    notaVisible(d.aviso || (d.usuarios.length ? "" : SIN_OPERADOR));\n', nuevo=""),
+    dict(id="e61-entrar-solo-al-registro", pruebas=[AL_CARGAR, BOTONES],
+         viejo='avisoFijo("No pude entrar: " + e.message);',
+         nuevo='feed("No pude entrar: " + e.message, "f-alerta", "REVISAR");'),
+    dict(id="e61-credenciales-sin-el-cuadro", pruebas=[CUADRO],
+         viejo='    $("#cred-estado").textContent = texto;\n    if (!yaAbierto) dlg.showModal();\n    return;\n',
+         nuevo='    $("#cred-estado").textContent = texto;\n    return;\n'),
+    dict(id="e61-credenciales-sin-operador-calla", pruebas=[CUADRO],
+         viejo='$("#cred-estado").textContent = op.options.length ? "" : SIN_OPERADOR;',
+         nuevo='$("#cred-estado").textContent = "";'),
+    dict(id="e61-arrancar-solo-al-registro", pruebas=[BOTONES], viejo='avisoFijo("No pude arrancar: " + e.message);',
+         nuevo='feed("No pude arrancar: " + e.message, "f-alerta", "REVISAR");'),
+    dict(id="e61-api-sin-codigo", pruebas=[BOTONES], viejo=" e.status = r.status; throw e; }",
+         nuevo=" throw e; }"),
+    # El .bat: sin el chequeo, sin la pausa, o sin mirar lo que dio python.
+    dict(id="e61-bat-sin-chequeo", archivo="Iniciar AQUASHIELD.bat", pruebas=[BAT_BLOQUE, BAT_LIB],
+         viejo=CHEQUEO_BAT, nuevo="  if 1==0 (\n"),
+    dict(id="e61-bat-emision-no-mira", archivo="Iniciar AQUASHIELD_EMISION.bat", pruebas=[BAT_BLOQUE, BAT_LIB],
+         viejo=CHEQUEO_BAT, nuevo=CHEQUEO_BAT.replace("errorlevel 1", "errorlevel 2")),
+    dict(id="e61-bat-sin-pausa", archivo="Iniciar AQUASHIELD_EMISION.bat", pruebas=[BAT_BLOQUE],
+         viejo="    echo.\n    pause\n    exit /b 1\n", nuevo="    echo.\n    exit /b 1\n"),
 ]

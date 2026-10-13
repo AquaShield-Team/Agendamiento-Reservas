@@ -15,6 +15,7 @@ import json
 import os
 import queue
 import random
+import shutil
 import re
 import socket
 import subprocess
@@ -91,16 +92,23 @@ class TestPanelRutas(PanelBase):
         self.assertEqual([(n["clave"], n["reserva"]) for n in cfg["navieras"]],
                          [(k, True) for k in sinteticos.NAVIERAS])
 
-    def test_config_ausente_da_500(self):
+    def test_config_ausente_sin_plantilla_lo_dice(self):
+        # Sin config.json, el panel lo crea desde config.example.json (TestPanelSinConfig); esta sandbox no trae la
+        # plantilla, así que dice qué falta y cómo resolverlo, y no crea nada. Hasta el encargo 61, sin config.json daba
+        # el 500 de cargar_config, «No existe config.json (copia config.example.json…)», que la página no mostraba.
         ruta = self.sb / "config.json"
         original = ruta.read_bytes()
         ruta.unlink()
         try:
             st, cuerpo = self.srv.get("/api/config")
+            creado = ruta.exists()
         finally:
             ruta.write_bytes(original)
         self.assertEqual(st, 500)
-        self.assertIn(b"No existe config.json (copia config.example.json", cuerpo)
+        self.assertEqual(cuerpo.decode("utf-8"), "Falta config.json, y tampoco está config.example.json para crearlo. "
+                                                 "Vuelve a instalar el programa como dice LEEME.md («Instalar y "
+                                                 "mantenerlo al día»).")
+        self.assertFalse(creado)
 
     def test_llave_invalida_se_avisa_en_pantalla(self):
         ruta = self.sb / "config.json"
@@ -132,6 +140,154 @@ class TestPanelRutas(PanelBase):
         self.assertEqual(sorted(js), RUTAS_JS)
         self.assertEqual(sorted(atendidas - {"/", "/index.html", "/app.js", "/estilo.css", "/fuentes.css"}),
                          sorted(RUTAS_JS + ["/api/salir", "/api/shutdown"]))
+
+
+class TestPanelSinConfig(PanelBase):
+    """Un clon recién hecho: sin config.json, con config.example.json. El panel crea config.json desde la plantilla, y
+    si no lo puede crear o leer, dice qué falta y cómo resolverlo (decisión de Marcelo, encargo 61,
+    CICLO-clon-nuevo-y-config.md). Medido en un clon nuevo con un Python limpio: hasta ahí, /api/config y
+    /api/credenciales daban 500, y en la página Credenciales, Operador, «Solo iniciar sesión» y «Armar» no hacían nada
+    a la vista."""
+    config_inicial = None
+
+    def setUp(self):
+        super().setUp()
+        self.ruta = self.sb / "config.json"
+        self.ejemplo = self.sb / "config.example.json"
+        shutil.copyfile(soporte.FUENTES / "config.example.json", self.ejemplo)
+        self.ruta.unlink(missing_ok=True)
+        self.mod._CONFIG["creada"] = None
+        self.addCleanup(self.ruta.unlink, missing_ok=True)
+
+    def lineas_nuevas(self, accion):
+        _, antes = self.srv.json("/api/estado")
+        resultado = accion()
+        _, despues = self.srv.json(f"/api/estado?desde={antes['cursor']}")
+        return resultado, despues["lineas"]
+
+    def test_lo_crea_desde_la_plantilla_y_lo_dice(self):
+        (st, cfg), lineas = self.lineas_nuevas(lambda: self.srv.json("/api/config"))
+        plantilla = json.loads(self.ejemplo.read_bytes())
+        self.assertEqual((st, cfg["modo_emision"]), (200, False))
+        self.assertEqual(cfg["usuarios"], list(plantilla["usuarios"]))
+        self.assertEqual(cfg["aviso"], self.mod.CONFIG_CREADA)
+        self.assertEqual(lineas, [self.mod.CONFIG_CREADA])
+        self.assertEqual(self.ruta.read_bytes(), self.ejemplo.read_bytes())          # una copia, byte a byte
+        self.assertEqual(sorted(p.name for p in self.sb.glob("config.json.*")), [])   # sin temporales
+        # Una sola vez: después lo lee, y el aviso sigue hasta que se guardan credenciales.
+        (st, cfg), lineas = self.lineas_nuevas(lambda: self.srv.json("/api/config"))
+        self.assertEqual((st, cfg["aviso"], lineas), (200, self.mod.CONFIG_CREADA, []))
+        st, r = self.srv.json("/api/credenciales", {"usuario": "op_colega",
+                                                    "navieras": {"one": {"usuario": "u.inventado"}}})
+        self.assertEqual((st, r["operadores"]), (200, list(plantilla["usuarios"]) + ["op_colega"]))
+        self.assertEqual(self.srv.json("/api/config")[1]["aviso"], "")
+        guardado = json.loads(self.ruta.read_bytes())
+        self.assertEqual(guardado["opciones"], plantilla["opciones"])
+        self.assertEqual(guardado["usuarios"]["op_colega"]["one"], {"usuario": "u.inventado", "clave": "",
+                                                                      "contrato": ""})
+
+    def test_credenciales_sin_config_tambien_lo_crean(self):
+        st, r = self.srv.json("/api/credenciales?usuario=")
+        self.assertEqual((st, r["operadores"]), (200, list(json.loads(self.ejemplo.read_bytes())["usuarios"])))
+        self.assertEqual(self.ruta.read_bytes(), self.ejemplo.read_bytes())
+        self.ruta.unlink()
+        st, r = self.srv.json("/api/credenciales", {"usuario": "op_colega", "navieras": {}})
+        self.assertEqual((st, r["operadores"][-1]), (200, "op_colega"))
+        self.assertEqual(json.loads(self.ruta.read_bytes())["opciones"],
+                         json.loads(self.ejemplo.read_bytes())["opciones"])
+
+    def test_no_pisa_un_config_que_aparece_entretanto(self):
+        # Escribe a un temporal y lo renombra: en Windows, os.rename no pisa un archivo que ya existe.
+        self.ruta.write_bytes(b'{"usuarios": {"op_otro": {}}}')
+        self.mod._crear_config_desde_el_ejemplo(self.ruta)
+        self.assertEqual(self.ruta.read_bytes(), b'{"usuarios": {"op_otro": {}}}')
+        self.assertIsNone(self.mod._CONFIG["creada"])
+        self.assertEqual(sorted(p.name for p in self.sb.glob("config.json.*")), [])
+
+    def test_reintenta_si_windows_niega_el_renombre(self):
+        real, intentos = self.mod._os.rename, []
+
+        def rename(origen, destino):
+            intentos.append(Path(destino).name)
+            if len(intentos) <= 2:
+                raise PermissionError(13, "Acceso denegado (sintético)")
+            return real(origen, destino)
+        with mock.patch.object(self.mod._os, "rename", rename):
+            st, _ = self.srv.json("/api/config")
+        self.assertEqual((st, intentos), (200, ["config.json"] * 3))
+        self.assertEqual(self.ruta.read_bytes(), self.ejemplo.read_bytes())
+
+    def test_si_no_puede_crearlo_lo_dice(self):
+        def rename(origen, destino):
+            raise PermissionError(13, "Acceso denegado")
+        with mock.patch.object(self.mod._os, "rename", rename):
+            st, cuerpo = self.srv.get("/api/config")
+        self.assertEqual(st, 500)
+        self.assertEqual(cuerpo.decode("utf-8"), "Falta config.json y no pude crearlo en la carpeta del programa "
+                                                 "(Acceso denegado). Copia config.example.json como config.json en "
+                                                 "esa carpeta y recarga la página.")
+        self.assertFalse(self.ruta.exists())
+        self.assertEqual(sorted(p.name for p in self.sb.glob("config.json.*")), [])
+        self.assertIsNone(self.mod._CONFIG["creada"])
+
+    def test_plantilla_que_no_se_lee(self):
+        for datos in (b"{ no es json", b"[]", b"\xff\xfe{}"):
+            with self.subTest(datos=datos):
+                self.ejemplo.write_bytes(datos)
+                st, cuerpo = self.srv.get("/api/config")
+                self.assertEqual(st, 500)
+                self.assertEqual(cuerpo.decode("utf-8"),
+                                 "Falta config.json, y config.example.json, del que se crea, no se puede leer. Vuelve "
+                                 "a instalar el programa como dice LEEME.md («Instalar y mantenerlo al día»).")
+                self.assertFalse(self.ruta.exists())
+
+    def test_config_que_no_se_lee_lo_dice_sin_mostrarlo(self):
+        # El motivo y cómo resolverlo, sin el texto del archivo, que trae las credenciales; y el archivo, intacto.
+        secreto = "CLAVE-INVENTADA-61"
+        casos = {
+            f'{{"usuarios": {{"x": {{"one": {{"clave": "{secreto}"}}}}}},\n "opciones": {{,}}}}'.encode():
+                "config.json no se puede leer: no es un JSON válido (línea 2, columna 15: Expecting property name "
+                "enclosed in double quotes). Corrígelo, o cámbiale el nombre (config.roto.json, por ejemplo) y "
+                "recarga la página: el panel crea uno nuevo desde config.example.json, sin credenciales.",
+            f'{{"usuarios": {{}}, "opciones": {{}}, "nota": "{secreto} ñ"}}'.encode("cp1252"):
+                "config.json no se puede leer: no está guardado en UTF-8. Ábrelo con el Bloc de notas y guárdalo con "
+                "la codificación UTF-8.",
+            f'["{secreto}"]'.encode():
+                "config.json no tiene la forma de config.example.json: tiene que ser un objeto, con «usuarios» y "
+                "«opciones» como objetos. Corrígelo, o cámbiale el nombre y recarga la página: el panel crea uno "
+                "nuevo, sin credenciales.",
+            f'{{"usuarios": ["{secreto}"]}}'.encode(): None,
+            f'{{"usuarios": {{}}, "opciones": "{secreto}"}}'.encode(): None,
+        }
+        forma = casos[f'["{secreto}"]'.encode()]
+        for datos, motivo in casos.items():
+            for metodo, ruta, cuerpo_post in (("GET", "/api/config", None),
+                                              ("GET", "/api/credenciales?usuario=x", None),
+                                              ("POST", "/api/credenciales", {"usuario": "x", "navieras": {}})):
+                with self.subTest(datos=datos, ruta=ruta, metodo=metodo):
+                    self.ruta.write_bytes(datos)
+                    st, cuerpo = self.srv.pedir(ruta, cuerpo_post)
+                    self.assertEqual((st, cuerpo.decode("utf-8")), (500, motivo or forma))
+                    self.assertNotIn(secreto.encode(), cuerpo)
+                    self.assertEqual(self.ruta.read_bytes(), datos)
+
+    def test_config_que_no_se_abre_lo_dice(self):
+        self.ruta.write_bytes(self.ejemplo.read_bytes())
+
+        def cargar():
+            raise PermissionError(13, "Acceso denegado")
+        with mock.patch.object(self.mod, "cargar_config", cargar):
+            st, cuerpo = self.srv.get("/api/config")
+        self.assertEqual((st, cuerpo.decode("utf-8")), (500, "No pude abrir config.json: Acceso denegado. Cierra el "
+                                                            "programa que lo tenga abierto y recarga la página."))
+
+    def test_el_candado_y_la_consola_no_lo_crean(self):
+        # Solo el panel web lo crea: el candado lee con cargar_config, sin config.json queda cerrado, y no crea nada.
+        self.assertFalse(self.mod.es_modo_emision())
+        self.assertEqual(self.mod._llaves_abiertas(todas=True), [])
+        with self.assertRaises(FileNotFoundError):
+            self.mod.cargar_config()
+        self.assertFalse(self.ruta.exists())
 
 
 class TestPanelCredenciales(PanelBase):

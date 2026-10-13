@@ -20,6 +20,18 @@ cd /d "%~dp0"
   python -c "import playwright" 2>nul || python -m pip install --user --upgrade playwright
   python -c "import openpyxl" 2>nul || python -m pip install --user openpyxl
 
+  REM Sin playwright u openpyxl el panel no abre: lo dice y espera una tecla, en vez de cerrarse sin decir nada.
+  python -c "import playwright, openpyxl" 2>nul
+  if errorlevel 1 (
+    echo.
+    echo AQUASHIELD no puede abrir: faltan las librerias playwright u openpyxl de Python, y no se pudieron instalar.
+    echo Revisa la conexion a internet y vuelve a abrirlo. Si sigue igual, escribe esto en PowerShell:
+    echo   python -m pip install --user playwright openpyxl
+    echo.
+    pause
+    exit /b 1
+  )
+
   REM Si falta holidays, los feriados de Chile para la fecha de retiro de MAERSK, la instala. Sin red, pip se
   REM rinde en segundos y el panel abre igual; sin la libreria, el programa lo avisa y sigue de lunes a viernes.
   python -c "import holidays" 2>nul || python -m pip install --user --disable-pip-version-check --timeout 5 --retries 0 holidays
