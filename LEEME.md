@@ -52,6 +52,10 @@ guardada (el panel Reefer cerrado, sin «to complete» y con la temperatura en �
 ENVIADA. Cada fila es una reserva de un contenedor: el programa no escribe la cantidad, y si el campo «Cantidad» de
 CMA-CGM no dice 1, la fila queda NO ENVIADA.
 
+En MAERSK, el tipo de contenedor es siempre «40 Reefer High», el de las filas. Antes de elegirlo, el programa guarda
+la lista de opciones (su captura y su HTML, en la carpeta de la corrida); si la lista no trae exactamente una «40
+Reefer High», la fila queda NO ENVIADA, con el motivo, sin pulsar nada.
+
 Cuando el panel te pide resolver algo en el navegador («Te toca a ti»), `log.txt` anota cuándo empezó la pausa, por
 qué, y cuándo terminó: si pulsaste «Ya lo resolví» o «Detener», si pasaron 10 minutos sin respuesta o, con el
 deslizador de CMA, si el portal te dejó pasar o restringió el acceso.
