@@ -56,6 +56,55 @@ Cuando el panel te pide resolver algo en el navegador («Te toca a ti»), `log.t
 qué, y cuándo terminó: si pulsaste «Ya lo resolví» o «Detener», si pasaron 10 minutos sin respuesta o, con el
 deslizador de CMA, si el portal te dejó pasar o restringió el acceso.
 
+## Instalar y mantenerlo al día
+
+El programa se instala como un clon del repositorio, en la rama **`estable`**. Esa rama la avanza solo Marcelo,
+después de probar; los cambios de cada día van a `main`, que los equipos de uso no reciben. El repositorio es público:
+no hace falta una cuenta de GitHub, y el programa nunca pide ni guarda una clave para actualizarse.
+
+**Para instalarlo** hacen falta Python 3.13, Git for Windows y Chrome. En PowerShell, en la carpeta donde quieras
+dejarlo (aquí, `C:\AQUASHIELD`):
+
+```
+git clone -b estable https://github.com/AquaShield-Team/Agendamiento-Reservas.git "C:\AQUASHIELD"
+```
+
+Copia `config.example.json` como `config.json` y escribe tus credenciales desde el panel (ver «Credenciales y
+opciones»). Si ya tenías un clon en `main`, pásalo a `estable` en la misma carpeta, sin perder tu `config.json`, tus
+perfiles ni tus registros (git no los versiona):
+
+```
+git -C "C:\AQUASHIELD" fetch origin
+git -C "C:\AQUASHIELD" switch estable
+```
+
+**Cada vez que lo abres**, los dos lanzadores (`actualizar.py`) traen la última versión de `estable` antes de abrir el
+panel, y el registro del panel dice qué pasó: que se actualizó, que ya estaba al día, o por qué no lo hizo. Si no se
+actualiza, el panel abre igual, con la versión que tiene el equipo. No se actualiza:
+- sin red, o si GitHub no contesta;
+- si cambiaste un archivo del programa, o si la versión nueva trae un archivo o una carpeta con el nombre de algo tuyo
+  de esta carpeta: no lo pisa. Avísale a Marcelo;
+- si la carpeta no está en la rama `estable`. Así, el equipo de desarrollo de Marcelo, en `main`, nunca se actualiza
+  solo.
+
+Tu `config.json`, tus perfiles de Chrome, tus registros (`logs\`) y tus planillas no se tocan. Si la ventana negra dice
+que la actualización quedó a medias y no abre el panel, cierra el programa que tenga abierto un archivo de la carpeta
+(un editor, por ejemplo) y vuelve a abrirlo.
+
+**Cómo avanza Marcelo la rama `estable`.** Cuando una versión de `main` está probada, la publica en `estable` desde su
+equipo, en PowerShell (`<commit>` es el de la versión probada; la primera vez, el mismo comando crea la rama):
+
+```
+git -C "C:\dev\Agendamiento Reservas" fetch origin
+git -C "C:\dev\Agendamiento Reservas" log --oneline origin/estable..<commit>
+git -C "C:\dev\Agendamiento Reservas" push origin <commit>:refs/heads/estable
+git -C "C:\dev\Agendamiento Reservas" ls-remote --heads origin estable
+```
+
+El `log` muestra lo que van a recibir los equipos. `estable` solo avanza: el commit nuevo tiene que venir después del
+que tiene (git rechaza el `push` si no, y no se fuerza). Un equipo con una `estable` que ya no se continúa deja de
+actualizarse hasta que alguien lo arregle a mano.
+
 ## Modo seguro y emisión
 
 Con `Iniciar AQUASHIELD.bat` **nada se emite**: cada reserva se llena completa y se detiene antes del botón que
@@ -99,6 +148,7 @@ En la plantilla vienen vacíos. Si falta una de esas llaves, el programa sigue s
 | `Iniciar AQUASHIELD_EMISION.bat` | Abre el panel en modo emisión (reservas reales). |
 | `AQUASHIELD.py` | El programa. |
 | `AQUASHIELD_EMISION.py` | Arranca el programa en modo emisión. |
+| `actualizar.py` | Trae la última versión de la rama `estable` al abrir (lo corren los dos lanzadores). |
 | `config.json` | Credenciales y opciones. No lo compartas: trae las claves. |
 | `config.example.json` | Plantilla de `config.json`, sin credenciales. |
 | `logs\` | Una carpeta por corrida, con `log.txt`, las capturas y el HTML de la evidencia. Trae datos reales. |

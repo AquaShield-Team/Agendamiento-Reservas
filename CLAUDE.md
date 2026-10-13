@@ -32,6 +32,32 @@ licencia: todos los derechos reservados** (decisiones de Marcelo, encargo 44, `C
   configuración global de este equipo trae el correo de la empresa. `.git/config` no viaja: en otro clon, se fija antes
   del primer commit. **El push lo hace Marcelo,** solo de `main` (`metodo-ciclo`); antes,
   `git log origin/main..main --format='%ae %ce'` tiene que mostrar solo ese correo.
+- **Los equipos de los colegas se actualizan solos desde la rama `estable`** (decisión de Marcelo, encargo 60,
+  `CICLO-actualizar-desde-estable.md`). `estable` la avanza solo Marcelo, después de probar, y solo hacia adelante
+  (`push origin <commit>:refs/heads/estable`, sin forzar; LEEME.md, «Instalar y mantenerlo al día»); `main` recibe
+  cada ciclo. Los colegas clonan con `-b estable`. Al abrir, los dos `.bat` corren `actualizar.py`, que trae
+  `origin/estable` y avanza con `git merge --ff-only` en ese mismo inicio, y deja lo que pasó en
+  `logs/actualizacion.json`, que el panel muestra al abrir (`_aviso_de_actualizacion`, si es de los últimos
+  `AVISO_ACTUALIZACION_SEG` s).
+  - **Solo se actualiza un clon en la rama `estable`:** este equipo, en `main`, nunca (ni busca la versión nueva).
+  - **No pisa nada del equipo:** no actualiza con commits propios, con cambios en archivos rastreados, con una operación
+    de git a medias, ni con algo en una ruta que la versión nueva empieza a versionar (`ocupada`): git pisa sin avisar
+    un archivo ignorado, como `config.json`, si la versión nueva lo versiona (medido en el encargo 60). Lo que la
+    versión vieja ya versiona lo mueve git.
+  - **Sin credenciales:** el repo es público y se lee sin clave (medido: 1,4 s). git corre sin ayudante de credenciales
+    (`-c credential.helper=`, que vacía también el del sistema) y sin preguntas (`GIT_TERMINAL_PROMPT=0`,
+    `GCM_INTERACTIVE=never`): un remoto que pide clave falla enseguida y no se guarda nada.
+  - **Una escritura a medias** (un archivo abierto por otro programa: git deja la rama en la versión vieja con
+    archivos de la nueva ya escritos, medido) se vuelve atrás archivo por archivo (`igualar`: solo los que tienen la
+    versión de la otra punta; uno que no es ninguna de las dos no se toca). Si no se puede, sale con 3 y el `.bat` no
+    abre el panel: no corre una mezcla de dos versiones.
+  - **Cada `.bat` va en un solo bloque `( … )` que termina en `exit /b`,** en ASCII: cmd lo lee entero antes de
+    correrlo, y si la actualización reescribe el `.bat` mientras corre, no sigue leyendo el nuevo a la mitad. Medido en
+    cmd con un clon inventado: con el bloque abre la versión nueva una vez, sin errores; sin él, cmd retomó en el
+    archivo nuevo y corrió un pedazo de comentario (`TestLosLanzadores`). Un paréntesis en un comentario del bloque lo
+    cerraría antes de tiempo: no lo lleva.
+  - Como `estable` publica en los equipos de los colegas, **CC nunca sube a `estable` ni la mueve**: el bloque de
+    push lo lleva Marcelo, y `main` sigue igual (el repo es público: tampoco se sube solo).
 
 `.gitignore` es una **lista blanca**: todo lo de la raíz queda fuera salvo lo nombrado con `!/…`, porque la carpeta
 convive con `config.json`, `perfiles/`, `logs/`, planillas, manuales, videos y capturas de reservas reales, y con los
@@ -660,7 +686,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 730 pruebas al 2026-10-08 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 751 pruebas al 2026-10-13 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
