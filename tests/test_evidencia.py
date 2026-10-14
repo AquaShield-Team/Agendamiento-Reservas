@@ -270,8 +270,10 @@ class TestCadaReservadorLaDeja(soporte.CasoAQ):
                                           # (test_clics.TestCosco, CICLO-calendario-cosco-y-cma.md).
                                           + ["_cosco_sin_formulario"]
                                           # Desde el encargo 62, MAERSK con la lista de tipos de contenedor, antes de
-                                          # elegir (test_clics.TestContenedorMaersk, CICLO-maersk-contenedor.md).
-                                          + ["_mk_elegir_contenedor"]))
+                                          # elegir (test_clics.TestContenedorMaersk, CICLO-maersk-contenedor.md), y
+                                          # desde el 63, con la de los ajustes reefer, con el mismo ayudante
+                                          # (TestReeferMaersk, CICLO-maersk-otro-contenedor-y-reefer.md).
+                                          + ["_mk_elegir_unica"]))
 
 
 class TestHtmlSinObjetivo(ConRegistro):

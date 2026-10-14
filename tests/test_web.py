@@ -809,6 +809,39 @@ class TestPanelCorridas(PanelBase):
             with self.subTest(texto=texto):
                 self.assertEqual(sum(texto in l for l in e["lineas"]), 1)
 
+    def test_fila_de_maersk_con_otro_contenedor_no_abre_el_portal(self):
+        # Una fila de MAERSK que pide otro contenedor que «40 HC REEFER» queda NO ENVIADA con el motivo, en pantalla, en
+        # log.txt y en la planilla, sin abrir el portal por ella (decisión de Marcelo, encargo 63,
+        # CICLO-maersk-otro-contenedor-y-reefer.md). La hoja trae su columna de contenedor: la 5 pide «20 DRY», y la 6,
+        # «40 hc  reefer», el de las filas. En ONE, la misma columna no cambia nada.
+        motivo = "la fila pide el contenedor «20 DRY», y en MAERSK el programa reserva solo «40 HC REEFER»"
+        self.subir_celdas({("MAERSK", "J4"): "Tipo contenedor", ("MAERSK", "J5"): "20 DRY",
+                           ("MAERSK", "J6"): "40 hc  reefer", ("ONE", "J4"): "Tipo contenedor",
+                           ("ONE", "J5"): "20 DRY"})
+        with Navieras(self.mod) as n:
+            e = self.correr("MAERSK", [5, 6])
+        self.assertEqual((len(n.pw.lanzamientos), [r[:2] for r in n.reservas]), (1, [("maersk", 6)]))
+        self.assertEqual((e["resultados"]["5"]["estado"], e["resultados"]["5"]["detalle"]), ("NO ENVIADA", motivo))
+        linea = (f"✗ fila 5: NO ENVIADA · {motivo}. No entro al portal por ella: resérvala a mano en el portal, o "
+                 "corrige el contenedor en la planilla si la fila pide «40 HC REEFER».")
+        self.assertIn(linea, (Path(self.mod._WEB["carpeta"]) / "log.txt").read_text(encoding="utf-8"))
+        self.assertEqual(sum(linea in l for l in e["lineas"]), 1)
+        st, _, cuerpo = self.srv.completo("/api/descargar")
+        ws = openpyxl.load_workbook(BytesIO(cuerpo))["MAERSK"]
+        self.assertEqual((st, ws["H5"].value, ws["I5"].value), (200, f"NO ENVIADA · {motivo}", None))
+        # Sola, no abre el navegador ni entra al portal.
+        aviso = ("De las filas de MAERSK con nave y ruta, ninguna pide el contenedor «40 HC REEFER»: no abro el "
+                 "navegador ni entro al portal.")
+        with Navieras(self.mod) as n:
+            e = self.correr("MAERSK", [5])
+        self.assertEqual((len(n.pw.lanzamientos), n.logins, n.reservas), (0, [], []))
+        self.assertEqual(sum(aviso in l for l in e["lineas"]), 1)
+        # En ONE, el contenedor no cuenta.
+        with Navieras(self.mod) as n:
+            e = self.correr("ONE", [5])
+        self.assertEqual((n.reservas, e["resultados"]["5"]["estado"]),
+                         ([("one", 5, "usuario.one@ejemplo.invalid")], "OK-EJEMPLO"))
+
     def test_filas_dicen_si_traen_nave(self):
         # /api/filas dice, con la regla del programa, qué fila no trae una nave para reservar: el panel la muestra y la
         # marca con eso (test_envio.TestLecturaDelPanel). Hasta a198645 el panel solo miraba la celda vacía.

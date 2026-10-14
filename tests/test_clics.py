@@ -275,12 +275,14 @@ class TestSinClicACiegas(ConRegistro):
                 # desde el 50, en COSCO, por fuera de todos, el del puerto traducido (CICLO-msc-segundo-intento.md);
                 # desde el 54, en CMA, por dentro de todos, el de CMA detenida (CICLO-cma-acceso-restringido.md); y
                 # desde el 55, el de CMA guarda con plazo el HTML del paso sin objetivo
-                # (CICLO-pausa-plazos-y-datadome.md).
+                # (CICLO-pausa-plazos-y-datadome.md); desde el 63, en MAERSK, por dentro de todos, el de la fila que
+                # pide otro contenedor (CICLO-maersk-otro-contenedor-y-reefer.md).
                 plazo = ", plazo_ms=CMA_PLAZO_MS" if r == "reservar_cma" else ""
                 self.assertEqual(decos, (["_con_el_puerto_de_cosco"] if r == "reservar_cosco" else [])
                                  + ["_con_la_nave_de_la_fila", "_con_la_ruta_de_la_fila",
                                     f"_sin_clic_a_ciegas({prefijo!r}{plazo})"]
-                                 + (["_cma_si_se_detuvo"] if r == "reservar_cma" else []), r)
+                                 + (["_cma_si_se_detuvo"] if r == "reservar_cma" else [])
+                                 + (["_mk_con_el_contenedor_de_la_fila"] if r == "reservar_maersk" else []), r)
         self.assertEqual(sorted(decorados), sorted(self.CORTAN))
 
     CORTAN = ["reservar_cma", "reservar_cosco", "reservar_hyundai", "reservar_maersk", "reservar_msc", "reservar_one"]
@@ -459,8 +461,9 @@ class TestSinSugerenciaNoSigue(ConRegistro):
     mismo. Desde el encargo 43, _mk_ciudad también corta él mismo (test_evidencia): aquí se mira que reservar_maersk
     no lo ataje. Cada reservador corre de verdad hasta su ruta, con los pasos de antes reemplazados, y sus ayudantes
     responden lo que dice cada caso."""
+    # Con el contenedor que los dos lectores les dan a las filas: con otro, MAERSK corta antes de la ruta (encargo 63).
     RESERVA = {"fila": 9, "pol": "PUERTO ALFA, CHILE", "destino_orig": "PUERTO BETA", "destino_final": "CIUDAD GAMMA",
-               "nave": "NAVE PRUEBA UNO", "viaje": "", "dia_carga": "", "cotizacion": ""}
+               "nave": "NAVE PRUEBA UNO", "viaje": "", "dia_carga": "", "cotizacion": "", "contenedor": "40 HC REEFER"}
     # CMA sin un lugar de entrega aparte: prueba primero el puerto y, si el portal no cubre la ruta, el ramp.
     RESERVA_CMA_RAMP = dict(RESERVA, destino_orig="CIUDAD GAMMA")
     ANTES = {
@@ -6930,7 +6933,7 @@ class TestContenedorMaersk(ConRegistro):
                                            ("clic", " 40 Reefer\n  High ")])
         self.assertEqual(det[0], "cont=40 Reefer High")
         self.assertEqual(len(pagina.pesos), 1)                         # y sigue con el peso, como antes
-        self.assertIn("contenedor: 1 de las 4 opciones dicen «40 Reefer High»", log)
+        self.assertIn("lista de tipos de contenedor: 1 de las 4 opciones dicen «40 Reefer High»", log)
         self.assertIn("contenedor tipo: 40 Reefer High", log)
         self.assertIn("evidencia con la lista de tipos de contenedor: mk_f10_contenedor.png", log)
 
@@ -6999,6 +7002,141 @@ class TestContenedorMaersk(ConRegistro):
         self.assertEqual([ast.unparse(n) for n in ast.walk(funcs["_mk_contenedor"]) if isinstance(n, ast.Call)
                           and getattr(n.func, "id", "") == "_mk_elegir_contenedor"],
                          ["_mk_elegir_contenedor(page, reg, det, reserva.get('fila', ''), clave)"])
+
+
+class PaginaReefer(PaginaContenedor):
+    """«Booking Information» falsa de MAERSK para el tipo de contenedor de los ajustes reefer: como PaginaContenedor,
+    pero el campo es «Select reefer container type and size», que solo se pulsa (así abre su lista: trae
+    'showlistonfocus'); el clic queda en 'acciones' como («abre», el campo), o falla con 'falla_campo'."""
+
+    def get_by_placeholder(self, texto):
+        if texto != "Select reefer container type and size":
+            self.prohibidos.append(("placeholder", texto))
+            raise AssertionError("campo inesperado")
+        pagina = self
+
+        def abrir(**k):
+            if pagina.falla_campo:
+                raise RuntimeError(pagina.falla_campo)
+            pagina.acciones.append(("abre", texto))
+        campo = types.SimpleNamespace(scroll_into_view_if_needed=lambda **k: None, click=abrir)
+        return types.SimpleNamespace(first=campo)
+
+
+class TestReeferMaersk(ConRegistro):
+    """El tipo de contenedor de los ajustes reefer de MAERSK: la única opción cuyo texto entero es «Standard (40´)»,
+    con la evidencia de la lista antes de elegir, con el mismo ayudante que el tipo de contenedor (_mk_elegir_unica;
+    decisión de Marcelo, encargo 63, CICLO-maersk-otro-contenedor-y-reefer.md). Hasta ahí pulsaba la primera opción
+    con «40» o, sin ninguna, la primera, y si algo fallaba seguía sin el tipo; en las 21 filas de logs/ fue
+    «Standard (40´)»."""
+    STD = "Standard (40" + chr(0xB4) + ")"          # con el acento agudo que trae el portal (U+00B4)
+    APOSTROFO = "Standard (40')"
+    CAMPO = "Select reefer container type and size"
+
+    def elegir(self, pagina, nombre):
+        reg, vistas, log = self.corrida(nombre)
+        det = []
+        self.mod._mk_elegir_reefer(pagina, reg, det, 10)
+        return det, log.read_text(encoding="utf-8")
+
+    def cortar(self, pagina, nombre):
+        reg, _, _ = self.corrida(nombre)
+        with self.assertRaises(self.mod.ObjetivoNoEncontrado) as e:
+            self.mod._mk_elegir_reefer(pagina, reg, [], 10)
+        self.assertEqual(pagina.prohibidos, [])
+        self.assertNotIn("clic", [a[0] for a in pagina.acciones])
+        return e.exception.paso, e.exception.buscaba
+
+    def test_el_reefer_es_el_medido(self):
+        self.assertEqual((self.mod.MK_REEFER, self.mod.MK_TIPO_REEFER),
+                         (self.STD, "Tipo de contenedor reefer de MAERSK"))
+
+    def test_elige_la_unica_con_el_texto_entero(self):
+        # La primera con «40» es la que elegía la regla de antes (con el apóstrofo); otra trae el texto dentro de otro,
+        # y la elegida viene en dos líneas: se compara en una línea, sin los espacios de más.
+        partida = " Standard\n (40" + chr(0xB4) + ") "
+        pagina = PaginaReefer(self.mod, [["Standard (20" + chr(0xB4) + ")", self.APOSTROFO, self.STD + " Plus",
+                                          partida, "High cube (40" + chr(0xB4) + ")"]])
+        det, log = self.elegir(pagina, "elige")
+        self.assertEqual(pagina.prohibidos, [])
+        self.assertEqual(pagina.acciones, [("abre", self.CAMPO), ("captura", "mk_f10_reefer.png"), ("clic", partida)])
+        self.assertEqual(det, ["reeferCont=" + self.STD])
+        self.assertIn(f"lista de tipos de contenedor reefer: 1 de las 5 opciones dicen «{self.STD}»", log)
+        self.assertIn(f"reefer cont: {self.STD}", log)
+        self.assertIn("evidencia con la lista de tipos de contenedor reefer: mk_f10_reefer.png", log)
+
+    def test_sin_una_sola_no_pulsa_nada(self):
+        casos = (([], "la lista no apareció"),
+                 ([self.APOSTROFO], f"hay 0 entre 1: «{self.APOSTROFO}»"),
+                 ([self.STD, self.STD], f"hay 2 entre 2: «{self.STD}», «{self.STD}»"),
+                 ([self.STD.lower()], f"hay 0 entre 1: «{self.STD.lower()}»"),
+                 ([self.STD + " Plus"], f"hay 0 entre 1: «{self.STD} Plus»"))
+        for k, (lista, cuantas) in enumerate(casos):
+            with self.subTest(lista=lista):
+                pagina = PaginaReefer(self.mod, [lista])
+                self.assertEqual(self.cortar(pagina, f"sin_una_{k}"),
+                                 ("Tipo de contenedor reefer de MAERSK",
+                                  f"una sola opción «{self.STD}» en la lista de tipos de contenedor reefer "
+                                  f"({cuantas})"))
+                self.assertEqual(pagina.acciones, [("abre", self.CAMPO), ("captura", "mk_f10_reefer.png")])
+
+    def test_el_campo_o_el_clic_que_fallan_cortan(self):
+        pagina = PaginaReefer(self.mod, [[self.STD]], falla_campo="el campo está deshabilitado")
+        self.assertEqual(self.cortar(pagina, "campo"),
+                         ("Tipo de contenedor reefer de MAERSK", "el campo «Select reefer container type and size» "
+                                                                 "para abrir su lista (RuntimeError: el campo está "
+                                                                 "deshabilitado)"))
+        self.assertEqual(pagina.acciones, [])
+        pagina = PaginaReefer(self.mod, [[self.STD]], falla_clic="otro elemento recibiría el clic")
+        self.assertEqual(self.cortar(pagina, "clic"),
+                         ("Tipo de contenedor reefer de MAERSK", f"la opción «{self.STD}», que no aceptó el clic "
+                                                                 "(RuntimeError: otro elemento recibiría el clic)"))
+
+    def test_la_reserva_queda_no_enviada_con_su_evidencia(self):
+        # Por el decorador de reservar_maersk: NO ENVIADA con el motivo, la captura y el HTML del paso.
+        pagina = PaginaReefer(self.mod, [[self.APOSTROFO]])
+        reg, vistas, log = self.corrida("decorador")
+
+        def reservar(page, reserva, creds, reg_, on_pausa=None):
+            self.mod._mk_elegir_reefer(page, reg_, [], reserva["fila"])
+            return ("OK-EJEMPLO", "no debería llegar")
+        r = self.mod._sin_clic_a_ciegas("mk")(reservar)(pagina, {"fila": 10, "contenedor": "40 HC REEFER"}, {}, reg)
+        self.assertEqual(r, ("NO ENVIADA", f"Tipo de contenedor reefer de MAERSK: no encontré una sola opción "
+                                           f"«{self.STD}» en la lista de tipos de contenedor reefer (hay 0 entre 1: "
+                                           f"«{self.APOSTROFO}»), así que no pulsé nada. La reserva no se envió; "
+                                           f"revisa ese paso en el portal."))
+        self.assertEqual([a for a in pagina.acciones if a[0] == "captura"],
+                         [("captura", "mk_f10_reefer.png"), ("captura", "mk_f10_sin_objetivo.png")])
+
+    def test_reservar_maersk_elige_asi_antes_de_la_guarda(self):
+        # Una sola vez, en los ajustes reefer: después del tipo de contenedor, antes de la temperatura y de la guarda.
+        # El campo de la lista solo lo busca _mk_elegir_reefer, y las dos listas eligen con el mismo ayudante.
+        texto = Path(self.mod.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(texto)
+        funcs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+        f = funcs["reservar_maersk"]
+
+        def llamadas(func, nombre):
+            return [n for n in ast.walk(func) if isinstance(n, ast.Call) and getattr(n.func, "id", "") == nombre]
+        reefer = llamadas(f, "_mk_elegir_reefer")
+        self.assertEqual([ast.unparse(n) for n in reefer], ["_mk_elegir_reefer(page, reg, det, f)"])
+        si = next(n for n in ast.walk(f) if isinstance(n, ast.If) and n.body
+                  and ast.unparse(n.body[0]) == "_mk_elegir_reefer(page, reg, det, f)")
+        self.assertEqual(ast.unparse(si.test), "es_reefer")
+        temperatura = next(n for n in ast.walk(f) if isinstance(n, ast.Constant)
+                           and n.value == "#mc-input-reeferTemperatureInput")
+        self.assertLess(llamadas(f, "_mk_contenedor")[0].lineno, reefer[0].lineno)
+        self.assertLess(reefer[0].lineno, temperatura.lineno)
+        self.assertLess(temperatura.lineno, linea_guarda(f))
+        buscar = 'get_by_placeholder("Select reefer container type and size")'
+        self.assertEqual(texto.count(buscar), 1)
+        self.assertIn(buscar, ast.get_source_segment(texto, funcs["_mk_elegir_reefer"]))
+        self.assertEqual([ast.unparse(n) for n in llamadas(funcs["_mk_elegir_reefer"], "_mk_elegir_unica")],
+                         ["_mk_elegir_unica(page, reg, MK_REEFER, MK_TIPO_REEFER, 'lista de tipos de contenedor "
+                          "reefer', f'mk_f{fila}_reefer')"])
+        self.assertEqual([ast.unparse(n) for n in llamadas(funcs["_mk_elegir_contenedor"], "_mk_elegir_unica")],
+                         ["_mk_elegir_unica(page, reg, MK_CONTENEDOR, MK_TIPO_CONTENEDOR, 'lista de tipos de "
+                          "contenedor', f'mk_f{fila}_contenedor')"])
 
 
 class PaginaServicios(soporte.PaginaFalsa):

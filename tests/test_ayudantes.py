@@ -850,6 +850,87 @@ class TestFilaSinRuta(soporte.CasoAQ):
         self.assertEqual((envuelto.__name__, envuelto.__doc__, vistas), ("bien", "doc de prueba", []))
 
 
+class TestOtroContenedorMaersk(soporte.CasoAQ):
+    """Una fila de MAERSK que pide otro contenedor que el de las filas, «40 HC REEFER», queda NO ENVIADA sin abrir el
+    portal (decisión de Marcelo, encargo 63, CICLO-maersk-otro-contenedor-y-reefer.md): MAERSK elige siempre «40 Reefer
+    High» y, en los ajustes reefer, «Standard (40´)». Hasta ahí, con otro contenedor escribía otra palabra clave en la
+    lista de tipos, y si el texto no traía «REEF», «RF» o «RH», se saltaba los ajustes reefer."""
+    SOLO = "y en MAERSK el programa reserva solo «40 HC REEFER»"
+
+    def corrida(self, nombre):
+        vistas = []
+        reg = self.mod.Registro(self.sb / nombre / "log.txt", on_log=vistas.append)
+        self.addCleanup(reg.cerrar)
+        return reg, vistas, self.sb / nombre / "log.txt"
+
+    @staticmethod
+    def fila(contenedor="40 HC REEFER", **cambios):
+        return dict(TestFilaSinRuta.fila(**cambios), contenedor=contenedor)
+
+    def test_otro_contenedor(self):
+        # Sin distinguir mayúsculas y con los espacios de a uno. Cualquier otro texto es otro contenedor, también uno
+        # que lo trae dentro; y una celda vacía no dice cuál (la consola, con la columna y la celda vacía).
+        f = lambda c, nav="maersk": self.mod._otro_contenedor(nav, self.fila(c))       # noqa: E731
+        self.assertEqual(self.mod.CONTENEDOR_DE_LAS_FILAS, "40 HC REEFER")
+        for c in ("40 HC REEFER", "40 hc reefer", "  40  HC\tREEFER ", "40 Hc Reefer"):
+            with self.subTest(contenedor=c):
+                self.assertEqual(f(c), "")
+        for c, dice in (("20 DRY", "20 DRY"), ("40 DRY", "40 DRY"), ("40HC REEFER", "40HC REEFER"),
+                        ("40 HC REEFER SOC", "40 HC REEFER SOC"), ("45 HC REEFER", "45 HC REEFER"),
+                        ("40 REEFER", "40 REEFER"), ("  20   dry ", "20 dry"), ("X" * 50, "X" * 40)):
+            with self.subTest(contenedor=c):
+                self.assertEqual(f(c), f"la fila pide el contenedor «{dice}», {self.SOLO}")
+        for c in ("", None, "   "):
+            with self.subTest(contenedor=c):
+                self.assertEqual(f(c), f"la fila no dice qué contenedor pide, {self.SOLO}")
+        self.assertEqual(self.mod._otro_contenedor("maersk", None), f"la fila no dice qué contenedor pide, {self.SOLO}")
+        # Las otras navieras no miran el contenedor.
+        for nav in ("one", "msc", "cma", "cosco", "hyundai"):
+            with self.subTest(naviera=nav):
+                self.assertEqual((f("20 DRY", nav), f("", nav)), ("", ""))
+
+    def linea(self, motivo):
+        return (f"· ✗ fila 9: NO ENVIADA · {motivo}. No entro al portal por ella: resérvala a mano en el portal, o "
+                "corrige el contenedor en la planilla si la fila pide «40 HC REEFER».")
+
+    def test_maersk_no_abre_el_portal_con_otro_contenedor(self):
+        # Los orquestadores ya la apartan antes de abrir el navegador (test_web, test_consola); el decorador cuida
+        # cualquier otro camino, sin tocar la página.
+        casos = (("20 DRY", f"la fila pide el contenedor «20 DRY», {self.SOLO}"),
+                 ("", f"la fila no dice qué contenedor pide, {self.SOLO}"))
+        for k, (c, motivo) in enumerate(casos):
+            with self.subTest(contenedor=c):
+                reg, vistas, log = self.corrida(f"otro_contenedor_{k}")
+                self.assertEqual(self.mod.RESERVADORES["maersk"](PaginaQueNoSeToca(), self.fila(c), {}, reg),
+                                 ("NO ENVIADA", motivo))
+                for donde in (log.read_text(encoding="utf-8"), "\n".join(vistas)):     # log.txt y pantalla
+                    self.assertIn(self.linea(motivo), donde)
+
+    def test_sin_nave_o_sin_ruta_dicen_eso(self):
+        # Sin nave o sin la ruta, y con otro contenedor, el motivo es el de la nave o el de la ruta: su decorador va por
+        # dentro de los dos.
+        casos = ((dict(nave="AUTO"), TestFilaSinNave.MOTIVO), (dict(pol=""), TestFilaSinRuta.PUERTO))
+        for k, (cambio, motivo) in enumerate(casos):
+            with self.subTest(cambio=cambio):
+                reg, vistas, _ = self.corrida(f"otro_contenedor_sin_{k}")
+                fila = self.fila("20 DRY", **cambio)
+                self.assertEqual(self.mod.RESERVADORES["maersk"](PaginaQueNoSeToca(), fila, {}, reg),
+                                 ("NO ENVIADA", motivo))
+                self.assertNotIn("20 DRY", "\n".join(vistas))
+
+    def test_con_el_contenedor_pasa_igual(self):
+        # Con el contenedor de las filas, el decorador llama al reservador tal cual: la fila, las credenciales, el
+        # registro y on_pausa, con su nombre y su documentación.
+        def bien(page, reserva, creds, reg, on_pausa=None):
+            """doc de prueba"""
+            return ("OK-EJEMPLO", f"fila {reserva['fila']} {creds} {on_pausa}")
+        envuelto = self.mod._mk_con_el_contenedor_de_la_fila(bien)
+        reg, vistas, _ = self.corrida("con_el_contenedor")
+        self.assertEqual(envuelto(PaginaQueNoSeToca(), self.fila(" 40 hc reefer"), "cred", reg, on_pausa="p"),
+                         ("OK-EJEMPLO", "fila 9 cred p"))
+        self.assertEqual((envuelto.__name__, envuelto.__doc__, vistas), ("bien", "doc de prueba", []))
+
+
 class TestCMA(soporte.CasoAQ):
     def detecta(self, frames=(), iframe=False, titulo="", texto=""):
         pagina = soporte.PaginaFalsa(texto=lambda js, *a: iframe if "querySelector('iframe" in js else texto,

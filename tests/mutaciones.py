@@ -1472,7 +1472,8 @@ DETALLES_MK = ("            # 2) La referencia de retiro, en su campo por su nam
 
 MUTACIONES += [
     dict(id="maersk-sin-decorador", pruebas=[SC + "test_cada_reservador_que_corta_esta_decorado"],
-         viejo='@_sin_clic_a_ciegas("mk")\ndef reservar_maersk(', nuevo="def reservar_maersk("),
+         viejo='@_sin_clic_a_ciegas("mk")\n@_mk_con_el_contenedor_de_la_fila\ndef reservar_maersk(',
+         nuevo="@_mk_con_el_contenedor_de_la_fila\ndef reservar_maersk("),
     dict(id="maersk-revision-no-corta",
          pruebas=[MK + "test_revision_que_no_aparece_corta", MK + "test_el_corte_queda_no_enviada_con_captura_y_html"],
          viejo=CORTE_MK, nuevo="    return\n"),
@@ -7843,10 +7844,15 @@ EV_SOLO_AHI = LD + "test_solo_ahi"
 MUTACIONES += [
     dict(id="e62-otro-contenedor", pruebas=[CM_ES, CM_ELIGE], viejo='MK_CONTENEDOR = "40 Reefer High"\n',
          nuevo='MK_CONTENEDOR = "40 Reefer Standard"\n'),
-    dict(id="e62-basta-que-lo-traiga", pruebas=[CM_ELIGE],
-         viejo="    exactas = [i for i, t in enumerate(textos) if t == MK_CONTENEDOR]\n",
-         nuevo="    exactas = [i for i, t in enumerate(textos) if MK_CONTENEDOR in t]\n"),
-    dict(id="e62-la-primera-de-varias", pruebas=[CM_SIN_UNA], viejo="    if len(exactas) != 1:\n",
+    # Desde el encargo 63, sobre el ayudante de las dos listas (_mk_elegir_unica), con las pruebas de los ajustes
+    # reefer donde el caso es el mismo.
+    dict(id="e62-basta-que-lo-traiga",
+         pruebas=[CM_ELIGE, "test_clics.TestReeferMaersk.test_elige_la_unica_con_el_texto_entero"],
+         viejo="    exactas = [i for i, t in enumerate(textos) if t == buscado]\n",
+         nuevo="    exactas = [i for i, t in enumerate(textos) if buscado in t]\n"),
+    dict(id="e62-la-primera-de-varias",
+         pruebas=[CM_SIN_UNA, "test_clics.TestReeferMaersk.test_sin_una_sola_no_pulsa_nada"],
+         viejo="    if len(exactas) != 1:\n",
          nuevo="    if not exactas:\n"),
     dict(id="e62-sin-juntar-los-espacios", pruebas=[CM_ELIGE],
          viejo='    return op, [" ".join((t or "").split()) for t in op.all_text_contents()]\n',
@@ -7854,8 +7860,7 @@ MUTACIONES += [
     dict(id="e62-sin-esperar-la-lista-quieta", pruebas=[CM_QUIETA], viejo="        if textos and textos == anterior:\n",
          nuevo="        if textos:\n"),
     dict(id="e62-sin-evidencia", pruebas=[CM_ELIGE, CM_SIN_UNA, CM_DECORADOR, EV_SOLO_AHI],
-         viejo=('    _evidencia_antes_de_la_guarda(page, reg, f"mk_f{fila}_contenedor", "con la lista de tipos de '
-                'contenedor",\n                                  completa=False)\n'),
+         viejo='    _evidencia_antes_de_la_guarda(page, reg, evidencia, f"con la {lista}", completa=False)\n',
          nuevo=""),
     dict(id="e62-elige-de-otra-lista", pruebas=[CM_CAMBIA], viejo="    if despues != textos:\n",
          nuevo="    if False:\n"),
@@ -7865,7 +7870,8 @@ MUTACIONES += [
          nuevo=('        return\n        raise ObjetivoNoEncontrado(MK_TIPO_CONTENEDOR, f"el campo «Select container '
                 'type and size» para')),
     dict(id="e62-el-clic-que-falla-sin-motivo", pruebas=[CM_FALLA],
-         viejo='"la opción «{MK_CONTENEDOR}», que no aceptó el clic "', nuevo='"la opción «{MK_CONTENEDOR}» "'),
+         viejo='"la opción «{buscado}», que no aceptó el clic ({_texto_error(e)})"',
+         nuevo='"la opción «{buscado}» ({_texto_error(e)})"'),
     dict(id="e62-motivo-sin-las-opciones", pruebas=[CM_SIN_UNA, CM_DECORADOR],
          viejo='(f"hay {n} entre {len(textos)}: {vistas}" if textos else "la lista no apareció")',
          nuevo='(f"hay {n}" if textos else "la lista no apareció")'),
@@ -7874,4 +7880,123 @@ MUTACIONES += [
          nuevo=("    cand = page.locator(\"mc-option:visible\")\n"
                 "    page.get_by_placeholder(\"Select container type and size\").first.type(clave)\n"
                 "    cand.nth(0).click(timeout=3000)\n    det.append(\"cont=\" + MK_CONTENEDOR)\n")),
+]
+
+# --- Encargo 63 (CICLO-maersk-otro-contenedor-y-reefer.md): la fila de MAERSK que pide otro contenedor que «40 HC
+# REEFER» queda NO ENVIADA sin entrar al portal, en el panel web, en la consola y con un decorador en reservar_maersk;
+# y en los ajustes reefer, MAERSK elige la única opción «Standard (40´)», con la evidencia de la lista y el mismo
+# ayudante que el tipo de contenedor (decisiones de Marcelo). Hasta ahí pulsaba la primera opción con «40».
+TOC = "test_ayudantes.TestOtroContenedorMaersk."
+OC_REGLA = TOC + "test_otro_contenedor"
+OC_DECORADOR = TOC + "test_maersk_no_abre_el_portal_con_otro_contenedor"
+OC_POR_DENTRO = TOC + "test_sin_nave_o_sin_ruta_dicen_eso"
+OC_PASA = TOC + "test_con_el_contenedor_pasa_igual"
+OC_WEB = "test_web.TestPanelCorridas.test_fila_de_maersk_con_otro_contenedor_no_abre_el_portal"
+OC_CONSOLA = "test_consola.TestEjecutarReservas.test_fila_de_maersk_con_otro_contenedor_no_abre_el_portal"
+DECORADO_MK = "test_clics.TestSinClicACiegas.test_cada_reservador_que_corta_esta_decorado"
+TRF = "test_clics.TestReeferMaersk."
+RF_ES = TRF + "test_el_reefer_es_el_medido"
+RF_ELIGE = TRF + "test_elige_la_unica_con_el_texto_entero"
+RF_SIN_UNA = TRF + "test_sin_una_sola_no_pulsa_nada"
+RF_FALLA = TRF + "test_el_campo_o_el_clic_que_fallan_cortan"
+RF_DECORADOR = TRF + "test_la_reserva_queda_no_enviada_con_su_evidencia"
+RF_LLAMADA = TRF + "test_reservar_maersk_elige_asi_antes_de_la_guarda"
+DECOS_MK = ('@_con_la_nave_de_la_fila\n@_con_la_ruta_de_la_fila\n@_sin_clic_a_ciegas("mk")\n'
+            '@_mk_con_el_contenedor_de_la_fila\n')
+REGLA_OC = "    if cont.upper() == CONTENEDOR_DE_LAS_FILAS:\n"
+PASA_OC = ('            return _sin_el_contenedor(reg, (reserva or {}).get("fila"), motivo)\n'
+           '        return reservar(page, reserva, creds, reg, on_pausa=on_pausa)\n')
+AVISO_OC = ('    reg.paso(f"✗ fila {fila}: {NO_ENVIADA} · {motivo}. No entro al portal por ella: resérvala a mano '
+            'en el portal, o "\n             f"corrige el contenedor en la planilla si la fila pide '
+            '«{CONTENEDOR_DE_LAS_FILAS}».")\n')
+
+MUTACIONES += [
+    # La regla: también en las otras navieras, sin juntar los espacios, distinguiendo mayúsculas, con que traiga el
+    # tamaño y «REEFER», con otro contenedor de las filas, con la celda vacía que pasa, o un motivo sin el valor.
+    dict(id="e63-otra-naviera-tambien", pruebas=[OC_REGLA, OC_WEB],
+         viejo='    if nav != "maersk":\n        return ""\n', nuevo=""),
+    dict(id="e63-sin-juntar-los-espacios", pruebas=[OC_REGLA, OC_WEB],
+         viejo='    cont = " ".join(str((reserva or {}).get("contenedor") or "").split())\n',
+         nuevo='    cont = str((reserva or {}).get("contenedor") or "").strip()\n'),
+    dict(id="e63-distingue-mayusculas", pruebas=[OC_REGLA, OC_PASA, OC_WEB], viejo=REGLA_OC,
+         nuevo="    if cont == CONTENEDOR_DE_LAS_FILAS:\n"),
+    dict(id="e63-basta-que-sea-reefer", pruebas=[OC_REGLA], viejo=REGLA_OC,
+         nuevo='    if "REEFER" in cont.upper():\n'),
+    dict(id="e63-otro-contenedor-de-las-filas", pruebas=[OC_REGLA, OC_PASA, OC_WEB, OC_CONSOLA],
+         viejo='CONTENEDOR_DE_LAS_FILAS = "40 HC REEFER"\n', nuevo='CONTENEDOR_DE_LAS_FILAS = "40 REEFER"\n'),
+    dict(id="e63-la-celda-vacia-pasa", pruebas=[OC_REGLA, OC_DECORADOR, OC_CONSOLA],
+         viejo='    if not cont:\n        return f"la fila no dice',
+         nuevo='    if not cont:\n        return ""\n        return f"la fila no dice'),
+    dict(id="e63-motivo-sin-el-valor", pruebas=[OC_REGLA, OC_DECORADOR, OC_WEB, OC_CONSOLA],
+         viejo='"la fila pide el contenedor «{cont[:40]}», ', nuevo='"la fila pide el contenedor «otro», '),
+    dict(id="e63-motivo-sin-recortar", pruebas=[OC_REGLA],
+         viejo='"la fila pide el contenedor «{cont[:40]}», ', nuevo='"la fila pide el contenedor «{cont}», '),
+    # El aviso y el estado.
+    dict(id="e63-sin-aviso", pruebas=[OC_DECORADOR, OC_WEB, OC_CONSOLA], viejo=AVISO_OC, nuevo=""),
+    dict(id="e63-omitida", pruebas=[OC_DECORADOR, OC_WEB, OC_CONSOLA],
+         viejo="    return (NO_ENVIADA, motivo)\n", nuevo='    return ("OMITIDO", motivo)\n'),
+    # El decorador: deja pasar la fila, mira otra naviera, pierde on_pausa, su nombre o su documentación, no está, o
+    # va por fuera de los de la nave y la ruta.
+    dict(id="e63-el-decorador-deja-pasar", pruebas=[OC_DECORADOR],
+         viejo="        if motivo:\n            return _sin_el_contenedor(",
+         nuevo="        if False:\n            return _sin_el_contenedor("),
+    dict(id="e63-el-decorador-mira-otra-naviera", pruebas=[OC_DECORADOR],
+         viejo='        motivo = _otro_contenedor("maersk", reserva)\n',
+         nuevo='        motivo = _otro_contenedor("one", reserva)\n'),
+    dict(id="e63-decorador-sin-on-pausa", pruebas=[OC_PASA], viejo=PASA_OC,
+         nuevo=PASA_OC.replace(", on_pausa=on_pausa)", ")")),
+    dict(id="e63-decorador-sin-nombre", pruebas=[OC_PASA],
+         viejo="    reservar_con_el_contenedor.__name__ = reservar.__name__\n", nuevo=""),
+    dict(id="e63-decorador-sin-documentacion", pruebas=[OC_PASA],
+         viejo="    reservar_con_el_contenedor.__doc__ = reservar.__doc__\n", nuevo=""),
+    dict(id="e63-maersk-sin-el-decorador", pruebas=[OC_DECORADOR, DECORADO_MK],
+         viejo=DECOS_MK, nuevo=DECOS_MK.replace("@_mk_con_el_contenedor_de_la_fila\n", "")),
+    dict(id="e63-el-decorador-por-fuera", pruebas=[OC_POR_DENTRO, DECORADO_MK],
+         viejo=DECOS_MK,
+         nuevo="@_mk_con_el_contenedor_de_la_fila\n" + DECOS_MK.replace("@_mk_con_el_contenedor_de_la_fila\n", "")),
+    # El panel web: la fila va al portal, se abre el navegador sin filas, o no queda el resultado.
+    dict(id="e63-web-va-al-portal", pruebas=[OC_WEB],
+         viejo="            sub_elegidas = [f for f in sub_elegidas if not _otro_contenedor(nav, f)]\n", nuevo=""),
+    dict(id="e63-web-abre-el-navegador", pruebas=[OC_WEB],
+         viejo='            if not sub_elegidas:\n                reg.paso(f"De las filas de {nombre}',
+         nuevo='            if False:\n                reg.paso(f"De las filas de {nombre}'),
+    dict(id="e63-web-sin-resultado", pruebas=[OC_WEB],
+         viejo=('_sin_el_contenedor(reg, rsv["fila"], _otro_contenedor(nav, rsv))\n                with _LOCK:\n'
+                '                    _WEB["resultados"][str(rsv["fila"])] = {\n'),
+         nuevo=('_sin_el_contenedor(reg, rsv["fila"], _otro_contenedor(nav, rsv))\n                with _LOCK:\n'
+                '                    _ = {\n')),
+    # La consola: no la anota, va al portal, se abre el navegador sin filas, o sin resumen.
+    dict(id="e63-consola-no-anota", pruebas=[OC_CONSOLA],
+         viejo=('            anotar(i, rsv, *_sin_el_contenedor(reg, rsv["fila"], _otro_contenedor(naviera_clave, '
+                'rsv)))\n'),
+         nuevo="            pass\n"),
+    dict(id="e63-consola-va-al-portal", pruebas=[OC_CONSOLA],
+         viejo="    con_nave = [(i, rsv) for i, rsv in con_nave if not _otro_contenedor(naviera_clave, rsv)]\n",
+         nuevo=""),
+    dict(id="e63-consola-abre-el-navegador", pruebas=[OC_CONSOLA],
+         viejo='    if not con_nave:\n        reg.paso(f"De las filas de {nombre}',
+         nuevo='    if False:\n        reg.paso(f"De las filas de {nombre}'),
+    dict(id="e63-consola-sin-resumen", pruebas=[OC_CONSOLA],
+         viejo='                 f"no abro el navegador ni entro al portal.")\n        resumen()\n',
+         nuevo='                 f"no abro el navegador ni entro al portal.")\n'),
+    # Los ajustes reefer: otra opción, otro paso, otra evidencia u otro nombre de la lista, el campo que falla y sigue,
+    # sin anotarlo, o como antes (la primera opción, sin el ayudante).
+    dict(id="e63-otro-reefer", pruebas=[RF_ES, RF_ELIGE], viejo='MK_REEFER = "Standard (40' + chr(0xB4) + ')"\n',
+         nuevo="MK_REEFER = \"Standard (40')\"\n"),
+    dict(id="e63-reefer-otro-paso", pruebas=[RF_ES, RF_SIN_UNA, RF_DECORADOR],
+         viejo='MK_TIPO_REEFER = "Tipo de contenedor reefer de MAERSK"\n',
+         nuevo='MK_TIPO_REEFER = "Tipo de contenedor de MAERSK"\n'),
+    dict(id="e63-reefer-otra-evidencia", pruebas=[RF_ELIGE, RF_SIN_UNA, RF_DECORADOR, RF_LLAMADA],
+         viejo='f"mk_f{fila}_reefer")\n', nuevo='f"mk_f{fila}_contenedor")\n'),
+    dict(id="e63-reefer-otra-lista", pruebas=[RF_ELIGE, RF_SIN_UNA, RF_DECORADOR, RF_LLAMADA],
+         viejo='"lista de tipos de contenedor reefer"', nuevo='"lista de tipos de contenedor"'),
+    dict(id="e63-reefer-el-campo-que-falla-sigue", pruebas=[RF_FALLA],
+         viejo='        raise ObjetivoNoEncontrado(MK_TIPO_REEFER, f"el campo «Select reefer',
+         nuevo='        return\n        raise ObjetivoNoEncontrado(MK_TIPO_REEFER, f"el campo «Select reefer'),
+    dict(id="e63-reefer-sin-anotar", pruebas=[RF_ELIGE], viejo='    det.append("reeferCont=" + MK_REEFER)\n', nuevo=""),
+    dict(id="e63-reefer-como-antes", pruebas=[RF_LLAMADA],
+         viejo="        _mk_elegir_reefer(page, reg, det, f)\n",
+         nuevo=('        rc = page.get_by_placeholder("Select reefer container type and size").first\n'
+                '        rc.click(timeout=4000)\n'
+                '        page.locator("mc-option:visible").first.click(timeout=3000)\n')),
 ]

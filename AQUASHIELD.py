@@ -592,6 +592,21 @@ def _con_la_ruta_de_la_fila(reservar):
     return reservar_con_la_ruta
 
 
+def _mk_con_el_contenedor_de_la_fila(reservar):
+    """Decorador de reservar_maersk: la fila que pide otro contenedor que el de las filas (_otro_contenedor) no llega
+    al portal. Queda NO ENVIADA con el motivo, sin tocar la página (decisión de Marcelo, encargo 63,
+    CICLO-maersk-otro-contenedor-y-reefer.md). Va por dentro de los de la nave y la ruta: la fila sin nave o sin ruta
+    dice eso. Los dos orquestadores ya la apartan antes de abrir el navegador; esto cuida cualquier otro camino."""
+    def reservar_con_el_contenedor(page, reserva, creds, reg, on_pausa=None):
+        motivo = _otro_contenedor("maersk", reserva)
+        if motivo:
+            return _sin_el_contenedor(reg, (reserva or {}).get("fila"), motivo)
+        return reservar(page, reserva, creds, reg, on_pausa=on_pausa)
+    reservar_con_el_contenedor.__name__ = reservar.__name__
+    reservar_con_el_contenedor.__doc__ = reservar.__doc__
+    return reservar_con_el_contenedor
+
+
 def _temp_reserva(reserva):
     """Temperatura de la fila; si no viene en la planilla, la de config.json (_temperatura_reefer)."""
     return str((reserva or {}).get("temp") or "").strip() or _temperatura_reefer()
@@ -3121,6 +3136,38 @@ def _sin_ruta(reg, fila, falta):
     reg.paso(f"✗ fila {fila}: {NO_ENVIADA} · {falta}. No entro al portal por ella: escribe {que} en la planilla y "
              f"vuelve a armar la reserva.")
     return (NO_ENVIADA, falta)
+
+
+# El contenedor de las filas de MAERSK (decisión de Marcelo, encargo 63, CICLO-maersk-otro-contenedor-y-reefer.md):
+# MAERSK elige siempre «40 Reefer High» y, en los ajustes reefer, «Standard (40´)» (MK_CONTENEDOR, MK_REEFER), que
+# corresponden a este. Es el de las 36 filas de las planillas de este equipo, que no traen columna de contenedor: los
+# dos lectores les dan este valor (medido el 2026-10-13). Una fila de MAERSK que pide otro queda NO ENVIADA sin entrar
+# al portal.
+CONTENEDOR_DE_LAS_FILAS = "40 HC REEFER"
+
+
+def _otro_contenedor(nav, reserva):
+    """El motivo de la NO ENVIADA si la fila es de MAERSK ('nav', su clave) y su contenedor no es
+    CONTENEDOR_DE_LAS_FILAS, sin distinguir mayúsculas y con los espacios de a uno; si no, "". Un contenedor vacío
+    tampoco lo es: lo da la consola con la columna y la celda vacía (el panel web le da CONTENEDOR_DE_LAS_FILAS, y
+    los dos, sin la columna). Las otras navieras no miran el contenedor (decisión de Marcelo, encargo 63)."""
+    if nav != "maersk":
+        return ""
+    cont = " ".join(str((reserva or {}).get("contenedor") or "").split())
+    if cont.upper() == CONTENEDOR_DE_LAS_FILAS:
+        return ""
+    if not cont:
+        return f"la fila no dice qué contenedor pide, y en MAERSK el programa reserva solo «{CONTENEDOR_DE_LAS_FILAS}»"
+    return f"la fila pide el contenedor «{cont[:40]}», y en MAERSK el programa reserva solo «{CONTENEDOR_DE_LAS_FILAS}»"
+
+
+def _sin_el_contenedor(reg, fila, motivo):
+    """La fila de MAERSK pide otro contenedor ('motivo', de _otro_contenedor): no se entra al portal por ella. Como
+    _sin_ruta, lo deja en pantalla y en log.txt y devuelve NO ENVIADA con el motivo, que quien la llama deja en la
+    planilla (decisión de Marcelo, encargo 63)."""
+    reg.paso(f"✗ fila {fila}: {NO_ENVIADA} · {motivo}. No entro al portal por ella: resérvala a mano en el portal, o "
+             f"corrige el contenedor en la planilla si la fila pide «{CONTENEDOR_DE_LAS_FILAS}».")
+    return (NO_ENVIADA, motivo)
 
 
 # Las letras (las del castellano, en mayúsculas) y los números de una palabra de nave: la misma clase con que
@@ -10267,6 +10314,7 @@ def _mk_marcar_terminos(page, reg, f):
 @_con_la_nave_de_la_fila
 @_con_la_ruta_de_la_fila
 @_sin_clic_a_ciegas("mk")
+@_mk_con_el_contenedor_de_la_fila
 def reservar_maersk(page, reserva, creds, reg, on_pausa=None):
     """MAERSK: llena 'Booking Information' (ruta, commodity, contenedor, fecha de zarpe),
     pasa a 'Select sailing', elige nave leyendo la pantalla, elige la fecha de retiro con la regla de
@@ -10371,34 +10419,10 @@ def reservar_maersk(page, reserva, creds, reg, on_pausa=None):
 
     # Ajustes reefer (van DESPUES del contenedor principal): tipo reefer y
     # temperatura. El input[name=reeferContainer] esta oculto; el campo real se
-    # alcanza por su placeholder y trae 'showlistonfocus'.
+    # alcanza por su placeholder y trae 'showlistonfocus'. El tipo, la única opción «Standard (40´)», con la evidencia
+    # de la lista (_mk_elegir_reefer; decisión de Marcelo, encargo 63).
     if es_reefer:
-        import re as _re3
-        size_tok = "40"
-        for n in ("45", "40", "20"):
-            if n in cont:
-                size_tok = n; break
-        try:
-            rc = page.get_by_placeholder("Select reefer container type and size").first
-            rc.scroll_into_view_if_needed(timeout=3000)
-            rc.click(timeout=4000)
-            esperar(page, 1.5)
-            elegido = ""
-            for _ in range(10):
-                op = page.locator("mc-option:visible")
-                if op.count():
-                    cand = op.filter(has_text=_re3.compile(_re3.escape(size_tok)))
-                    target = cand.first if cand.count() else op.first
-                    elegido = (target.text_content() or "").strip()[:28]
-                    target.click(timeout=3000)
-                    break
-                esperar(page, 0.6)
-            reg.info(f"reefer cont: {elegido or 'sin opcion'}")
-            if elegido:
-                det.append("reeferCont=" + elegido)
-            esperar(page, 1.5)
-        except Exception as e:
-            reg.info(f"reefer cont err: {str(e)[:45]}")
+        _mk_elegir_reefer(page, reg, det, f)
         temp = _temp_reserva(reserva)
         try:
             t = page.locator("#mc-input-reeferTemperatureInput").first
@@ -10606,8 +10630,17 @@ def _mk_fecha(page, reserva, reg, det):
 # el retiro del contenedor vacío en «Additional details», y la fila quedó NO ENVIADA en la fecha de retiro.
 MK_CONTENEDOR = "40 Reefer High"
 MK_TIPO_CONTENEDOR = "Tipo de contenedor de MAERSK"
-# Cuántas veces lee la lista, una cada 0,5 s, hasta que dos lecturas seguidas den lo mismo (llega de a poco, como la de
-# las sugerencias: _mk_ciudad). Hipótesis, sin medir: la lista de opciones no se guardó nunca hasta el encargo 62.
+# El tipo de contenedor de los ajustes reefer, en «Select reefer container type and size» (decisión de Marcelo, encargo
+# 63, CICLO-maersk-otro-contenedor-y-reefer.md): la única opción de la lista cuyo texto entero es este, con el acento
+# agudo (U+00B4) que trae el portal. Hasta el encargo 63 pulsaba la primera opción con «40» (o, sin ninguna, la
+# primera): en las 21 filas de MAERSK de logs/, del 21-09 al 08-10, fue esta, con ese mismo carácter, y también en las 7
+# que llegaron a la guarda. El HTML guardado del 29 y el 30-09 la trae como valor del campo (reeferContainer), sin las
+# opciones.
+MK_REEFER = "Standard (40´)"
+MK_TIPO_REEFER = "Tipo de contenedor reefer de MAERSK"
+# Cuántas veces lee cada lista, una cada 0,5 s, hasta que dos lecturas seguidas den lo mismo (llega de a poco, como la
+# de las sugerencias: _mk_ciudad). Hipótesis, sin medir: las listas de opciones no se guardaron nunca hasta el encargo
+# 62 (el tipo de contenedor) y el 63 (el de los ajustes reefer).
 MK_LECTURAS_CONTENEDOR = 12
 
 
@@ -10618,32 +10651,22 @@ def _mk_opciones_de_contenedor(page):
     return op, [" ".join((t or "").split()) for t in op.all_text_contents()]
 
 
-def _mk_sin_un_contenedor(textos):
-    """Lo que buscaba _mk_contenedor cuando la lista no trae una sola «40 Reefer High», para el motivo de la NO
+def _mk_sin_una_opcion(textos, buscado, lista):
+    """Lo que buscaba _mk_elegir_unica cuando la lista no trae una sola opción 'buscado', para el motivo de la NO
     ENVIADA: cuántas la traen y cuáles había (hasta 8, cada una recortada)."""
-    n = sum(t == MK_CONTENEDOR for t in textos)
+    n = sum(t == buscado for t in textos)
     vistas = ", ".join(f"«{t[:40]}»" for t in textos[:8]) + (", …" if len(textos) > 8 else "")
-    return (f"una sola opción «{MK_CONTENEDOR}» en la lista de tipos de contenedor ("
+    return (f"una sola opción «{buscado}» en la {lista} ("
             + (f"hay {n} entre {len(textos)}: {vistas}" if textos else "la lista no apareció") + ")")
 
 
-def _mk_elegir_contenedor(page, reg, det, fila, clave):
-    """Escribe 'clave' en el campo del tipo y tamaño del contenedor, espera la lista quieta (dos lecturas iguales
-    seguidas, hasta MK_LECTURAS_CONTENEDOR), deja su evidencia (mk_f<fila>_contenedor: la captura de la ventana y el
-    HTML de la página y de sus marcos, como las listas de sugerencias) y pulsa la única opción cuyo texto entero es
-    MK_CONTENEDOR. Si no hay exactamente una, si la lista cambió mientras guardaba la evidencia o si el campo o el clic
-    fallan, corta sin pulsar nada (ObjetivoNoEncontrado): la reserva queda NO ENVIADA, con la captura y el HTML de
-    _sin_clic_a_ciegas (decisión de Marcelo, encargo 62)."""
-    try:
-        cc = page.get_by_placeholder("Select container type and size").first
-        cc.scroll_into_view_if_needed(timeout=3000)
-        cc.click(timeout=4000)
-        cc.type(clave, delay=90)
-    except Exception as e:
-        reg.info(f"contenedor err: {str(e)[:50]}")
-        raise ObjetivoNoEncontrado(MK_TIPO_CONTENEDOR, f"el campo «Select container type and size» para escribir "
-                                                      f"«{clave}» ({_texto_error(e)})")
-    esperar(page, 1.2)
+def _mk_elegir_unica(page, reg, buscado, paso, lista, evidencia):
+    """Con la lista ya abierta por quien llama, la lee hasta que dos lecturas seguidas den lo mismo (hasta
+    MK_LECTURAS_CONTENEDOR), deja su evidencia ('evidencia': la captura de la ventana y el HTML de la página y de sus
+    marcos, como las listas de sugerencias) y pulsa la única opción cuyo texto entero es 'buscado'. Si no hay
+    exactamente una, si la lista cambió mientras guardaba la evidencia o si el clic falla, corta sin pulsar nada
+    (ObjetivoNoEncontrado, con 'paso'): la reserva queda NO ENVIADA, con la captura y el HTML de _sin_clic_a_ciegas.
+    La usan el tipo de contenedor (encargo 62) y el de los ajustes reefer (encargo 63), decisiones de Marcelo."""
     op, textos, anterior = None, [], None
     for vuelta in range(MK_LECTURAS_CONTENEDOR):
         esperar(page, 0.5)
@@ -10654,27 +10677,65 @@ def _mk_elegir_contenedor(page, reg, det, fila, clave):
         if textos and textos == anterior:
             break
         anterior = textos
-    _evidencia_antes_de_la_guarda(page, reg, f"mk_f{fila}_contenedor", "con la lista de tipos de contenedor",
-                                  completa=False)
-    exactas = [i for i, t in enumerate(textos) if t == MK_CONTENEDOR]
-    reg.info(f"contenedor: {len(exactas)} de las {len(textos)} opciones dicen «{MK_CONTENEDOR}»")
+    _evidencia_antes_de_la_guarda(page, reg, evidencia, f"con la {lista}", completa=False)
+    exactas = [i for i, t in enumerate(textos) if t == buscado]
+    reg.info(f"{lista}: {len(exactas)} de las {len(textos)} opciones dicen «{buscado}»")
     if len(exactas) != 1:
-        raise ObjetivoNoEncontrado(MK_TIPO_CONTENEDOR, _mk_sin_un_contenedor(textos))
+        raise ObjetivoNoEncontrado(paso, _mk_sin_una_opcion(textos, buscado, lista))
     # La evidencia toma su tiempo: si la lista ya no es la que dejó, no elige de otra.
     try:
         _, despues = _mk_opciones_de_contenedor(page)
     except Exception:
         despues = []
     if despues != textos:
-        raise ObjetivoNoEncontrado(MK_TIPO_CONTENEDOR, f"la opción «{MK_CONTENEDOR}» de la lista que guardé en la "
-                                                      f"evidencia: la lista cambió mientras la guardaba")
+        raise ObjetivoNoEncontrado(paso, f"la opción «{buscado}» de la lista que guardé en la evidencia: la lista "
+                                         f"cambió mientras la guardaba")
     try:
         op.nth(exactas[0]).click(timeout=3000)
     except Exception as e:
-        raise ObjetivoNoEncontrado(MK_TIPO_CONTENEDOR, f"la opción «{MK_CONTENEDOR}», que no aceptó el clic "
-                                                      f"({_texto_error(e)})")
+        raise ObjetivoNoEncontrado(paso, f"la opción «{buscado}», que no aceptó el clic ({_texto_error(e)})")
+
+
+def _mk_elegir_contenedor(page, reg, det, fila, clave):
+    """Escribe 'clave' en el campo del tipo y tamaño del contenedor y pulsa la única opción cuyo texto entero es
+    MK_CONTENEDOR, con la evidencia de la lista (mk_f<fila>_contenedor): _mk_elegir_unica. Si el campo falla, corta sin
+    pulsar nada (ObjetivoNoEncontrado): la reserva queda NO ENVIADA (decisión de Marcelo, encargo 62)."""
+    try:
+        cc = page.get_by_placeholder("Select container type and size").first
+        cc.scroll_into_view_if_needed(timeout=3000)
+        cc.click(timeout=4000)
+        cc.type(clave, delay=90)
+    except Exception as e:
+        reg.info(f"contenedor err: {str(e)[:50]}")
+        raise ObjetivoNoEncontrado(MK_TIPO_CONTENEDOR, f"el campo «Select container type and size» para escribir "
+                                                      f"«{clave}» ({_texto_error(e)})")
+    esperar(page, 1.2)
+    _mk_elegir_unica(page, reg, MK_CONTENEDOR, MK_TIPO_CONTENEDOR, "lista de tipos de contenedor",
+                     f"mk_f{fila}_contenedor")
     reg.info(f"contenedor tipo: {MK_CONTENEDOR}")
     det.append("cont=" + MK_CONTENEDOR)
+
+
+def _mk_elegir_reefer(page, reg, det, fila):
+    """El tipo de contenedor de los ajustes reefer: abre la lista de «Select reefer container type and size» con el
+    mismo clic de antes (el campo trae 'showlistonfocus') y pulsa la única opción cuyo texto entero es MK_REEFER, con
+    la evidencia de la lista (mk_f<fila>_reefer): _mk_elegir_unica. Si el campo falla, corta sin pulsar nada
+    (ObjetivoNoEncontrado): la reserva queda NO ENVIADA (decisión de Marcelo, encargo 63). Hasta ahí pulsaba la
+    primera opción con «40», y si algo fallaba lo anotaba («reefer cont err», que logs/ no trae) y seguía sin el
+    tipo."""
+    try:
+        rc = page.get_by_placeholder("Select reefer container type and size").first
+        rc.scroll_into_view_if_needed(timeout=3000)
+        rc.click(timeout=4000)
+    except Exception as e:
+        reg.info(f"reefer cont err: {str(e)[:45]}")
+        raise ObjetivoNoEncontrado(MK_TIPO_REEFER, f"el campo «Select reefer container type and size» para abrir su "
+                                                  f"lista ({_texto_error(e)})")
+    esperar(page, 1.5)
+    _mk_elegir_unica(page, reg, MK_REEFER, MK_TIPO_REEFER, "lista de tipos de contenedor reefer", f"mk_f{fila}_reefer")
+    reg.info(f"reefer cont: {MK_REEFER}")
+    det.append("reeferCont=" + MK_REEFER)
+    esperar(page, 1.5)
 
 
 def _mk_contenedor(page, reserva, es_reefer, reg, det):
@@ -12586,6 +12647,17 @@ def ejecutar_reservas(usuario, naviera_clave, cfg=None, on_log=None, on_pausa=No
                  f"entro al portal.")
         resumen()
         return resultados, str(carpeta)
+    # Una fila de MAERSK que pide otro contenedor (_otro_contenedor) tampoco abre el portal: queda NO ENVIADA con el
+    # motivo (decisión de Marcelo, encargo 63, CICLO-maersk-otro-contenedor-y-reefer.md).
+    for i, rsv in con_nave:
+        if _otro_contenedor(naviera_clave, rsv):
+            anotar(i, rsv, *_sin_el_contenedor(reg, rsv["fila"], _otro_contenedor(naviera_clave, rsv)))
+    con_nave = [(i, rsv) for i, rsv in con_nave if not _otro_contenedor(naviera_clave, rsv)]
+    if not con_nave:
+        reg.paso(f"De las filas de {nombre} con nave y ruta, ninguna pide el contenedor «{CONTENEDOR_DE_LAS_FILAS}»: "
+                 f"no abro el navegador ni entro al portal.")
+        resumen()
+        return resultados, str(carpeta)
 
     with sync_playwright() as p:
         ctx = _lanzar_navegador(p, perfil_dir, headless, canal, reg)
@@ -13587,6 +13659,19 @@ def _web_worker(hoja, usuario, filas_pedidas):
             if not sub_elegidas:
                 reg.paso(f"Ninguna fila de {nombre} con nave trae el puerto de carga y el destino: no abro el "
                          f"navegador ni entro al portal.")
+                continue
+            # Una fila de MAERSK que pide otro contenedor (_otro_contenedor) tampoco abre el portal: queda NO ENVIADA
+            # con el motivo (decisión de Marcelo, encargo 63, CICLO-maersk-otro-contenedor-y-reefer.md).
+            for rsv in [f for f in sub_elegidas if _otro_contenedor(nav, f)]:
+                estado, detalle = _sin_el_contenedor(reg, rsv["fila"], _otro_contenedor(nav, rsv))
+                with _LOCK:
+                    _WEB["resultados"][str(rsv["fila"])] = {
+                        "estado": estado, "detalle": detalle, "booking": "", "nave": rsv.get("nave", ""),
+                        "hora": _dt.datetime.now().strftime("%H:%M")}
+            sub_elegidas = [f for f in sub_elegidas if not _otro_contenedor(nav, f)]
+            if not sub_elegidas:
+                reg.paso(f"De las filas de {nombre} con nave y ruta, ninguna pide el contenedor "
+                         f"«{CONTENEDOR_DE_LAS_FILAS}»: no abro el navegador ni entro al portal.")
                 continue
 
             reg.paso(f"===== INICIANDO {nombre.upper()} ({len(sub_elegidas)} reserva(s)) =====")
