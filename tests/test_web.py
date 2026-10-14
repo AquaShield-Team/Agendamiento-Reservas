@@ -1269,10 +1269,148 @@ def puerto_libre(p):
         return False
 
 
+class TestPanelSoloSuPagina(PanelBase):
+    """El panel atiende solo los pedidos de su propia página, por su origen y con una marca propia de la sesión
+    (decisión de Marcelo, encargo 66, CICLO-viaje-y-origen.md). Hasta ahí atendía a cualquiera: una página de otro sitio
+    abierta en el mismo navegador podía subir una planilla, cambiar credenciales, armar una corrida o apagarlo."""
+
+    def marca(self):
+        return {self.mod.CABECERA_SESION: self.srv.marca()}
+
+    def test_pedido_ajeno(self):
+        f, p, s, cab = self.mod._pedido_ajeno, 30123, "marca_de-prueba", self.mod.CABECERA_SESION
+        host, origen = "su Host no es el del panel", "viene de otro origen"
+        otra, marca = "no lo pide la página del panel", "no trae la marca de la sesión del panel"
+        dentro = "otra página quiere mostrar el panel dentro de ella"
+        base = {"Host": f"127.0.0.1:{p}", cab: s}
+        casos = (("/api/estado", {}, ""),
+                 ("/api/estado", {"Host": f"localhost:{p}", "Origin": f"http://localhost:{p}"}, ""),
+                 ("/api/estado", {"Origin": f"http://127.0.0.1:{p}", "Sec-Fetch-Site": "same-origin"}, ""),
+                 ("/api/estado", {"Host": f"LOCALHOST:{p}"}, ""),
+                 ("/api/estado", {"Host": "otro.example"}, host),
+                 ("/api/estado", {"Host": f"otro.example:{p}"}, host),
+                 ("/api/estado", {"Host": f"127.0.0.1:{p + 1}"}, host),
+                 ("/api/estado", {"Host": "127.0.0.1"}, host),
+                 ("/api/estado", {"Host": ""}, host),
+                 ("/api/estado", {"Origin": "http://otro.example"}, origen),
+                 ("/api/estado", {"Origin": "null"}, origen),
+                 ("/api/estado", {"Origin": f"http://127.0.0.1:{p + 1}"}, origen),
+                 ("/api/estado", {"Origin": f"http://localhost:{p}"}, origen),     # otra página: la suya es la del Host
+                 ("/api/estado", {"Sec-Fetch-Site": "cross-site"}, otra),
+                 ("/api/estado", {"Sec-Fetch-Site": "same-site"}, otra),       # otro puerto de esta máquina
+                 ("/api/estado", {"Sec-Fetch-Site": "none"}, otra),            # escrita en la barra de direcciones
+                 ("/api/estado", {cab: ""}, marca),
+                 ("/api/estado", {cab: s + "x"}, marca),
+                 ("/api/estado", {cab: s[:-1]}, marca),
+                 ("/api/estado", {cab: "ñ"}, marca),
+                 ("/api/correr", {cab: ""}, marca),
+                 ("/api/no-existe", {cab: ""}, marca),
+                 ("/", {cab: ""}, ""),                                         # la página no pide la marca
+                 ("/index.html", {"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Dest": "document"}, ""),
+                 ("/", {"Sec-Fetch-Site": "none", "Sec-Fetch-Dest": "document"}, ""),
+                 ("/", {"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Dest": "empty"}, ""),
+                 ("/", {"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Dest": "iframe"}, dentro),
+                 ("/", {"Sec-Fetch-Site": "same-site", "Sec-Fetch-Dest": "empty"}, dentro),
+                 ("/", {"Sec-Fetch-Site": "cross-site"}, dentro),
+                 ("/", {"Host": "otro.example"}, host),
+                 ("/", {"Origin": "http://otro.example"}, origen),
+                 ("/app.js", {cab: ""}, ""),                                   # sus recursos tampoco
+                 ("/app.js", {"Sec-Fetch-Site": "same-origin"}, ""),
+                 ("/app.js", {"Sec-Fetch-Site": "cross-site"}, otra),
+                 ("/estilo.css", {"Sec-Fetch-Site": "none"}, otra),
+                 ("/fuentes.css", {"Host": "otro.example"}, host))
+        for ruta, cambia, motivo in casos:
+            with self.subTest(ruta=ruta, cambia=cambia):
+                self.assertEqual(f(ruta, {**base, **cambia}, p, s), motivo)
+
+    def test_las_mismas_constantes(self):
+        m = self.mod
+        # La página manda la cabecera y lee la marca como las dice el programa; soporte las repite para hablar con el
+        # panel de un proceso hijo.
+        self.assertEqual((soporte.RX_SESION, soporte.CABECERA_SESION), (m.RX_SESION, m.CABECERA_SESION))
+        self.assertEqual(m.JS_INDEX.count("const RX_SESION = /" + m.RX_SESION + "/;"), 1)
+        self.assertEqual(m.JS_INDEX.count('{ "' + m.CABECERA_SESION + '": SESION }'), 1)
+        self.assertEqual(m.HTML_INDEX.count(m.META_SESION), 1)
+        con = m.META_SESION.replace('content=""', 'content="abc_DEF-123"')
+        self.assertEqual(re.search(m.RX_SESION, con).group(1), "abc_DEF-123")
+
+    def test_la_pagina_trae_su_marca_y_no_va_dentro_de_otra(self):
+        st, cab, cuerpo = self.srv.completo("/", cabeceras={})
+        pagina = cuerpo.decode("utf-8")
+        sesion = re.search(self.mod.RX_SESION, pagina).group(1)
+        self.assertEqual((st, sesion), (200, self.srv.marca()))
+        self.assertGreaterEqual(len(sesion), 40)                    # secrets.token_urlsafe(32): 43 caracteres
+        self.assertEqual(pagina.count('name="aquashield-sesion"'), 1)
+        self.assertNotIn(sesion, self.mod.HTML_INDEX)                # la pone el panel al servirla
+        self.assertEqual((cab["X-Frame-Options"], cab["Content-Security-Policy"]), ("DENY", "frame-ancestors 'none'"))
+        # Se abre desde cualquier lado: el lanzador o un marcador, la página misma, un enlace de otro sitio.
+        for cabs in ({"Sec-Fetch-Site": "none", "Sec-Fetch-Dest": "document"},
+                     {"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Dest": "empty"},
+                     {"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Dest": "document"}):
+            with self.subTest(cabs=cabs):
+                self.assertEqual(self.srv.completo("/", cabeceras=cabs)[0], 200)
+        # Pero no dentro de otra página, ni para otra.
+        for cabs in ({"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Dest": "iframe"},
+                     {"Sec-Fetch-Site": "same-site", "Sec-Fetch-Dest": "frame"},
+                     {"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Dest": "empty"}):
+            with self.subTest(cabs=cabs):
+                st, _, cuerpo = self.srv.completo("/", cabeceras=cabs)
+                self.assertEqual((st, cuerpo.decode("utf-8")), (403, self.mod.PEDIDO_AJENO))
+
+    def test_api_sin_la_marca_no_atiende(self):
+        # Ninguna ruta de /api/ atiende sin la marca, ni con otra: ni las que leen ni las que cambian algo.
+        for ruta in RUTAS_JS:
+            for datos in (None, b"{}"):
+                for cabs in ({}, {self.mod.CABECERA_SESION: "otra"},
+                             {self.mod.CABECERA_SESION: self.srv.marca()[:-1]}):
+                    with self.subTest(ruta=ruta, post=datos is not None, cabs=cabs):
+                        st, _, cuerpo = self.srv.completo(ruta, datos, cabeceras=cabs)
+                        self.assertEqual((st, cuerpo.decode("utf-8")), (403, self.mod.PEDIDO_AJENO))
+        # Y no hizo nada: el panel sigue, sin corrida.
+        st, e = self.srv.json("/api/estado")
+        self.assertEqual((st, e["corriendo"]), (200, False))
+
+    def test_con_la_marca_desde_su_pagina_atiende(self):
+        p = self.srv.puerto
+        for cabs in ({}, {"Sec-Fetch-Site": "same-origin", "Origin": f"http://127.0.0.1:{p}"},
+                     {"Host": f"localhost:{p}", "Origin": f"http://localhost:{p}", "Sec-Fetch-Site": "same-origin"}):
+            with self.subTest(cabs=cabs):
+                self.assertEqual(self.srv.completo("/api/estado", cabeceras={**self.marca(), **cabs})[0], 200)
+
+    def test_de_otro_origen_no_atiende_aunque_traiga_la_marca(self):
+        p = self.srv.puerto
+        for ruta in ("/api/estado", "/api/config", "/app.js", "/estilo.css", "/"):
+            for cabs in ({"Host": f"aquashield.example:{p}"}, {"Host": f"127.0.0.1:{p + 1}"},
+                         {"Origin": "http://otro.example"}, {"Origin": "null"}, {"Origin": f"http://localhost:{p}"},
+                         {"Sec-Fetch-Site": "cross-site"}, {"Sec-Fetch-Site": "same-site"}):
+                with self.subTest(ruta=ruta, cabs=cabs):
+                    st, _, cuerpo = self.srv.completo(ruta, cabeceras={**self.marca(), **cabs})
+                    self.assertEqual((st, cuerpo.decode("utf-8")), (403, self.mod.PEDIDO_AJENO))
+
+    def test_sus_recursos_solo_para_su_pagina(self):
+        for ruta in ("/app.js", "/estilo.css", "/fuentes.css"):
+            for cabs, st in (({}, 200), ({"Sec-Fetch-Site": "same-origin"}, 200), ({"Sec-Fetch-Site": "cross-site"}, 403),
+                             ({"Sec-Fetch-Site": "none"}, 403)):
+                with self.subTest(ruta=ruta, cabs=cabs):
+                    self.assertEqual(self.srv.completo(ruta, cabeceras=cabs)[0], st)
+
+    def test_cada_panel_su_marca(self):
+        # Otro panel, otra sesión: otra marca, y no atiende la de este.
+        mod, _ = soporte.cargar()
+        otro = soporte.Servidor(mod).iniciar()
+        try:
+            self.assertNotEqual(otro.marca(), self.srv.marca())
+            self.assertEqual(otro.completo("/api/estado", cabeceras=self.marca())[0], 403)
+            self.assertEqual(otro.completo("/api/estado")[0], 200)
+        finally:
+            otro.apagar()
+
+
 def servidor_falso(puerto, responder):
     """Un servidor HTTP corriente (con SO_REUSEADDR, como cualquier programa escrito con http.server) en
     127.0.0.1:'puerto', que contesta lo que diga responder(método, ruta): (código, cuerpo). Anota cada pedido. Devuelve
-    (servidor, pedidos); se apaga con apagar_falso."""
+    (servidor, pedidos); se apaga con apagar_falso. Desde el encargo 66, el lanzador lee antes la página del panel («/»)
+    para tomar la marca de su sesión: ese pedido va en cada foto, también ante un programa que no es un panel."""
     pedidos = []
 
     class Falso(http.server.BaseHTTPRequestHandler):
@@ -1405,7 +1543,7 @@ class TestArranqueDelPanel(unittest.TestCase):
         try:
             hilo, puerto = self.levantar(mod, p)
             try:
-                self.assertEqual((puerto, self.llamadas, pedidos), (p + 1, [], [("GET", "/api/estado")]))
+                self.assertEqual((puerto, self.llamadas, pedidos), (p + 1, [], [("GET", "/"), ("GET", "/api/estado")]))
                 self.assertIn(self.AVISO_AJENO.format(p), mod._WEB["log"])
                 self.assertEqual(soporte.Servidor(None, p).get("/api/estado"), (404, b""))
             finally:
@@ -1575,6 +1713,27 @@ class TestArranqueDelPanel(unittest.TestCase):
                     self.assertIs(mod._panel_en(p), esperado)
                 finally:
                     oyente.close()
+        # Desde el encargo 66 el lanzador lee antes la página («/»): si la página contesta y /api/estado cierra sin
+        # contestar, tampoco es un panel. Sin este caso, el de arriba lo decide ya en la página.
+        p = puertos_seguidos(1)
+        oyente = socket.socket()
+        oyente.bind(("127.0.0.1", p))
+        oyente.listen(5)
+
+        def pagina_y_cierra(oyente=oyente):
+            with contextlib.suppress(OSError):
+                conexion, _ = oyente.accept()
+                conexion.recv(65536)
+                conexion.sendall(b"HTTP/1.0 404 Not Found\r\nContent-Length: 0\r\n\r\n")
+                conexion.close()
+                conexion, _ = oyente.accept()
+                conexion.recv(65536)
+                conexion.close()
+        threading.Thread(target=pagina_y_cierra, daemon=True).start()
+        try:
+            self.assertIs(mod._panel_en(p), False)
+        finally:
+            oyente.close()
 
     def _hijo_servidor(self, puerto, corriendo=False, emision=False):
         # Con 'emision', el panel previo está en modo emisión sin abrir ninguna llave: su es_modo_emision dice True
@@ -1598,7 +1757,10 @@ class TestArranqueDelPanel(unittest.TestCase):
         if hijo.poll() is None:
             hijo.kill()
 
-    def _esperar(self, srv, segundos=20):
+    def _esperar(self, srv, segundos=40):
+        # Hasta 40 s (hasta el encargo 66, 20): el panel de un proceso hijo carga su copia del programa antes de
+        # escuchar, y con el equipo cargado no llegó en 20 s en el control del censo del encargo 66 (la prueba sola, con
+        # sus cuatro hijos, tardó de 100 a 134 s).
         fin = time.time() + segundos
         while time.time() < fin:
             try:
@@ -1606,6 +1768,21 @@ class TestArranqueDelPanel(unittest.TestCase):
             except Exception:
                 time.sleep(0.2)
         raise AssertionError("no respondió")
+
+    def test_el_lanzador_pregunta_con_la_marca(self):
+        # El lanzador lee la marca de la página del panel que ya está (_sesion_del_panel) y le pregunta con ella: sin
+        # ella, el panel no lo atendería, y lo tomaría por otro programa. Y le pide que se apague con ella (encargo 66).
+        mod, _ = soporte.cargar()
+        srv = soporte.Servidor(mod, puertos_seguidos(1)).iniciar()
+        try:
+            self.assertEqual(mod._sesion_del_panel(srv.puerto), srv.marca())
+            previo = mod._panel_en(srv.puerto)
+            self.assertEqual((previo[0]["corriendo"], previo[1]), (False, False))
+            self.assertFalse(mod._ceder_al_previo(srv.puerto, previo, False, False))
+            srv.hilo.join(timeout=6)
+            self.assertFalse(srv.hilo.is_alive())               # se apagó: el pedido llevaba su marca
+        finally:
+            srv.apagar()
 
     def test_instancia_previa_ociosa_se_apaga(self):
         # Le pide que se apague y toma su puerto. Hasta el encargo 52 esperaba 0,6 s y, si el puerto seguía tomado,
@@ -1675,7 +1852,8 @@ class TestArranqueDelPanel(unittest.TestCase):
             hilo, puerto = self.levantar(mod, p)
             try:
                 self.assertEqual((puerto, self.llamadas), (p, []))
-                self.assertEqual(pedidos, [("GET", "/api/estado"), ("GET", "/api/config"), ("POST", "/api/apagar")])
+                self.assertEqual(pedidos, [("GET", "/"), ("GET", "/api/estado"), ("GET", "/api/config"), ("GET", "/"),
+                                           ("POST", "/api/apagar")])
             finally:
                 self.cerrar(mod, hilo)
         finally:
@@ -1812,7 +1990,7 @@ class TestArranqueDelPanel(unittest.TestCase):
                     vivo, avisos, mod = self.lanzar(p, False)
                     self.assertEqual((vivo, mod._SRV_ACTUAL), (False, None))
                     self.assertEqual(avisos, [self.texto_otro_modo(p, None, False, False)])
-                    self.assertEqual([m for m, _ in pedidos], ["GET", "GET"])
+                    self.assertEqual([m for m, _ in pedidos], ["GET", "GET", "GET"])
                     self.assertEqual(self.llamadas, [])
                 finally:
                     apagar_falso(srv)
@@ -1848,7 +2026,7 @@ class TestArranqueDelPanel(unittest.TestCase):
             self.assertEqual(mod.PANEL_ESPERA_LARGA, 5.0)
             self.assertEqual((vivo, mod._SRV_ACTUAL, self.llamadas), (False, None, []))
             self.assertEqual(avisos, [self.texto_otro_modo(p, True, False, True)])
-            self.assertEqual([r for _, r in pedidos], ["/api/estado", "/api/estado", "/api/config"])
+            self.assertEqual([r for _, r in pedidos], ["/", "/api/estado", "/", "/api/estado", "/api/config"])
         finally:
             apagar_falso(srv)
 
@@ -1885,8 +2063,8 @@ class TestArranqueDelPanel(unittest.TestCase):
                             self.assertEqual((puerto, avisos), (None, []))
                         else:
                             self.assertEqual((puerto, avisos), (p + 3, []))
-                        apagar = [] if emision or ocupado else [("POST", "/api/apagar")]
-                        self.assertEqual(pedidos, [("GET", "/api/estado"), ("GET", "/api/config")] + apagar)
+                        apagar = [] if emision or ocupado else [("GET", "/"), ("POST", "/api/apagar")]
+                        self.assertEqual(pedidos, [("GET", "/"), ("GET", "/api/estado"), ("GET", "/api/config")] + apagar)
                         self.assertTrue(puerto_libre(p))                  # el base queda sin tomar
                         self.assertEqual(self.llamadas, [])
                     finally:
@@ -1910,7 +2088,7 @@ class TestArranqueDelPanel(unittest.TestCase):
             vivo, avisos, mod = self.lanzar(p, False)
             self.assertEqual((vivo, mod._SRV_ACTUAL, self.llamadas), (False, None, []))
             self.assertEqual(avisos, [self.texto_otro_modo(p + 1, True, False, True)])
-            self.assertEqual([r for _, r in pedidos], ["/api/estado", "/api/estado", "/api/config"])
+            self.assertEqual([r for _, r in pedidos], ["/", "/api/estado", "/", "/api/estado", "/api/config"])
             self.assertTrue(puerto_libre(p))
         finally:
             apagar_falso(srv)
@@ -1951,7 +2129,7 @@ class TestArranqueDelPanel(unittest.TestCase):
         try:
             hilo, puerto = self.levantar(mod, p)
             try:
-                self.assertEqual((puerto, self.llamadas, pedidos), (p, [], [("GET", "/api/estado")]))
+                self.assertEqual((puerto, self.llamadas, pedidos), (p, [], [("GET", "/"), ("GET", "/api/estado")]))
                 self.assertFalse([linea for linea in mod._WEB["log"] if "lo tiene otro programa" in linea])
             finally:
                 self.cerrar(mod, hilo)
@@ -1979,9 +2157,9 @@ class TestArranqueDelPanel(unittest.TestCase):
             hilo, puerto = self.levantar(mod, p)
             try:
                 self.assertEqual((puerto, avisos, self.llamadas), (p + 1, [], []))
-                self.assertEqual(pedidos_ocioso,
-                                 [("GET", "/api/estado"), ("GET", "/api/config"), ("POST", "/api/apagar")])
-                self.assertEqual(pedidos_otro, [("GET", "/api/estado"), ("GET", "/api/config")])
+                self.assertEqual(pedidos_ocioso, [("GET", "/"), ("GET", "/api/estado"), ("GET", "/api/config"),
+                                                  ("GET", "/"), ("POST", "/api/apagar")])
+                self.assertEqual(pedidos_otro, [("GET", "/"), ("GET", "/api/estado"), ("GET", "/api/config")])
             finally:
                 self.cerrar(mod, hilo)
         finally:
@@ -2021,7 +2199,8 @@ class TestArranqueDelPanel(unittest.TestCase):
             hilo, puerto = self.levantar(mod, p)
             try:
                 self.assertEqual((puerto, self.llamadas), (p, []))
-                self.assertEqual(pedidos, [("GET", "/api/estado"), ("GET", "/api/config"), ("POST", "/api/apagar")])
+                self.assertEqual(pedidos, [("GET", "/"), ("GET", "/api/estado"), ("GET", "/api/config"), ("GET", "/"),
+                                           ("POST", "/api/apagar")])
             finally:
                 self.cerrar(mod, hilo)
         finally:

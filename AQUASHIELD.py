@@ -2970,7 +2970,11 @@ def _y_el_transito(salidas, desde, transito):
     ilegibles = sum(1 for x in tiempos if not _transito_legible(x))
     if ilegibles:
         return f", y no pude leer el tiempo de tránsito de {ilegibles} de ellas"
-    return f", y {tiempos.count(min(tiempos))} de ellas tienen el menor tiempo de tránsito, {_texto_transito(min(tiempos))}"
+    # Las que empatan, contadas sin list.count: desde el encargo 66, CMA-CGM llega aquí (por _por_que_sin_salida), y la
+    # foto de sus lecturas sin plazo (test_datadome) toma cada «.count(» por el de Playwright.
+    el_menor = min(tiempos)
+    empatan = sum(1 for x in tiempos if x == el_menor)
+    return f", y {empatan} de ellas tienen el menor tiempo de tránsito, {_texto_transito(el_menor)}"
 
 
 def _anotar_desempate(reg, salidas, desde, transito):
@@ -3236,6 +3240,23 @@ def _trae_la_nave(texto, palabras):
     calzan en su JavaScript con _JS_TRAE_LA_NAVE, que es la misma regla."""
     t = str(texto or "").upper()
     return bool(palabras) and all(_palabra_en(t, p) >= 0 for p in palabras)
+
+
+def _palabras_del_viaje(viaje):
+    """Las palabras del viaje de la fila, en mayúsculas y separadas por espacios, como las toma COSCO (que deja
+    fuera las de una letra): [] si la fila no trae viaje."""
+    return str(viaje or "").upper().split()
+
+
+def _trae_el_viaje(texto, viaje):
+    """Si 'texto' (lo que la salida muestra de su nave, con su viaje) trae el viaje de la fila: cada una de sus palabras
+    como palabra entera y sin distinguir mayúsculas (_trae_la_nave), la regla con que ya comparan MAERSK y COSCO; «541W»
+    no es el viaje de «1541W» ni de «541WA». Sin viaje en la fila, True: no hay viaje que comparar. Decisión de Marcelo,
+    encargo 66 (CICLO-viaje-y-origen.md): en las seis navieras, si la fila trae viaje, la salida elegida lo trae; hasta
+    ahí ONE, MSC, HYUNDAI y CMA-CGM elegían por la nave sola. Su JavaScript recibe las palabras (_palabras_del_viaje) y
+    calza con _traeLaNave, la misma regla."""
+    palabras = _palabras_del_viaje(viaje)
+    return not palabras or _trae_la_nave(texto, palabras)
 
 
 # La misma regla para el JavaScript de ONE, HYUNDAI, MAERSK y CMA: cada uno la lleva al principio de su función y calza
@@ -3577,15 +3598,18 @@ _JS_ONE_TARJETAS_NAVE = """(nave) => {""" + _JS_TRAE_LA_NAVE + """
     }).filter(x => x.calza);
 }"""
 
-# Pulsa el botón de reserva de la tarjeta elegida, {i, nave, salida, directa}, solo si es el único de esa tarjeta y si,
-# al volver a leer las tarjetas con _JS_ONE_TARJETAS_NAVE en el mismo JavaScript, la tarjeta i sigue siendo la elegida:
-# calza con la nave, sale el día 'salida' y es directa o no como la elegida. Si no, no pulsa nada. Antes cierra el
+# Pulsa el botón de reserva de la tarjeta elegida, {i, nave, salida, directa, viaje}, solo si es el único de esa
+# tarjeta y si, al volver a leer las tarjetas con _JS_ONE_TARJETAS_NAVE en el mismo JavaScript, la tarjeta i sigue
+# siendo la elegida: calza con la nave, sale el día 'salida', es directa o no como la elegida y, si la fila trae viaje
+# (sus palabras, _palabras_del_viaje), el enlace de su nave lo trae (encargo 66). Si no, no pulsa nada. Antes cierra el
 # diálogo que tape la lista, como hacía _JS_ONE_SELECT_NAVE. Hasta el encargo 34 pulsaba la i-ésima sin volver a
 # leerla: desde entonces, dos tarjetas de la misma nave y el mismo día pueden diferir solo en si son directas, como en
 # HYUNDAI (_JS_HMM_CLIC_TARJETA; CICLO-one-y-maersk-eligen-la-nave.md).
-_JS_ONE_CLIC_TARJETA = """(args) => {
+_JS_ONE_CLIC_TARJETA = """(args) => {""" + _JS_TRAE_LA_NAVE + """
     const t = (""" + _JS_ONE_TARJETAS_NAVE + """)(args.nave).find(x => x.i === args.i);
     if (!t || t.salida !== args.salida || t.directa !== args.directa) return false;
+    const viaje = args.viaje || [];
+    if (viaje.length && !_traeLaNave(t.nave, viaje)) return false;
     const i = args.i;
     const dlg = document.querySelector('[class*=dialog__overlay],[id^=dialog-portal] [role=dialog],[role=dialog]');
     if (dlg) {
@@ -4621,11 +4645,19 @@ def reservar_one(page, reserva, creds, reg, on_pausa=None):
     # Solo las 8 semanas de la nota de la planilla: si la nave no está, el REVISAR dice hasta qué fecha buscó
     # (ONE_SOLO_8; decisión de Marcelo, CICLO-ampliar-msc-y-cma.md).
     hay_nave = bool(tarjetas)
+    desde = _desde(reserva)
+    # Si la fila trae viaje, solo las tarjetas cuyo enlace de la nave lo trae (_trae_el_viaje); si la nave está y
+    # ninguna lo trae, NO ENVIADA con la lista, sin elegir otra (decisión de Marcelo, encargo 66,
+    # CICLO-viaje-y-origen.md). ONE no amplía: lo decide en sus 8 semanas. Hasta ahí elegía entre todas las de la nave,
+    # sin mirar el viaje.
+    con_el_viaje = [t for t in tarjetas if _trae_el_viaje(t.get("nave"), reserva.get("viaje"))]
+    if tarjetas and not con_el_viaje:
+        return _one_sin_una_salida(page, reg, reserva, tarjetas, "sin-viaje", desde)
+    tarjetas = con_el_viaje
     sin_boton = [t for t in tarjetas if t.get("botones") != 1]
     if sin_boton:
         reg.info(f"{len(sin_boton)} tarjeta(s) con la nave sin un solo botón de reserva: no cuentan")
     tarjetas = [t for t in tarjetas if t.get("botones") == 1]
-    desde = _desde(reserva)
     # El día de la próxima salida, la directa; solo si ninguna lo es (o todas), el tránsito (decisión de Marcelo, la regla
     # de HYUNDAI; CICLO-one-y-maersk-eligen-la-nave.md). Hasta el encargo 34, la directa y la con transbordo del mismo
     # día y el mismo tránsito empataban, y la reserva quedaba NO ENVIADA.
@@ -4640,9 +4672,9 @@ def reservar_one(page, reserva, creds, reg, on_pausa=None):
                      f"{desde:%d-%m-%Y}")
             _anotar_desempate(reg, _one_salidas(tarjetas), desde, _one_transito)
         try:
-            seleccionada = bool(page.evaluate(_JS_ONE_CLIC_TARJETA, {"i": elegida["i"], "nave": reserva["nave"],
-                                                                     "salida": elegida.get("salida", ""),
-                                                                     "directa": elegida.get("directa")}))
+            seleccionada = bool(page.evaluate(_JS_ONE_CLIC_TARJETA, {
+                "i": elegida["i"], "nave": reserva["nave"], "salida": elegida.get("salida", ""),
+                "directa": elegida.get("directa"), "viaje": _palabras_del_viaje(reserva.get("viaje"))}))
             if not seleccionada:
                 reg.info("no pulsé el botón de la tarjeta elegida: al volver a leer la lista, ya no estaba, no era la "
                          "misma o no traía un solo botón de reserva")
@@ -5044,6 +5076,15 @@ def _msc_transito(x):
     if not etd or not eta or eta <= etd:
         return None
     return eta - etd
+
+
+def _msc_es_la_pedida(tarjeta, toks, viaje):
+    """Si una tarjeta de MSC (de _JS_MSC_NAVES) es la salida pedida: con su «Select» a la vista, y en «Vessel / Voyage»
+    la nave de la fila (sus palabras, 'toks'; _trae_la_nave) y, si la fila trae viaje, ese viaje (_trae_el_viaje;
+    decisión de Marcelo, encargo 66, CICLO-viaje-y-origen.md). El campo va tal como lo lee _JS_MSC_NAVES: las dos
+    reglas separan las palabras por cualquier signo, también la barra, y no distinguen mayúsculas."""
+    texto = tarjeta.get("nave")
+    return bool(tarjeta.get("sel") and _trae_la_nave(texto, toks) and _trae_el_viaje(texto, viaje))
 
 
 def _msc_elegir_salida(exacta, desde):
@@ -5510,8 +5551,9 @@ def reservar_msc(page, reserva, creds, reg, on_pausa=None):
     _msc_cookies(page, reg)
     reg.captura(page, f"msc_f{f}_2b_schedules", full=True)
 
-    # Seleccionar la NAVE pedida. Solo se acepta la que calza con nave Y viaje:
-    # elegir "alguna otra" es un error operativo, no una aproximacion util.
+    # Seleccionar la NAVE pedida. Solo se acepta la que calza con nave Y viaje: elegir "alguna otra" es un error
+    # operativo, no una aproximacion util. El viaje, desde el encargo 66 (decisión de Marcelo, CICLO-viaje-y-origen.md):
+    # hasta ahí este comentario lo decía, y el programa comparaba solo la nave.
     reg.paso(f"Buscando la nave '{reserva['nave']}' en los itinerarios...")
     def _norm(x):
         return " ".join(str(x or "").upper().replace("/", " ").split())
@@ -5529,8 +5571,11 @@ def reservar_msc(page, reserva, creds, reg, on_pausa=None):
     # Si la nave no está en lo que muestra la lista, baja por ella (no es un clic) para que MSC cargue más itinerarios,
     # hasta encontrarla o hasta que no lleguen tarjetas nuevas (_msc_bajar; decisión de Marcelo,
     # CICLO-ampliar-msc-y-cma.md). Hasta el encargo 33 cortaba con lo que había cargado de entrada.
+    # La salida pedida es la nave y, si la fila trae viaje, ese viaje (_msc_es_la_pedida; encargo 66): si la nave está
+    # sin él, también baja por la lista, como MAERSK y COSCO amplían.
+    viaje = reserva.get("viaje")
     bajadas, por_que = 0, ""
-    while not any(x.get("sel") and _trae_la_nave(_norm(x.get("nave")), toks) for x in naves):
+    while not any(_msc_es_la_pedida(x, toks, viaje) for x in naves):
         if bajadas >= AMPLIAR_MAX:
             por_que = f"bajé por la lista {AMPLIAR_MAX} veces, el tope"
             break
@@ -5546,6 +5591,11 @@ def reservar_msc(page, reserva, creds, reg, on_pausa=None):
     # Todas las palabras de la nave en el campo de la nave de la tarjeta (_trae_la_nave). Hasta 9051f43, una fila sin
     # palabras de nave calzaba con todas las tarjetas (CICLO-cola-tres-items.md).
     exacta = [n for n in naves if n.get("sel") and _trae_la_nave(_norm(n.get("nave")), toks)]
+    # Si la nave está y ninguna de sus salidas trae el viaje de la fila, NO ENVIADA con la lista, sin elegir otra
+    # (encargo 66).
+    if exacta and not any(_msc_es_la_pedida(n, toks, viaje) for n in exacta):
+        return _msc_salida_ambigua(page, reg, reserva, exacta, "sin-viaje", desde)
+    exacta = [n for n in exacta if _msc_es_la_pedida(n, toks, viaje)]
     elegida, motivo = _msc_elegir_salida(exacta, desde) if exacta else (None, "")
     if exacta and elegida is None:
         return _msc_salida_ambigua(page, reg, reserva, exacta, motivo, desde)
@@ -7491,16 +7541,19 @@ _JS_HMM_TARJETAS = """(toks)=>{""" + _JS_TRAE_LA_NAVE + """
     });
 }"""
 
-# Pulsa el «Book Now» de la tarjeta elegida, {i, toks, salida, directa}: vuelve a leer las tarjetas con
+# Pulsa el «Book Now» de la tarjeta elegida, {i, toks, salida, directa, viaje}: vuelve a leer las tarjetas con
 # _JS_HMM_TARJETAS, en el mismo JavaScript, y pulsa el i-ésimo «Book Now» a la vista solo si la tarjeta i sigue siendo
-# la elegida: su «1st Vessel» calza con toks, se puede reservar, sale el día 'salida' y es directa o no como la elegida.
+# la elegida: su «1st Vessel» calza con toks y, si la fila trae viaje (sus palabras, _palabras_del_viaje), lo trae
+# (encargo 66), se puede reservar, sale el día 'salida' y es directa o no como la elegida.
 # Si no, no pulsa nada. Hasta e8b027b pulsaba el i-ésimo sin volver a leer la tarjeta, y entre leer y pulsar corre la
 # evidencia de la lista ampliada (revisión del encargo 32, CICLO-ampliar-la-busqueda.md). Hasta 2044222 no miraba si
 # era directa: desde a37373f, dos tarjetas del mismo día y la misma nave pueden diferir solo en eso
 # (CICLO-ampliar-msc-y-cma.md).
-_JS_HMM_CLIC_TARJETA = """(args)=>{
+_JS_HMM_CLIC_TARJETA = """(args)=>{""" + _JS_TRAE_LA_NAVE + """
     const t = (""" + _JS_HMM_TARJETAS + """)(args.toks)[args.i];
     if (!t || !t.calza || !t.disponible || t.salida !== args.salida || t.directa !== args.directa) return false;
+    const viaje = args.viaje || [];
+    if (viaje.length && !_traeLaNave(t.primera, viaje)) return false;
     const vis = e => {
         const r = e.getBoundingClientRect();
         return e.offsetParent !== null && r.width > 0 && r.height > 0;
@@ -7525,6 +7578,13 @@ _JS_HMM_SEMANAS = """()=>{
     return {visible: s.offsetParent !== null, actual: elegida ? n(elegida) : null,
             opciones: [...s.options].filter(o => n(o) !== null).map(o => ({texto: o.textContent.trim(), n: n(o)}))};
 }"""
+
+
+def _hmm_es_la_pedida(tarjeta, viaje):
+    """Si una tarjeta de HYUNDAI (de _JS_HMM_TARJETAS) es la salida pedida: su «1st Vessel» trae la nave de la fila
+    (calza) y, si la fila trae viaje, también ese viaje (_trae_el_viaje sobre el mismo «1st Vessel», donde va entre
+    paréntesis; decisión de Marcelo, encargo 66, CICLO-viaje-y-origen.md)."""
+    return bool(tarjeta.get("calza") and _trae_el_viaje(tarjeta.get("primera"), viaje))
 
 
 def _hmm_salidas(tarjetas):
@@ -7593,8 +7653,21 @@ def _hmm_ampliar(page, reg):
     return ""
 
 
-def _hmm_indice_anterior(page, toks, reg):
-    """La interfaz anterior de HYUNDAI (a.preview-area), como hasta ahora: _JS_HMM_INDICE_NAVE, con hasta 4 lecturas."""
+def _hmm_indice_anterior(page, toks, reg, viaje=()):
+    """La interfaz anterior de HYUNDAI (a.preview-area), como hasta ahora: _JS_HMM_INDICE_NAVE, con hasta 4 lecturas. Si
+    la fila trae viaje (sus palabras, 'viaje'), la tarjeta tiene que traerlas también, cada una como palabra entera;
+    si no hay una así y sí una con la nave, el motivo es «sin_viaje», y reservar_hyundai no elige otra (decisión de
+    Marcelo, encargo 66). Esa interfaz no separa la nave que sale de Chile: calza con el texto de toda la tarjeta."""
+    res_nave = _hmm_leer_anterior(page, list(toks) + list(viaje), reg)
+    if viaje and res_nave.get("idx", -1) < 0 and res_nave.get("motivo") == "no_encontrada":
+        sin_el_viaje = _hmm_leer_anterior(page, toks, reg)
+        if sin_el_viaje.get("idx", -1) >= 0 or sin_el_viaje.get("motivo") == "cerrada":
+            return {"idx": -1, "motivo": "sin_viaje"}
+    return res_nave
+
+
+def _hmm_leer_anterior(page, toks, reg):
+    """_JS_HMM_INDICE_NAVE con 'toks', con hasta 4 lecturas mientras no encuentra una tarjeta."""
     res_nave = {"idx": -1, "motivo": "no_encontrada"}
     for _ in range(4):
         try:
@@ -7620,14 +7693,18 @@ def _hmm_elegir_nave(page, reg, reserva, toks):
     con 'busqueda' (fechas, por qué dejó de ampliar) si la nave no apareció, o {'corte': (estado, detalle)} si
     no queda una sola salida. Sin tarjetas con «Book Now», la interfaz anterior (_hmm_indice_anterior). Hasta 4cae528
     calzaba con el texto de toda la tarjeta y pulsaba la primera en la página que traía la nave, en cualquier campo."""
+    viaje = reserva.get("viaje")
     tarjetas = _hmm_leer_tarjetas(page, toks, reg)
     if not tarjetas:
-        return _hmm_indice_anterior(page, toks, reg)
+        return _hmm_indice_anterior(page, toks, reg, _palabras_del_viaje(viaje))
+
+    # La salida pedida es la nave y, si la fila trae viaje, ese viaje (_hmm_es_la_pedida; encargo 66): si no está,
+    # amplía, también con la nave sin ese viaje, como MAERSK y COSCO.
     por_que = ""
-    if not any(t.get("calza") for t in tarjetas):
+    if not any(_hmm_es_la_pedida(t, viaje) for t in tarjetas):
         por_que = _hmm_ampliar(page, reg)
         if not por_que:
-            reg.paso("La nave no estaba en lo que mostró HYUNDAI: amplié «Duration» y busco de nuevo.")
+            reg.paso("La salida pedida no estaba en lo que mostró HYUNDAI: amplié «Duration» y busco de nuevo.")
             if not _hmm_realclick(page, "Retrieve", reg, "buscar itinerarios"):
                 _hmm_next(page, "retrieve", reg, "buscar itinerarios (js)")
             tarjetas = _hmm_leer_tarjetas(page, toks, reg, antes=len(tarjetas))
@@ -7640,10 +7717,18 @@ def _hmm_elegir_nave(page, reg, reserva, toks):
         reg.info(f"nave '{reserva['nave']}': ninguna tarjeta la trae como 1st Vessel; "
                  f"{_hasta_donde_busque(fechas, por_que)}")
         return {"idx": -1, "motivo": "no_encontrada", "busqueda": (fechas, por_que)}
-    disponibles = [t for t in de_la_nave if t.get("disponible") and t.get("book") == 1]
+    desde = _desde(reserva)
+    # La nave está y ninguna de sus tarjetas trae el viaje de la fila: NO ENVIADA, sin elegir otra (encargo 66). La
+    # lista ya quedó en su evidencia (hmm_f<fila>_naves y, si amplió, _naves_mas).
+    if not any(_hmm_es_la_pedida(t, viaje) for t in de_la_nave):
+        reg.info("tarjetas con la nave como 1st Vessel: " + " | ".join(f"{t.get('primera')} sale {t.get('salida')}"
+                                                                       for t in de_la_nave[:6])[:400])
+        sin_viaje = _por_que_sin_salida("sin-viaje", _hmm_salidas(de_la_nave), desde)
+        return {"corte": _no_enviada(reg, f"HYUNDAI: no elegí salida para esa nave ('{reserva['nave']}'): "
+                                          f"{sin_viaje}. Revisa la fila y elige la salida en el portal.")}
+    disponibles = [t for t in de_la_nave if _hmm_es_la_pedida(t, viaje) and t.get("disponible") and t.get("book") == 1]
     if not disponibles:
         return {"idx": -1, "motivo": "cerrada"}
-    desde = _desde(reserva)
     disponibles = _directas_primero(disponibles, desde, reg, _hmm_salidas)
     elegida, motivo = _proxima_salida(_hmm_salidas(disponibles), desde, _hmm_transito)
     if elegida is None:
@@ -7659,7 +7744,8 @@ def _hmm_elegir_nave(page, reg, reserva, toks):
     try:
         pulso = bool(page.evaluate(_JS_HMM_CLIC_TARJETA, {"i": elegida["i"], "toks": toks,
                                                           "salida": elegida.get("salida", ""),
-                                                          "directa": elegida.get("directa")}))
+                                                          "directa": elegida.get("directa"),
+                                                          "viaje": _palabras_del_viaje(viaje)}))
         if not pulso:
             reg.info("no pulsé el «Book Now» de la tarjeta elegida: al volver a leer la lista, ya no estaba o no era la "
                      "misma")
@@ -8160,6 +8246,11 @@ def reservar_hyundai(page, reserva, creds, reg, on_pausa=None):
     motivo_nave = res_nave.get("motivo", "no_encontrada")
 
     if idx < 0:
+        if motivo_nave == "sin_viaje":
+            # La interfaz anterior: la nave está, sin el viaje de la fila (_hmm_indice_anterior; encargo 66).
+            return _no_enviada(reg, f"HYUNDAI: no elegí salida para esa nave ('{nave_pedida}'): ninguna de las "
+                                    f"opciones de la nave trae el viaje de la fila. Revisa la fila y elige la salida "
+                                    f"en el portal.")
         if motivo_nave == "cerrada":
             reg.paso(f"Nave '{nave_pedida}' encontrada en HMM pero está CERRADA (Booking Closed).")
             reg.captura(page, f"hmm_f{f}_2b_cerrada", full=True)
@@ -11608,9 +11699,13 @@ def _cma_completar_info_extra(page, reserva, reg):
 # La lectura y la elección de «Route choices» de CMA: cada tarjeta sube desde su botón «Seleccionar»; calza la que trae
 # todas las palabras de la nave, cada una como palabra entera (_JS_TRAE_LA_NAVE; decisiones de Marcelo,
 # CICLO-cola-tres-items.md y CICLO-cola-seis-items.md), y se pulsa la primera que calza. Hasta f68ce6c iba escrita
-# dentro de _cma_seleccionar_itinerario y bastaba que cada palabra fuera parte del texto de la tarjeta.
+# dentro de _cma_seleccionar_itinerario y bastaba que cada palabra fuera parte del texto de la tarjeta. Desde el
+# encargo 66 (decisión de Marcelo, CICLO-viaje-y-origen.md), si la fila trae viaje (sus palabras, args.viaje), la que
+# calza tiene que traerlas también en su texto (conViaje), y sin una así devuelve cuántas traen la nave (deLaNave): el
+# 2026-10-14 eligió la primera con la nave, con otro viaje, porque el de la fila ya no se ofrecía.
 _JS_CMA_RUTAS = r"""(args)=>{""" + _JS_TRAE_LA_NAVE + r"""
     const toks = args.toks || [];
+    const viaje = args.viaje || [];
     const vis = e => {
         const r = e.getBoundingClientRect();
         return e.offsetParent !== null && r.width > 0 && r.height > 0;
@@ -11665,6 +11760,7 @@ _JS_CMA_RUTAS = r"""(args)=>{""" + _JS_TRAE_LA_NAVE + r"""
         let voyage = rMatch ? rMatch[1].trim() : '';
 
         const matched = _traeLaNave(upperTxt, toks);
+        const conViaje = viaje.length === 0 || _traeLaNave(upperTxt, viaje);
 
         cards.push({
             idx: i,
@@ -11672,12 +11768,13 @@ _JS_CMA_RUTAS = r"""(args)=>{""" + _JS_TRAE_LA_NAVE + r"""
             cutoff: cutoff,
             voyage: voyage,
             isSelected: isSelected,
-            matched: matched
+            matched: matched,
+            conViaje: conViaje
         });
     }
 
     // Si hay coincidencia
-    const matchIdx = cards.findIndex(c => c.matched);
+    const matchIdx = cards.findIndex(c => c.matched && c.conViaje);
     if (matchIdx >= 0) {
         const m = cards[matchIdx];
         if (m.isSelected) {
@@ -11696,7 +11793,8 @@ _JS_CMA_RUTAS = r"""(args)=>{""" + _JS_TRAE_LA_NAVE + r"""
         return s;
     });
 
-    return {ok: false, match: false, cardsCount: cards.length, ofrecidas: ofrecidas, msg: 'nave no encontrada en este bloque'};
+    return {ok: false, match: false, cardsCount: cards.length, ofrecidas: ofrecidas,
+            deLaNave: cards.filter(c => c.matched).length, msg: 'nave no encontrada en este bloque'};
 }"""
 
 
@@ -11793,9 +11891,12 @@ def _cma_ampliar(page, reg, antes):
 
 
 def _cma_seleccionar_itinerario(page, reserva, reg):
-    """En 'Route choices', selecciona la tarjeta que contenga la nave de la reserva.
+    """En 'Route choices', selecciona la tarjeta que contenga la nave de la reserva y, si la fila trae viaje, ese viaje
+    (_JS_CMA_RUTAS; decisión de Marcelo, encargo 66).
     Si no aparece, pulsa «Cargar N siguientes resultados» hasta encontrarla o hasta que el enlace desaparezca
-    (_cma_ampliar); si no la encuentra, el aviso dice hasta qué fecha buscó.
+    (_cma_ampliar); si no la encuentra, el aviso dice hasta qué fecha buscó. Devuelve (True, aviso) si la eligió;
+    (None, motivo) si la nave está y ninguna de sus rutas trae el viaje de la fila, y reservar_cma la deja NO ENVIADA;
+    y (False, aviso) si la nave no está, como antes.
     REGLA ESTRICTA: NUNCA seleccionar una nave errónea si la planilla pide una nave específica.
     Si la nave requerida no está en las opciones ofrecidas, reporta REVISAR con las opciones disponibles."""
     nave_pedida = str(reserva.get("nave") or "").strip()
@@ -11838,7 +11939,7 @@ def _cma_seleccionar_itinerario(page, reserva, reg):
         _evidencia_antes_de_la_guarda(page, reg, nombre, "en la lista de rutas", completa=False,
                                       plazo_ms=CMA_PLAZO_MS)
         try:
-            res = _cma_js(page, _JS_CMA_RUTAS, {"toks": toks})
+            res = _cma_js(page, _JS_CMA_RUTAS, {"toks": toks, "viaje": _palabras_del_viaje(viaje_pedido)})
             ultimo_resultado = res or {}
             if res.get("ok"):
                 reg.info(f"itinerario CMA: {res.get('msg')}")
@@ -11871,11 +11972,20 @@ def _cma_seleccionar_itinerario(page, reserva, reg):
         raise ObjetivoNoEncontrado("Itinerario de CMA", "la nave de la reserva: la fila no trae nave, y no elijo "
                                                         "un itinerario a ciegas")
 
+    donde = _hasta_donde_busque(_cma_fechas(page), por_que)
+    # La nave está, y ninguna de sus rutas trae el viaje de la fila (en la última lectura, la lista entera): NO ENVIADA,
+    # sin elegir otra (encargo 66). La lista quedó en su evidencia (cma_f<fila>_rutas, y _mas… si cargó más).
+    de_la_nave = int(ultimo_resultado.get("deLaNave") or 0)
+    if de_la_nave:
+        sin_viaje = _por_que_sin_salida("sin-viaje", [(None, k) for k in range(de_la_nave)], None)
+        reg.info(f"CMA · Rutas ofrecidas en el portal: {ofrecidas_txt}")
+        return None, (f"CMA: no elegí ruta para esa nave ('{nave_pedida}'): {sin_viaje} ({donde}). Revisa la fila y "
+                      f"elige la ruta en el portal.")
+
     # Si se especificó nave pero NO coincide: NUNCA ELEGIR UNA NAVE ERRÓNEA
     reg.paso(f"CMA · ALERTA: Nave '{nave_pedida}' NO disponible en las opciones del portal.")
     reg.info(f"CMA · Rutas ofrecidas en el portal: {ofrecidas_txt}")
     reg.info("CMA · NO se selecciona nave errónea para evitar reservas incorrectas.")
-    donde = _hasta_donde_busque(_cma_fechas(page), por_que)
     return False, (f"CMA: nave '{nave_pedida}' no disponible en el portal: {donde} (rutas ofrecidas: {ofrecidas_txt}). "
                    "No se seleccionó nave errónea.")
 
@@ -12416,6 +12526,8 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
         _cma_datadome_a_mitad(page, reg, on_pausa, creds, "tras la información de la carga", f)
         ok_itin, detalle_itin = _cma_seleccionar_itinerario(page, reserva, reg)
         reg.captura(page, f"cma_f{f}_4_itinerario", full=True)
+        if ok_itin is None:     # la nave está, sin el viaje de la fila (encargo 66)
+            return _no_enviada(reg, detalle_itin)
         if not ok_itin:
             reg.paso(f"CMA · Itinerario no completado: {detalle_itin}")
             return ("REVISAR", detalle_itin)
@@ -14029,18 +14141,88 @@ PUERTOS_DEL_PANEL = 4
 # los repite: test_web vigila que digan lo mismo.
 NOMBRE_DEL_MODO = {True: "EMISIÓN (reservas reales)", False: "prueba (sin emitir)"}
 
+# El panel atiende solo los pedidos de su propia página (decisión de Marcelo, encargo 66, CICLO-viaje-y-origen.md), por
+# su origen y con una marca propia de la sesión (_pedido_ajeno). Hasta ahí atendía a cualquiera que le hablara: una
+# página de otro sitio abierta en el mismo navegador podía subir una planilla, cambiar credenciales, armar una corrida o
+# apagarlo (la revisión de seguridad del encargo 65 lo dejó en su residual).
+# - La marca: un texto al azar que el panel crea al arrancar (secrets.token_urlsafe) y pone en su página (META_SESION);
+#   la página la manda en CABECERA_SESION con cada pedido a /api/. Una página de otro sitio no puede leer la del panel
+#   (el navegador no se lo deja), así que no la tiene. Quien no es un navegador, como el lanzador ante un panel que ya
+#   está, la lee de la página (_sesion_del_panel).
+# - El origen: el Host tiene que ser el del panel (127.0.0.1 o localhost, con su puerto): una dirección de otro sitio
+#   que apunte a esta máquina no llega; y lo que el navegador dice de dónde viene el pedido (Origin, Sec-Fetch-Site),
+#   la página misma. Un pedido sin esas cabeceras (el lanzador, las pruebas) pasa con la marca.
+# - La página del panel se abre desde cualquier lado (el lanzador, un marcador, un enlace), pero no dentro de otra
+#   página (CABECERAS_DE_LA_PAGINA, y _pedido_ajeno con Sec-Fetch-Dest).
+CABECERA_SESION = "X-AquaShield-Sesion"
+META_SESION = '<meta name="aquashield-sesion" content="">'
+RX_SESION = '<meta name="aquashield-sesion" content="([A-Za-z0-9_-]+)">'
+CABECERAS_DE_LA_PAGINA = {"X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'"}
+PEDIDO_AJENO = "El panel no atiende este pedido: no viene de su propia página. Si es la tuya, recárgala (F5)."
+
+
+def _pedido_ajeno(ruta, cabeceras, puerto, sesion):
+    """Por qué el panel no atiende un pedido, o "" si viene de su propia página (decisión de Marcelo, encargo 66).
+    'cabeceras' son las del pedido (las de http.server, o un dict con los nombres como los manda el navegador), 'puerto'
+    el del panel y 'sesion' su marca. Su página («/») se abre desde cualquier lado, pero no dentro de otra página; lo
+    demás, solo desde ella; y a /api/, solo con la marca."""
+    import hmac
+
+    def cab(nombre):
+        return str(cabeceras.get(nombre) or "").strip()
+    host = cab("Host").lower()
+    if host not in (f"127.0.0.1:{puerto}", f"localhost:{puerto}"):
+        return "su Host no es el del panel"
+    origen = cab("Origin").lower()
+    if origen and origen != f"http://{host}":
+        return "viene de otro origen"
+    sitio, destino = cab("Sec-Fetch-Site").lower(), cab("Sec-Fetch-Dest").lower()
+    if ruta in ("/", "/index.html"):
+        if sitio in ("cross-site", "same-site") and destino != "document":
+            return "otra página quiere mostrar el panel dentro de ella"
+        return ""
+    if sitio not in ("", "same-origin"):
+        return "no lo pide la página del panel"
+    if ruta.startswith("/api/") and not hmac.compare_digest(cab(CABECERA_SESION).encode("utf-8"),
+                                                            str(sesion).encode("utf-8")):
+        return "no trae la marca de la sesión del panel"
+    return ""
+
+
+def _sesion_del_panel(puerto, espera=1.0):
+    """La marca de la sesión del panel que escucha en 'puerto' de esta máquina (encargo 66), leída de su página como la
+    lee la página misma (RX_SESION): "" si no la trae (un panel de antes del encargo 66, u otro programa). Levanta lo
+    que levante urlopen."""
+    import urllib.request
+    with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/", timeout=espera) as resp:
+        pagina = resp.read(500_000).decode("utf-8", errors="replace")
+    m = _re.search(RX_SESION, pagina)
+    return m.group(1) if m else ""
+
 
 def _panel_en(puerto, espera=1.0):
     """El panel de AQUASHIELD que escucha en 'puerto' de esta máquina, como lo ve el lanzador al arrancar: None si nadie
     contesta ahí en 'espera' s; False si contesta otro programa: con otro código HTTP, sin hablar HTTP, o con un
     /api/estado sin «corriendo» (encargo 52); si no, (su estado, su modo). Su modo es el «modo_emision» de su
     /api/config (en 2 s, o 'espera' si es más), el mismo con que pinta su aviso de modo al cargar: True o False, o None
-    si no lo dice (encargo 51). Solo pregunta: a ese panel no le cambia nada más que su último latido."""
+    si no lo dice (encargo 51). Solo pregunta: a ese panel no le cambia nada más que su último latido. Desde el encargo
+    66, primero lee la marca de la sesión de su página (_sesion_del_panel) y pregunta con ella: sin la marca, el panel
+    no atiende; una página que contesta con un error no decide, y se pregunta como antes."""
     import http.client
     import urllib.error
     import urllib.request
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/api/estado", timeout=espera) as resp:
+        sesion = _sesion_del_panel(puerto, espera)
+    except urllib.error.HTTPError:
+        sesion = ""
+    except http.client.HTTPException:
+        return False
+    except Exception:
+        return None
+    marca = {CABECERA_SESION: sesion} if sesion else {}
+    try:
+        with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{puerto}/api/estado", headers=marca),
+                                    timeout=espera) as resp:
             cuerpo = resp.read()
     except (urllib.error.HTTPError, http.client.HTTPException):
         return False
@@ -14053,7 +14235,8 @@ def _panel_en(puerto, espera=1.0):
     if not isinstance(estado, dict) or "corriendo" not in estado:
         return False
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/api/config", timeout=max(2.0, espera)) as resp:
+        with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{puerto}/api/config", headers=marca),
+                                    timeout=max(2.0, espera)) as resp:
             modo = _json.loads(resp.read().decode("utf-8")).get("modo_emision")
     except Exception:
         modo = None
@@ -14141,9 +14324,15 @@ def _ceder_al_previo(puerto, previo, propio, abrir):
             except Exception: pass
         print(f"AQUASHIELD ya está activo ejecutando tareas en {url}")
         return True
-    # Instancia ociosa anterior, en el mismo modo: pedirle que se apague para renovar
+    # Instancia ociosa anterior, en el mismo modo: pedirle que se apague para renovar, con la marca de su sesión si su
+    # página la trae (encargo 66; un panel de antes no la trae, y se le pide igual)
     try:
-        req = urllib.request.Request(f"http://127.0.0.1:{puerto}/api/apagar", data=b"{}", method="POST")
+        sesion = _sesion_del_panel(puerto)
+    except Exception:
+        sesion = ""
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{puerto}/api/apagar", data=b"{}", method="POST",
+                                     headers={CABECERA_SESION: sesion} if sesion else {})
         urllib.request.urlopen(req, timeout=1.0)
         time.sleep(0.6)
     except Exception:
@@ -14200,11 +14389,24 @@ def _aviso_de_actualizacion(ahora=None):
 def lanzar_web(puerto=8765, abrir=True):
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from urllib.parse import urlparse, parse_qs
+    import secrets
     import tempfile, webbrowser
+
+    # La marca de la sesión de este panel, y su página con ella (encargo 66; ver _pedido_ajeno).
+    sesion = secrets.token_urlsafe(32)
+    pagina = HTML_INDEX.replace(META_SESION, META_SESION.replace('content=""', f'content="{sesion}"'), 1)
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass                                   # sin ruido en la consola
+
+        def _ajeno(self, ruta):
+            """Si el pedido no viene de la página del panel (_pedido_ajeno, encargo 66), lo contesta con un 403 y
+            PEDIDO_AJENO, y da True."""
+            if not _pedido_ajeno(ruta, self.headers, self.server.server_address[1], sesion):
+                return False
+            self._env(403, "text/plain; charset=utf-8", PEDIDO_AJENO)
+            return True
 
         def _env(self, code, tipo, cuerpo, extra=None):
             if isinstance(cuerpo, str):
@@ -14226,10 +14428,12 @@ def lanzar_web(puerto=8765, abrir=True):
         # ---------------- GET ----------------
         def do_GET(self):
             u = urlparse(self.path)
+            if self._ajeno(u.path):
+                return
             q = parse_qs(u.query)
             try:
                 if u.path in ("/", "/index.html"):
-                    return self._env(200, "text/html; charset=utf-8", HTML_INDEX)
+                    return self._env(200, "text/html; charset=utf-8", pagina, CABECERAS_DE_LA_PAGINA)
                 if u.path == "/app.js":
                     return self._env(200, "application/javascript; charset=utf-8", JS_INDEX)
                 if u.path == "/estilo.css":
@@ -14320,6 +14524,8 @@ def lanzar_web(puerto=8765, abrir=True):
             q = parse_qs(u.query)
             largo = int(self.headers.get("Content-Length") or 0)
             cuerpo = self.rfile.read(largo) if largo else b""
+            if self._ajeno(u.path):
+                return
             try:
                 if u.path == "/api/planilla":
                     nombre = (q.get("nombre") or ["planilla.xlsx"])[0]
@@ -14581,6 +14787,7 @@ HTML_INDEX = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="aquashield-sesion" content="">
 <title>AquaShield · Módulo Reservas</title>
 <!-- El favicon sale del bloque estandar: isotipo oficial en data: URI con
      viewBox cuadrado. Ademas evita el 404 de /favicon.ico que el navegador
@@ -14783,8 +14990,38 @@ let ARCHIVO = null, FILAS = [], CORRIENDO = false, CURSOR = 0, HOJA_ACT = "";
 let HUBO_CORRIDA = false;
 let MODO_PAGINA = null;   // el modo que pintó el aviso al cargar la página; null si no lo pudo leer (encargo 52)
 
+// La marca de la sesión del panel (decisión de Marcelo, encargo 66): el panel la pone en su página y no atiende ningún
+// pedido a /api/ que no la traiga en su cabecera. Si el panel se reinició (el lanzador renueva uno ocioso, por
+// ejemplo), esta página tiene la de antes: el panel contesta 403, y la página lee la nueva de la página del panel, que
+// solo ella puede leer, y repite el pedido una vez (renovarSesion).
+const RX_SESION = /<meta name="aquashield-sesion" content="([A-Za-z0-9_-]+)">/;
+let SESION = sesionDeLaPagina();
+
+function sesionDeLaPagina() {
+  const m = document.querySelector('meta[name="aquashield-sesion"]');
+  return m ? (m.getAttribute("content") || "") : "";
+}
+function conSesion(opts) {
+  const o = Object.assign({}, opts || {});
+  o.headers = Object.assign({}, o.headers || {}, { "X-AquaShield-Sesion": SESION });
+  return o;
+}
+async function renovarSesion() {
+  try {
+    const r = await fetch("/", { cache: "no-store" });
+    const m = RX_SESION.exec(r.ok ? await r.text() : "");
+    if (!m || m[1] === SESION) return false;
+    SESION = m[1];
+    return true;
+  } catch (e) { return false; }
+}
+async function pedir(ruta, opts) {
+  let r = await fetch(ruta, conSesion(opts));
+  if (r.status === 403 && await renovarSesion()) r = await fetch(ruta, conSesion(opts));
+  return r;
+}
 async function api(ruta, opts) {
-  const r = await fetch(ruta, opts || {});
+  const r = await pedir(ruta, opts);
   if (!r.ok) { const e = new Error(await r.text()); e.status = r.status; throw e; }
   return r.json();
 }
@@ -15000,10 +15237,30 @@ $("#wg-detener").onclick = () => {
 $("#wg-login").onclick = () => $("#navs").classList.toggle("abierta");
 
 // ---------- widget DESCARGAR ----------
-$("#wg-descargar").onclick = () => {
+// Con la marca de la sesión, como los demás pedidos (encargo 66): la planilla llega por pedir y se guarda con el nombre
+// que da el panel (nombreDeDescarga). Hasta ahí era una navegación a /api/descargar, que no puede llevar la marca, y un
+// error del panel dejaba su texto en lugar de la página.
+$("#wg-descargar").onclick = async () => {
   if (apagado($("#wg-descargar"))) return;
-  window.location = "/api/descargar";
+  notaVisible("");
+  try {
+    const r = await pedir("/api/descargar");
+    if (!r.ok) { notaVisible(await r.text()); return; }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await r.blob());
+    a.download = nombreDeDescarga(r.headers.get("Content-Disposition"));
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  } catch (e) {
+    notaVisible("No pude descargar la planilla: " + e.message);
+  }
 };
+function nombreDeDescarga(cabecera) {
+  const m = /filename="([^"]+)"/.exec(String(cabecera || ""));
+  return m ? m[1] : "planilla - resultados.xlsx";
+}
 
 // ---------- pausa ----------
 $("#resuelto").onclick = async () => {

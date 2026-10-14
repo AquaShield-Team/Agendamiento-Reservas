@@ -576,8 +576,10 @@ class TestNaveCompleta(soporte.CasoAQ):
                     and ast.unparse(n.targets[0]) == variable]
         # Hasta 9051f43, con all(...) directo: una fila sin palabras de nave calzaba con todas las tarjetas, y en COSCO
         # también por el viaje solo.
+        # Desde el encargo 66, de esas, las que traen el viaje de la fila (_msc_es_la_pedida, test_clics.TestMsc).
         self.assertEqual(asignas("reservar_msc", "exacta"),
-                         ["exacta = [n for n in naves if n.get('sel') and _trae_la_nave(_norm(n.get('nave')), toks)]"])
+                         ["exacta = [n for n in naves if n.get('sel') and _trae_la_nave(_norm(n.get('nave')), toks)]",
+                          "exacta = [n for n in exacta if _msc_es_la_pedida(n, toks, viaje)]"])
         self.assertEqual(asignas("reservar_cosco", "cand"), ["cand = _cosco_calzan(filas, toks_nave, toks_todos)"])
         # El aviso de «ese barco con otro viaje», con la misma regla que el calce: sus dos primeras palabras, cada una
         # entera, en cualquier lugar del campo. Hasta f68ce6c tenían que ir juntas y en ese orden, como parte del texto:
@@ -605,6 +607,50 @@ class TestNaveCompleta(soporte.CasoAQ):
         # El viaje también va entero, porque pasa por el mismo ayudante: «002» no es el viaje «002W», y queda la nave con
         # cualquier viaje. Hasta f68ce6c, [0] (CICLO-cola-seis-items.md).
         self.assertEqual([x["i"] for x in f(nave, ["002"])], [0, 3])
+
+
+class TestViajeDeLaFila(soporte.CasoAQ):
+    """El viaje de la fila, con la regla de palabra entera de MAERSK y COSCO (_trae_el_viaje), la que desde el encargo 66
+    usan también ONE, MSC, HYUNDAI y CMA-CGM para elegir su salida (decisión de Marcelo, CICLO-viaje-y-origen.md)."""
+    # (lo que la salida muestra de su nave, el viaje de la fila, lo trae). Viajes inventados.
+    CASOS = (("ONE NAVE UNO ZZ101E", "ZZ101E", True),
+             ("ONE NAVE UNO ZZ101E", "zz101e", True),                 # sin distinguir mayúsculas
+             ("one nave uno zz101e", "ZZ101E", True),
+             ("ONE NAVE UNO 1ZZ101E", "ZZ101E", False),               # parte de otra palabra: con algo antes
+             ("ONE NAVE UNO ZZ101EA", "ZZ101E", False),               # o después
+             ("ONE NAVE UNO ZZ101E", "ZZ101", False),
+             ("HMM NAVE (0101W)", "0101W", True),                     # entre paréntesis, como en el «1st Vessel»
+             ("MSC NAVE ZZ101A", "ZZ101A", True),
+             ("Buque principal NAVE Ref. de viaje 0ZZ1ZZ1ZZ", "0ZZ1ZZ1ZZ", True),
+             ("ONE NAVE UNO ZZ101E", "ZZ 101E", False),               # cada palabra, entera: «ZZ» no está sola
+             ("ONE NAVE UNO ZZ 101E", "ZZ 101E", True),
+             ("ONE NAVE UNO ZZ101E", "ZZ101E ZZ102E", False),         # todas sus palabras
+             ("ONE NAVE UNO ZZ101E", "", True),                       # la fila sin viaje: no hay viaje que comparar
+             ("ONE NAVE UNO ZZ101E", None, True),
+             ("ONE NAVE UNO ZZ101E", "   ", True),
+             ("", "ZZ101E", False),
+             (None, "ZZ101E", False))
+
+    def test_trae_el_viaje(self):
+        for texto, viaje, trae in self.CASOS:
+            with self.subTest(texto=texto, viaje=viaje):
+                self.assertIs(self.mod._trae_el_viaje(texto, viaje), trae)
+
+    def test_las_palabras_del_viaje(self):
+        # Como toma COSCO las del viaje: en mayúsculas y separadas por cualquier espacio en blanco.
+        f = self.mod._palabras_del_viaje
+        self.assertEqual([f("zz101e"), f(" ZZ 101E "), f("ZZ\t101E"), f(""), f(None), f("  "), f(101)],
+                         [["ZZ101E"], ["ZZ", "101E"], ["ZZ", "101E"], [], [], [], ["101"]])
+
+    def test_la_misma_regla_en_javascript(self):
+        # ONE, HYUNDAI y CMA-CGM la comparan en su JavaScript con _traeLaNave y las palabras que les pasa el programa
+        # (_palabras_del_viaje): da lo mismo que _trae_el_viaje. La fila sin viaje no compara: su lista va vacía, y cada
+        # JavaScript lo mira aparte (test_clics).
+        f = self.mod._palabras_del_viaje
+        casos = [(t, f(v)) for t, v, _ in self.CASOS if f(v)]
+        guion = ("const trae = (() => {" + self.mod._JS_TRAE_LA_NAVE + "return _traeLaNave; })();\n"
+                 "console.log(JSON.stringify(" + json.dumps(casos) + ".map(([t, v]) => trae(t, v))));\n")
+        self.assertEqual(correr_node(self, guion), [self.mod._trae_el_viaje(t, " ".join(v)) for t, v in casos])
 
 
 class PaginaQueNoSeToca:

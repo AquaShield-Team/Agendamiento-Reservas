@@ -1205,8 +1205,10 @@ console.log(JSON.stringify(f()));
                       # Hasta el encargo 34, sin la directa primero, y el clic sin volver a leer la tarjeta elegida
                       # (CICLO-one-y-maersk-eligen-la-nave.md).
                       "tarjetas = _directas_primero(tarjetas, desde, reg, _one_salidas)",
+                      # Desde el encargo 66, también el viaje de la fila (test_sin_el_viaje_de_la_fila_no_elige_otra).
                       "seleccionada = bool(page.evaluate(_JS_ONE_CLIC_TARJETA, {'i': elegida['i'], 'nave': reserva['nave'], "
-                      "'salida': elegida.get('salida', ''), 'directa': elegida.get('directa')}))"):
+                      "'salida': elegida.get('salida', ''), 'directa': elegida.get('directa'), "
+                      "'viaje': _palabras_del_viaje(reserva.get('viaje'))}))"):
             self.assertIn(forma, asignas)
         lineas = {ast.unparse(n): n.lineno for n in ast.walk(f) if isinstance(n, ast.Assign)}
         orden = [lineas[x] for x in ("desde = _desde(reserva)",
@@ -1221,6 +1223,56 @@ console.log(JSON.stringify(f()));
         self.assertLess(sin_una[0].lineno, clic.lineno)
         self.assertLess(clic.lineno, linea_guarda(f))
         self.assertNotIn("_JS_ONE_SELECT_NAVE", ast.unparse(f))
+
+    def test_js_clic_vuelve_a_leer_el_viaje(self):
+        # Desde el encargo 66, si la fila trae viaje (sus palabras), el clic vuelve a leer también el viaje del enlace de la
+        # nave: si la tarjeta i ya no lo trae, como palabra entera, no pulsa (decisión de Marcelo,
+        # CICLO-viaje-y-origen.md). Sin viaje (la lista vacía, o sin la llave), como antes.
+        guion = self.DOM_ONE + "const f = " + self.mod._JS_ONE_CLIC_TARJETA + r""";
+const correr = (nave, viaje) => {
+  const body = pagina([tarjeta('2026-10-03', '2026-11-12', nave)]);
+  const r = f({i: 0, nave: 'ONE NAVE UNO', salida: '2026-10-03', directa: null, viaje});
+  return [r, body.querySelectorAll('button').map(b => b.clics)];
+};
+console.log(JSON.stringify([correr('ONE NAVE UNO SC001E', ['SC001E']), correr('ONE NAVE UNO SC009E', ['SC001E']),
+  correr('ONE NAVE UNO 1SC001E', ['SC001E']), correr('ONE NAVE UNO SC009E', []), correr('ONE NAVE UNO SC009E', undefined)]));
+"""
+        self.assertEqual(correr_node(self, guion), [[True, [1]], [False, [0]], [False, [0]], [True, [1]], [True, [1]]])
+
+    def test_sin_el_viaje_de_la_fila_no_elige_otra(self):
+        # La nave está y ninguna de sus tarjetas trae el viaje de la fila: NO ENVIADA con la lista y su evidencia, sin
+        # elegir otra (decisión de Marcelo, encargo 66, CICLO-viaje-y-origen.md). Hasta ahí ONE elegía entre todas las
+        # de la nave: el 2026-10-14, CMA-CGM armó así una reserva con otro viaje.
+        hoy = datetime.date.today()
+        ocho = (hoy + datetime.timedelta(days=8)).isoformat()
+        tarjetas = [{"i": 0, "nave": "ONE NAVE PRUEBA SC009E", "salida": ocho, "botones": 1},
+                    {"i": 2, "nave": "ONE NAVE PRUEBA SC010E", "salida": ocho, "botones": 1}]
+        reg, vistas, log = self.corrida("one_sin_viaje")
+        pagina = soporte.PaginaFalsa(texto=lambda js, *a: {"html": "<body>tarjetas sinteticas</body>", "sombras": 0}
+                                     if js == self.mod._JS_HTML_COMPLETO else self.fail("JavaScript inesperado"))
+        reserva = {"fila": 5, "nave": "ONE NAVE PRUEBA", "viaje": "SC001E"}
+        detalle = ("ONE: no elegí salida para esa nave ('ONE NAVE PRUEBA'): ninguna de las 2 opciones de la nave trae el "
+                   "viaje de la fila. Revisa la fila y elige la salida en el portal.")
+        self.assertEqual(self.mod._one_sin_una_salida(pagina, reg, reserva, tarjetas, "sin-viaje", hoy),
+                         ("NO ENVIADA", detalle))
+        self.assertEqual(pagina.capturas, [("one_f5_detenida.png", False)])
+        self.assertTrue((log.parent / "one_f5_detenida.html").exists())
+        self.assertIn(f"· ✗ NO ENVIADA · {detalle}", log.read_text(encoding="utf-8"))
+        # reservar_one corta así antes de elegir: de las tarjetas de la nave, las que traen el viaje en el enlace de su
+        # nave (_trae_el_viaje); si ninguna, ese corte; y con las que quedan, como antes.
+        tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
+        f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_one")
+        asignas = {ast.unparse(n): n.lineno for n in ast.walk(f) if isinstance(n, ast.Assign)}
+        filtro = "con_el_viaje = [t for t in tarjetas if _trae_el_viaje(t.get('nave'), reserva.get('viaje'))]"
+        prueba = ast.unparse(ast.parse("tarjetas and not con_el_viaje"))
+        corte = [n for n in ast.walk(f) if isinstance(n, ast.If) and ast.unparse(n.test) == prueba]
+        self.assertEqual([ast.unparse(r) for n in corte for r in ast.walk(n) if isinstance(r, ast.Return)],
+                         ["return _one_sin_una_salida(page, reg, reserva, tarjetas, 'sin-viaje', desde)"])
+        orden = [asignas["desde = _desde(reserva)"], asignas[filtro], corte[0].lineno, asignas["tarjetas = con_el_viaje"],
+                 asignas["tarjetas = [t for t in tarjetas if t.get('botones') == 1]"],
+                 asignas["tarjetas = _directas_primero(tarjetas, desde, reg, _one_salidas)"]]
+        self.assertEqual(orden, sorted(orden))
+        self.assertLess(orden[-1], linea_guarda(f))
 
 
 # El orden medido en one_f5_detenida.html (corrida del 2026-09-25): primero la lista vacía del autocompletado de puertos,
@@ -1601,6 +1653,48 @@ console.log(JSON.stringify(f()));
             self.assertIn(f"· ✗ NO ENVIADA · {detalle}", donde)
             self.assertIn(f"itinerarios que calzan: NAVE PRUEBA 002E ETD {self.etd(6)} | NAVE PRUEBA 002E ETD "
                           f"{self.etd(6)}", donde)
+
+    def test_la_salida_pedida_trae_el_viaje(self):
+        # La salida pedida de MSC: con su «Select» a la vista, la nave de la fila y, si la trae, su viaje, en «Vessel /
+        # Voyage» (decisión de Marcelo, encargo 66, CICLO-viaje-y-origen.md). Hasta ahí, la nave sola.
+        f = self.mod._msc_es_la_pedida
+        t = lambda nave, sel=True: {"nave": nave, "sel": sel}
+        toks = ["MSC", "NAVE"]
+        for tarjeta, viaje, es in ((t("MSC NAVE / ZZ101A"), "ZZ101A", True), (t("MSC NAVE / ZZ102A"), "ZZ101A", False),
+                                   (t("msc nave/zz101a"), "ZZ101A", True), (t("MSC NAVE / 1ZZ101A"), "ZZ101A", False),
+                                   (t("MSC NAVE / ZZ101A", sel=False), "ZZ101A", False),
+                                   (t("MSC OTRA / ZZ101A"), "ZZ101A", False), (t("MSC NAVE / ZZ102A"), "", True),
+                                   (t("MSC NAVE / ZZ102A"), None, True), ({"sel": True}, "ZZ101A", False)):
+            with self.subTest(tarjeta=tarjeta, viaje=viaje):
+                self.assertIs(f(tarjeta, toks, viaje), es)
+
+    def test_sin_el_viaje_de_la_fila_no_elige_otra(self):
+        # La nave está y ninguna de sus salidas trae el viaje de la fila: NO ENVIADA con la lista y su evidencia, sin
+        # elegir otra (encargo 66). reservar_msc corta así antes de elegir, y elige solo entre las que lo traen.
+        hoy = datetime.date.today()
+        exacta = [{"i": 7, "nave": "NAVE PRUEBA ZZ102A", "etd": self.etd(6), "sel": True},
+                  {"i": 9, "nave": "NAVE PRUEBA ZZ103A", "etd": self.etd(9), "sel": True}]
+        reg, vistas, log = self.corrida("msc_sin_viaje")
+        pagina = soporte.PaginaFalsa(texto=lambda js, *a: {"html": "<body>lista sintetica</body>", "sombras": 0}
+                                     if js == self.mod._JS_HTML_COMPLETO else None)
+        detalle = ("MSC: no elegí salida para esa nave ('NAVE PRUEBA'): ninguna de las 2 opciones de la nave trae el viaje "
+                   "de la fila. Revisa la fila y elige la salida en el portal.")
+        self.assertEqual(self.mod._msc_salida_ambigua(pagina, reg, {"fila": 10, "nave": "NAVE PRUEBA", "viaje": "ZZ101A"},
+                                                      exacta, "sin-viaje", hoy), ("NO ENVIADA", detalle))
+        self.assertEqual(pagina.capturas, [("msc_f10_itinerarios.png", False)])
+        self.assertTrue((log.parent / "msc_f10_itinerarios.html").exists())
+        tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
+        f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_msc")
+        cortes = [n for n in ast.walk(f) if isinstance(n, ast.If) and "'sin-viaje'" in ast.unparse(n)
+                  and isinstance(n.body[0], ast.Return)]
+        self.assertEqual([(ast.unparse(n.test), ast.unparse(n.body[0])) for n in cortes],
+                         [(ast.unparse(ast.parse("exacta and not any(_msc_es_la_pedida(n, toks, viaje) for n in exacta)")),
+                           "return _msc_salida_ambigua(page, reg, reserva, exacta, 'sin-viaje', desde)")])
+        asignas = {ast.unparse(n): n.lineno for n in ast.walk(f) if isinstance(n, ast.Assign)}
+        orden = [asignas["viaje = reserva.get('viaje')"], cortes[0].lineno,
+                 asignas["exacta = [n for n in exacta if _msc_es_la_pedida(n, toks, viaje)]"],
+                 asignas["elegida, motivo = _msc_elegir_salida(exacta, desde) if exacta else (None, '')"]]
+        self.assertEqual(orden, sorted(orden))
 
     def test_salida_ambigua_con_el_mismo_tiempo_de_transito(self):
         hoy = datetime.date.today()
@@ -2232,7 +2326,8 @@ console.log(JSON.stringify(f()));
         self.assertEqual(len(bucle), 1)
         prueba = ast.unparse(bucle[0].test)
         self.assertTrue(prueba.startswith("not any("), prueba)
-        self.assertIn("x.get('sel') and _trae_la_nave(_norm(x.get('nave')), toks) for x in naves", prueba)
+        # Desde el encargo 66, la salida pedida: la nave y el viaje de la fila (_msc_es_la_pedida).
+        self.assertIn("_msc_es_la_pedida(x, toks, viaje) for x in naves", prueba)
         cuerpo = [ast.unparse(s) for s in bucle[0].body]
         self.assertEqual(cuerpo[0], "if bajadas >= AMPLIAR_MAX:\n    por_que = f'bajé por la lista {AMPLIAR_MAX} veces, "
                                     "el tope'\n    break")
@@ -2591,6 +2686,75 @@ console.log(JSON.stringify([
             [True, [0, 1]],
         ])
 
+    def test_js_rutas_con_el_viaje_de_la_fila(self):
+        # Desde el encargo 66, si la fila trae viaje, la ruta que se pulsa lo trae también en su texto, como palabra
+        # entera (decisión de Marcelo, CICLO-viaje-y-origen.md); si la nave está y ninguna lo trae, no pulsa nada y dice
+        # cuántas rutas traen la nave (deLaNave). El 2026-10-14, CMA-CGM pulsó la primera con la nave, con otro viaje.
+        guion = "const f = " + self.js_rutas() + r""";
+const nodo = (tag, texto, hijos = []) => {
+  const n = {tagName: tag.toUpperCase(), texto, hijos, parentElement: null, offsetParent: {}, id: '', clics: 0,
+             getBoundingClientRect: () => ({width: 10, height: 10}), scrollIntoView() {}, click() { this.clics++; }};
+  Object.defineProperty(n, 'textContent', {get() { return [this.texto, ...this.hijos.map(h => h.textContent)].join(' '); }});
+  const todos = (x) => x.hijos.flatMap(h => [h, ...todos(h)]);
+  n.contains = (x) => x === n || todos(n).includes(x);
+  n.querySelectorAll = (sel) => todos(n).filter(e => sel.split(',').some(s => e.tagName === s.trim().toUpperCase()));
+  hijos.forEach(h => { h.parentElement = n; });
+  return n;
+};
+const ruta = ([nave, viaje]) => nodo('div', '', [nodo('p', 'Buque principal: ' + nave), nodo('p', 'Ref. de viaje: ' + viaje),
+                                                 nodo('p', 'Port Cut-off: 01/10/2026'), nodo('button', 'Seleccionar')]);
+const correr = (rutas, toks, viaje) => {
+  const body = nodo('body', '', [nodo('div', '', rutas.map(ruta))]);
+  global.document = {querySelectorAll: (s) => body.querySelectorAll(s)};
+  const r = f(viaje === undefined ? {toks} : {toks, viaje});
+  return [!!r.ok, r.deLaNave === undefined ? null : r.deLaNave, body.querySelectorAll('button').map(b => b.clics)];
+};
+const tres = [['NAVE PRUEBA', '0ZZ1ZZ1ZZ'], ['NAVE PRUEBA', '0ZZ2ZZ2ZZ'], ['NAVE OTRA', '0ZZ2ZZ2ZZ']];
+const T = ['NAVE', 'PRUEBA'];
+console.log(JSON.stringify([correr(tres, T, ['0ZZ2ZZ2ZZ']), correr(tres, T, []), correr(tres, T, undefined),
+  correr(tres, T, ['0ZZ9ZZ9ZZ']), correr(tres, T, ['ZZ2ZZ2ZZ']), correr([['NAVE OTRA', '0ZZ2ZZ2ZZ']], T, ['0ZZ2ZZ2ZZ'])]));
+"""
+        self.assertEqual(correr_node(self, guion), [
+            [True, None, [0, 1, 0]],        # la de la nave con el viaje de la fila, no la primera con la nave
+            [True, None, [1, 0, 0]],        # sin viaje en la fila, la primera con la nave, como antes
+            [True, None, [1, 0, 0]],
+            [False, 2, [0, 0, 0]],          # la nave sin ese viaje: ninguna, y cuántas traen la nave
+            [False, 2, [0, 0, 0]],          # como parte de otra palabra no es el viaje
+            [False, 0, [0]],                # ni la nave
+        ])
+
+    def test_itinerario_sin_el_viaje_de_la_fila(self):
+        # La nave está y, cargadas todas las rutas, ninguna trae el viaje de la fila: (None, motivo), y reservar_cma la
+        # deja NO ENVIADA con ese motivo, sin elegir otra (encargo 66); la lista ya quedó en su evidencia
+        # (cma_f<fila>_rutas). Sin la nave, como antes: (False, aviso), y REVISAR.
+        botones = ("button:has-text('Seleccionar'), button:has-text('Select'), button:has-text('Deseleccionar'), "
+                   "button:has-text('Deselect')")
+        reg, _, _ = self.corrida()
+        donde = self.mod._hasta_donde_busque([], self.mod.CMA_SIN_ENLACE)
+        for de_la_nave, esperado in ((2, (None, "CMA: no elegí ruta para esa nave ('NAVE PRUEBA'): ninguna de las 2 "
+                                                 f"opciones de la nave trae el viaje de la fila ({donde}). Revisa la fila "
+                                                 "y elige la ruta en el portal.")),
+                                     (1, (None, "CMA: no elegí ruta para esa nave ('NAVE PRUEBA'): la única opción de "
+                                                f"la nave no trae el viaje de la fila ({donde}). Revisa la fila y elige "
+                                                "la ruta en el portal.")),
+                                     (0, False)):
+            with self.subTest(de_la_nave=de_la_nave):
+                pagina = PaginaCma(visibles={botones}, js={"getCard": {"ok": False, "ofrecidas": ["NAVE PRUEBA"],
+                                                                       "deLaNave": de_la_nave}})
+                buscadas = []
+                evaluar = pagina.evaluate
+                pagina.evaluate = lambda js, *a: (buscadas.append(a[0]) if "getCard(" in js else None) or evaluar(js, *a)
+                r = self.mod._cma_seleccionar_itinerario(pagina, {"fila": 7, "nave": "NAVE PRUEBA", "viaje": "0zz2zz2zz"},
+                                                         reg)
+                self.assertEqual(r if esperado is not False else r[0], esperado)
+                self.assertEqual(buscadas, [{"toks": ["NAVE", "PRUEBA"], "viaje": ["0ZZ2ZZ2ZZ"]}])
+        tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
+        f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_cma")
+        ifs = [n for n in ast.walk(f) if isinstance(n, ast.If) and ast.unparse(n.test) in ("ok_itin is None", "not ok_itin")]
+        self.assertEqual([(ast.unparse(n.test), ast.unparse(n.body[0])) for n in ifs][0],
+                         ("ok_itin is None", "return _no_enviada(reg, detalle_itin)"))
+        self.assertEqual([ast.unparse(n.test) for n in ifs], ["ok_itin is None", "not ok_itin"])
+
     def test_itinerario_comodin_no_se_busca_como_nave(self):
         botones = ("button:has-text('Seleccionar'), button:has-text('Select'), button:has-text('Deseleccionar'), "
                    "button:has-text('Deselect')")
@@ -2606,7 +2770,9 @@ console.log(JSON.stringify([
         for nave, toks in (("LIBRE", []), ("AUTO", []), ("-", []), ("NAVE PRUEBA", ["NAVE", "PRUEBA"]),
                            ("CMA CGM NAVE PRUEBA", ["CMA", "CGM", "NAVE", "PRUEBA"]), ("CMA CGM", []),
                            ("CMA CGM PIÑA", ["CMA", "CGM", "PIÑA"])):
-            buscadas = [{"toks": toks}]     # una lectura: sin el enlace «Cargar … siguientes resultados», no hay más
+            # Una lectura: sin el enlace «Cargar … siguientes resultados», no hay más. Desde el encargo 66, también las
+            # palabras del viaje de la fila (aquí, sin viaje).
+            buscadas = [{"toks": toks, "viaje": []}]
             with self.subTest(nave=nave):
                 pagina = Pagina(visibles={botones}, js={"getCard": {"ok": False, "ofrecidas": ["NAVE OTRA"]}})
                 pagina.buscadas = []
@@ -4597,19 +4763,95 @@ console.log(JSON.stringify(r));
     # La lista medida el 2026-09-26: la nave de la fila es la «1st Vessel» de la 5.ª y la 6.ª, que salen el mismo día; la
     # 5.ª llega antes (33 días; la 6.ª, 35). La 4.ª la trae como «Main Vessel» y sale antes, con otra nave desde Chile.
     @staticmethod
-    def hmm(i, calza, n, transito, disponible=True, directa=None):
+    def hmm(i, calza, n, transito, disponible=True, directa=None, viaje="002W"):
         hoy = datetime.date.today()
-        return {"i": i, "primera": "HMM NAVE (002W)" if calza else "OTRA (001E)", "calza": calza,
+        return {"i": i, "primera": f"HMM NAVE ({viaje})" if calza else "OTRA (001E)", "calza": calza,
                 "salida": (hoy + datetime.timedelta(days=n)).isoformat(),
                 "llegada": (hoy + datetime.timedelta(days=n + transito)).isoformat(), "disponible": disponible, "book": 1,
                 "directa": directa}
 
-    def elegir_hmm(self, lotes, semanas=2, legado=None):
+    def elegir_hmm(self, lotes, semanas=2, legado=None, viaje=None):
         self.n_hmm = getattr(self, "n_hmm", 0) + 1
         reg, vistas, log = self.corrida(f"hmm_{self._testMethodName}_{self.n_hmm}")
         pagina = PaginaListaHmm(self.mod, lotes, semanas, legado)
-        r = self.mod._hmm_elegir_nave(pagina, reg, {"fila": 9, "nave": "HMM NAVE"}, ["HMM", "NAVE"])
+        r = self.mod._hmm_elegir_nave(pagina, reg, {"fila": 9, "nave": "HMM NAVE", "viaje": viaje}, ["HMM", "NAVE"])
         return r, pagina, log.read_text(encoding="utf-8")
+
+    def test_solo_la_salida_del_viaje_de_la_fila(self):
+        # Desde el encargo 66, si la fila trae viaje, la tarjeta elegida lo trae en su «1st Vessel» (entre paréntesis),
+        # como palabra entera; si la nave está sin él, amplía «Duration» como cuando no está y, si tampoco, NO ENVIADA,
+        # sin elegir otra (decisión de Marcelo, CICLO-viaje-y-origen.md). Hasta ahí elegía por la nave sola.
+        h = self.hmm
+        lista = [h(0, True, 20, 30, viaje="002W"), h(1, True, 27, 33, viaje="003W"), h(2, False, 11, 28)]
+        # El viaje de la fila en la segunda, aunque la primera salga antes: la segunda, y el clic lo vuelve a mirar.
+        r, pagina, _ = self.elegir_hmm([lista], viaje="003W")
+        self.assertEqual((r["idx"], pagina.clics, pagina.busquedas, pagina.args_clic[0]["viaje"]), (1, [1], 0, ["003W"]))
+        # Sin viaje en la fila, la próxima salida de la nave, como antes.
+        r, pagina, _ = self.elegir_hmm([lista])
+        self.assertEqual((r["idx"], pagina.clics, pagina.args_clic[0]["viaje"]), (0, [0], []))
+        # El viaje en ninguna: amplía (8 semanas y «Retrieve») y, si tampoco está, NO ENVIADA, sin pulsar nada.
+        motivo = ("HYUNDAI: no elegí salida para esa nave ('HMM NAVE'): ninguna de las 2 opciones de la nave trae el "
+                  "viaje de la fila. Revisa la fila y elige la salida en el portal.")
+        r, pagina, log = self.elegir_hmm([lista, lista], viaje="009W")
+        self.assertEqual((r, pagina.clics, pagina.elegidas, pagina.busquedas),
+                         ({"corte": ("NO ENVIADA", motivo)}, [], ["8 weeks"], 1))
+        self.assertIn("La salida pedida no estaba en lo que mostró HYUNDAI: amplié «Duration» y busco de nuevo.", log)
+        # Como parte de otra palabra no es el viaje.
+        r, pagina, _ = self.elegir_hmm([lista, lista], viaje="03W")
+        self.assertEqual((r, pagina.clics), ({"corte": ("NO ENVIADA", motivo)}, []))
+        # Y si aparece al ampliar, esa.
+        r, pagina, _ = self.elegir_hmm([lista[:1], lista], viaje="003W")
+        self.assertEqual((r["idx"], pagina.clics, pagina.busquedas), (1, [1], 1))
+
+    def test_es_la_pedida(self):
+        f = self.mod._hmm_es_la_pedida
+        t = lambda primera, calza=True: {"primera": primera, "calza": calza}
+        for tarjeta, viaje, es in ((t("HMM NAVE (002W)"), "002W", True), (t("HMM NAVE (002W)"), "003W", False),
+                                   (t("HMM NAVE (1002W)"), "002W", False), (t("HMM NAVE (002W)", False), "002W", False),
+                                   (t("HMM NAVE (002W)"), "", True), (t("HMM NAVE (002W)"), None, True),
+                                   ({"calza": True}, "002W", False)):
+            with self.subTest(tarjeta=tarjeta, viaje=viaje):
+                self.assertIs(f(tarjeta, viaje), es)
+
+    def test_la_interfaz_anterior_tampoco_elige_otro_viaje(self):
+        # Sin tarjetas con «Book Now», la interfaz anterior (_hmm_indice_anterior): con viaje en la fila, la tarjeta tiene
+        # que traer también sus palabras; si solo está la nave (también cerrada), «sin_viaje», y reservar_hyundai la
+        # deja NO ENVIADA (encargo 66). Esta página responde según las palabras que se le piden.
+        def legado(sin_viaje):
+            return lambda toks: ({"idx": -1, "motivo": "no_encontrada"} if "009W" in toks else sin_viaje)
+        ok = {"idx": 2, "motivo": "ok", "tipo": "preview_area"}
+        r, pagina, _ = self.elegir_hmm([[]], legado=legado(ok), viaje="009W")
+        self.assertEqual((r, pagina.buscadas_legado), ({"idx": -1, "motivo": "sin_viaje"},
+                                                       [["HMM", "NAVE", "009W"]] * 4 + [["HMM", "NAVE"]]))
+        r, _, _ = self.elegir_hmm([[]], legado=legado({"idx": -1, "motivo": "cerrada"}), viaje="009W")
+        self.assertEqual(r, {"idx": -1, "motivo": "sin_viaje"})
+        r, _, _ = self.elegir_hmm([[]], legado=legado({"idx": -1, "motivo": "no_encontrada"}), viaje="009W")
+        self.assertEqual(r, {"idx": -1, "motivo": "no_encontrada"})
+        # Con el viaje en la tarjeta, esa; y sin viaje en la fila, solo la nave, como antes.
+        r, pagina, _ = self.elegir_hmm([[]], legado=lambda toks: ok, viaje="002W")
+        self.assertEqual((r, pagina.buscadas_legado), (ok, [["HMM", "NAVE", "002W"]]))
+        r, pagina, _ = self.elegir_hmm([[]], legado=lambda toks: ok)
+        self.assertEqual((r, pagina.buscadas_legado), (ok, [["HMM", "NAVE"]]))
+        tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
+        f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_hyundai")
+        rama = [n for n in ast.walk(f) if isinstance(n, ast.If) and ast.unparse(n.test) == "motivo_nave == 'sin_viaje'"]
+        self.assertEqual(len(rama), 1)
+        self.assertTrue(ast.unparse(rama[0].body[-1]).startswith("return _no_enviada(reg, f\"HYUNDAI: no elegí salida"))
+        self.assertIn("ninguna de las opciones de la nave trae el viaje de la fila", ast.unparse(rama[0]))
+
+    def test_js_clic_vuelve_a_leer_el_viaje(self):
+        guion = self.TARJETAS_HMM + "const f = " + self.mod._JS_HMM_CLIC_TARJETA + r""";
+const r = [];
+for (const [primera, viaje] of [['HMM NAVE (002W)', ['002W']], ['HMM NAVE (009W)', ['002W']],
+                                ['HMM NAVE (1002W)', ['002W']], ['HMM NAVE (009W)', []], ['HMM NAVE (009W)', undefined]]) {
+  const body = pagina([tarjeta('2026-10-07', '2026-11-04', 'X', primera)]);
+  r.push([f({i: 0, toks: ['HMM', 'NAVE'], salida: '2026-10-07', directa: null, viaje}),
+          body.querySelectorAll('a').map(a => a.clics)]);
+}
+console.log(JSON.stringify(r));
+"""
+        # Desde el encargo 66, el clic vuelve a leer también el viaje del «1st Vessel» si la fila lo trae.
+        self.assertEqual(correr_node(self, guion), [[True, [1]], [False, [0]], [False, [0]], [True, [1]], [True, [1]]])
 
     def test_elige_la_1st_vessel_y_la_proxima_salida(self):
         h = self.hmm
@@ -4621,7 +4863,7 @@ console.log(JSON.stringify(r));
         self.assertEqual((r["idx"], r["motivo"], r["tipo"], pagina.clics, pagina.elegidas), (4, "ok", "book_now", [4], []))
         # Al pulsar, el JavaScript vuelve a leer la tarjeta con la nave de la fila y su salida.
         self.assertEqual(pagina.args_clic, [{"i": 4, "toks": ["HMM", "NAVE"], "salida": medida[4]["salida"],
-                                             "directa": None}])
+                                             "directa": None, "viaje": []}])
         veintisiete = datetime.date.today() + datetime.timedelta(days=27)
         self.assertIn("2 tarjetas traen la nave como 1st Vessel; elijo la próxima salida desde el", log)
         self.assertIn(f"2 salidas de la nave salen el {veintisiete:%d-%m-%Y}: elijo la de menor tiempo de tránsito, 33 días "
@@ -4817,6 +5059,7 @@ class PaginaListaHmm(soporte.PaginaFalsa):
         self.mod, self.lotes, self.semanas, self.legado = mod, list(lotes), semanas, legado
         self.visible, self.no_cambia, self.falla = visible, no_cambia, falla
         self.clics, self.elegidas, self.busquedas, self.args_clic = [], [], 0, []
+        self.buscadas_legado = []
 
     def responder(self, js, *a):
         if js == self.mod._JS_HMM_TARJETAS:
@@ -4829,7 +5072,9 @@ class PaginaListaHmm(soporte.PaginaFalsa):
             return {"visible": self.visible, "actual": self.semanas,
                     "opciones": [{"texto": f"{n} weeks", "n": n} for n in range(1, 9)]}
         if js == self.mod._JS_HMM_INDICE_NAVE:
-            return self.legado
+            # Con una función, responde según las palabras que se le piden (encargo 66).
+            self.buscadas_legado.append(list(a[0]))
+            return self.legado(a[0]) if callable(self.legado) else self.legado
         return None                                    # el HTML de la evidencia, y nada más
 
     def select_option(self, sel, label=None, timeout=None):

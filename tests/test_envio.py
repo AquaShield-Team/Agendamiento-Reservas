@@ -954,3 +954,104 @@ class TestLoQueFaltaALaVista(soporte.CasoAQ):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMarcaDeLaSesion(soporte.CasoAQ):
+    """La página manda la marca de la sesión del panel en cada pedido, y la renueva una vez si el panel se reinició
+    (decisión de Marcelo, encargo 66, CICLO-viaje-y-origen.md). Se corre en Node, fuera del navegador."""
+
+    def trozo(self, patron):
+        m = re.search(patron, self.mod.JS_INDEX, re.S | re.M)
+        self.assertIsNotNone(m, patron)
+        return m.group(0)
+
+    def funciones(self, *nombres):
+        return "".join(self.trozo(rf"^(?:async )?function {n}\(.*?\) \{{\n.*?\n\}}\n") for n in nombres)
+
+    def test_cada_pedido_con_la_marca_y_una_renovacion(self):
+        guion = (r"""global.document = {querySelector: (s) => s === 'meta[name="aquashield-sesion"]'
+  ? {getAttribute: (a) => (a === 'content' ? 'marca-vieja' : null)} : null};
+""" + self.trozo(r"^const RX_SESION = .*?;\n") + "let SESION = sesionDeLaPagina();\n"
+                  + self.funciones("sesionDeLaPagina", "conSesion", "renovarSesion", "pedir", "api") + r"""
+const pedidos = [];
+let panel = 'marca-nueva', pagina = 'marca-nueva', paginaFalla = false;
+global.fetch = async (ruta, opts) => {
+  const h = (opts && opts.headers) || {};
+  pedidos.push([ruta, h['X-AquaShield-Sesion'] || null, h['Content-Type'] || null]);
+  if (ruta === '/') {
+    if (paginaFalla) throw new Error('sin red');
+    return {ok: true, status: 200, text: async () => (pagina === null ? '<html></html>'
+      : '<head><meta name="aquashield-sesion" content="' + pagina + '"></head>')};
+  }
+  const ok = h['X-AquaShield-Sesion'] === panel;
+  return {ok, status: ok ? 200 : 403, text: async () => (ok ? '' : 'no viene de su página'), json: async () => ({ruta})};
+};
+const r = [];
+const probar = async (ruta, opts) => {
+  pedidos.length = 0;
+  try { r.push([await api(ruta, opts), pedidos.slice(), SESION]); }
+  catch (e) { r.push([e.status, e.message, pedidos.slice(), SESION]); }
+};
+(async () => {
+  await probar('/api/estado');
+  await probar('/api/correr', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+  panel = 'otra'; pagina = 'otra-mas';
+  await probar('/api/config');
+  await probar('/api/config');
+  pagina = null; await probar('/api/config');
+  paginaFalla = true; await probar('/api/config');
+  console.log(JSON.stringify(r));
+})();
+""")
+        no = "no viene de su página"
+        pide = lambda marca: [["/api/config", marca, None], ["/", None, None]]
+        self.assertEqual(correr_node(self, guion), [
+            # La marca de la página, vieja: el panel contesta 403, la página lee la nueva de «/» y repite una vez.
+            [{"ruta": "/api/estado"}, [["/api/estado", "marca-vieja", None], ["/", None, None],
+                                       ["/api/estado", "marca-nueva", None]], "marca-nueva"],
+            # Con las cabeceras que ya traía el pedido.
+            [{"ruta": "/api/correr"}, [["/api/correr", "marca-nueva", "application/json"]], "marca-nueva"],
+            # Repite una sola vez: si tampoco la acepta, el error.
+            [403, no, pide("marca-nueva") + [["/api/config", "otra-mas", None]], "otra-mas"],
+            # Sin una marca nueva en la página (la misma, ninguna, o la página no contesta), no repite.
+            [403, no, pide("otra-mas"), "otra-mas"], [403, no, pide("otra-mas"), "otra-mas"],
+            [403, no, pide("otra-mas"), "otra-mas"]])
+
+    def test_la_descarga_con_la_marca(self):
+        # La planilla con los resultados llega por pedir, con la marca, y se guarda con el nombre que da el panel; un
+        # error del panel queda a la vista. Hasta el encargo 66 era una navegación a /api/descargar, sin la marca.
+        guion = (self.funciones("nombreDeDescarga") + r"""
+const boton = {}; const $ = (s) => (s === '#wg-descargar' ? boton : null);
+function apagado() { return false; }
+const notas = [], llamadas = [], creados = [], tiempos = [];
+function notaVisible(t) { notas.push(t); }
+let respuesta;
+async function pedir(ruta) { llamadas.push(ruta); if (respuesta instanceof Error) throw respuesta; return respuesta; }
+global.document = {createElement: (tag) => { const a = {tag, clics: 0, quitado: false, click() { this.clics++; },
+                                                         remove() { this.quitado = true; }}; creados.push(a); return a; },
+                   body: {appendChild: () => {}}};
+URL.createObjectURL = (b) => 'blob:' + b; URL.revokeObjectURL = () => {};
+globalThis.setTimeout = (f, ms) => { tiempos.push(ms); };
+""" + self.trozo(r'^\$\("#wg-descargar"\)\.onclick = async \(\) => \{\n.*?\n\};\n') + r"""
+const r = [];
+(async () => {
+  respuesta = {ok: true, headers: {get: (h) => (h === 'Content-Disposition'
+    ? 'attachment; filename="Prueba - resultados 14-10_0935.xlsx"' : null)}, blob: async () => 'PLANILLA'};
+  await boton.onclick();
+  r.push([llamadas.slice(), notas.slice(), creados.map(a => [a.tag, a.href, a.download, a.clics, a.quitado]),
+          tiempos.slice()]);
+  respuesta = {ok: false, text: async () => 'No hay planilla cargada.'}; notas.length = 0; creados.length = 0;
+  await boton.onclick();
+  r.push([notas.slice(), creados.length]);
+  respuesta = new Error('sin red'); notas.length = 0;
+  await boton.onclick();
+  r.push([notas.slice(), creados.length, nombreDeDescarga(null), nombreDeDescarga('attachment')]);
+  console.log(JSON.stringify(r));
+})();
+""")
+        self.assertEqual(correr_node(self, guion), [
+            [["/api/descargar"], [""], [["a", "blob:PLANILLA", "Prueba - resultados 14-10_0935.xlsx", 1, True]], [60000]],
+            [["", "No hay planilla cargada."], 0],
+            [["", "No pude descargar la planilla: sin red"], 0, "planilla - resultados.xlsx",
+             "planilla - resultados.xlsx"]])
+        self.assertNotIn('window.location = "/api/descargar"', self.mod.JS_INDEX)

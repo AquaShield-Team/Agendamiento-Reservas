@@ -21,6 +21,7 @@ import importlib.util
 import itertools
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -394,6 +395,13 @@ def reloj_detenido(mod):
 
 
 # --- Servidor web del programa, en un puerto propio ---
+# La marca de la sesión del panel (encargo 66): cómo la trae su página y en qué cabecera la pide. Repiten RX_SESION y
+# CABECERA_SESION del programa, para hablar también con el panel de un proceso hijo, sin el módulo:
+# test_web.TestPanelSoloSuPagina las compara.
+RX_SESION = '<meta name="aquashield-sesion" content="([A-Za-z0-9_-]+)">'
+CABECERA_SESION = "X-AquaShield-Sesion"
+
+
 def puerto_libre():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -405,6 +413,7 @@ class Servidor:
         self.mod = mod
         self.puerto = puerto or puerto_libre()
         self.hilo = None
+        self.sesion = ""
 
     @property
     def base(self):
@@ -423,16 +432,38 @@ class Servidor:
                 time.sleep(0.1)
         raise AssertionError("el servidor no respondió")
 
-    def completo(self, ruta, datos=None, timeout=10):
-        """(estado, cabeceras, cuerpo)."""
+    def marca(self, timeout=10):
+        """La marca de la sesión del panel, leída de su página (encargo 66), o "" si la página no la trae."""
+        if not self.sesion:
+            try:
+                with urllib.request.urlopen(self.base + "/", timeout=timeout) as r:
+                    m = re.search(RX_SESION, r.read().decode("utf-8", errors="replace"))
+            except urllib.error.HTTPError:
+                return ""                       # una página que contesta con un error no trae la marca
+            self.sesion = m.group(1) if m else ""
+        return self.sesion
+
+    def completo(self, ruta, datos=None, timeout=10, cabeceras=None):
+        """(estado, cabeceras, cuerpo). Con la marca de la sesión del panel (encargo 66), salvo que la prueba diga sus
+        propias 'cabeceras'; si el panel no la acepta (otro panel en el mismo puerto), la vuelve a leer una vez."""
         if isinstance(datos, (dict, list)):
             datos = json.dumps(datos).encode("utf-8")
-        req = urllib.request.Request(self.base + ruta, data=datos, method="POST" if datos is not None else "GET")
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                return r.status, dict(r.headers), r.read()
-        except urllib.error.HTTPError as e:
-            return e.code, dict(e.headers), e.read()
+        propias = cabeceras is not None
+        for intento in range(1 if propias else 2):
+            if not propias:
+                self.sesion = self.sesion if intento == 0 else ""
+                marca = self.marca(timeout)
+                cabeceras = {CABECERA_SESION: marca} if marca else {}
+            req = urllib.request.Request(self.base + ruta, data=datos, method="POST" if datos is not None else "GET",
+                                         headers=cabeceras)
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    return r.status, dict(r.headers), r.read()
+            except urllib.error.HTTPError as e:
+                respuesta = e.code, dict(e.headers), e.read()
+                if e.code != 403:
+                    return respuesta
+        return respuesta
 
     def pedir(self, ruta, datos=None, timeout=10):
         st, _, cuerpo = self.completo(ruta, datos, timeout)
