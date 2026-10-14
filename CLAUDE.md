@@ -515,7 +515,15 @@ cerrado:
     guarda: las 5 emitidas del 21-09, la del 24-09 y la del 02-10), y «40 Reefer Standard Shipper own» en las 2 del
     08-10, el contenedor del embarcador, con el que «Additional details» no trae el retiro del contenedor vacío, y la
     fila quedó NO ENVIADA en la fecha de retiro (encargo 59, `CICLO-tarde-08-10-y-cantidad.md`).
-  - Si la lista traía una sola «40 Reefer High» no está medido: nunca se guardó hasta el encargo 62.
+  - **Medido en el portal el 2026-10-14** (encargo 65, `CICLO-corridas-14-10-y-revisiones.md`): la lista traía 2
+    opciones a la vista, «40 Reefer High» y «40 Reefer Standard Shipper owned container only», la del embarcador, y la
+    de los ajustes reefer, 3: «Standard (40´)», «Magnum (40´)» y «StarFreeze (40´)». Una sola de la buscada en cada una,
+    y la pantalla final mostró las dos.
+  - **El clic va a la opción misma** (revisiones del encargo 65): `_mk_elegir_unica` la toma (`element_handle`),
+    comprueba que su texto sigue siendo el buscado y pulsa esa; si no puede tomarla, o ya dice otra cosa, NO ENVIADA
+    sin pulsar nada. Hasta ahí pulsaba `op.nth(i)`, que Playwright vuelve a resolver al hacer el clic: si el portal
+    repintaba la lista en ese instante, podía pulsar otra (no se vio en `logs/`). Qué muestra el campo después de
+    elegir no está medido, y no se comprueba.
   - **Los ajustes reefer, con la misma regla** (decisión de Marcelo, encargo 63,
     `CICLO-maersk-otro-contenedor-y-reefer.md`; `_mk_elegir_reefer`, `MK_REEFER`): abre «Select reefer container type
     and size» con el mismo clic de antes, deja la evidencia de su lista (`mk_f<fila>_reefer`, con la captura de la
@@ -523,13 +531,14 @@ cerrado:
     portal: así fue en las 21 filas de MAERSK de `logs/`, también en las 7 que llegaron a la guarda. Si no hay
     exactamente una, o el campo o el clic fallan, NO ENVIADA sin pulsar nada («Tipo de contenedor reefer de MAERSK»).
     Hasta ahí pulsaba la primera opción con «40» (o, sin ninguna, la primera) y, si algo fallaba, seguía sin el tipo.
-    Si la lista traía una sola no está medido: el HTML guardado trae el valor elegido, sin las opciones.
   - **La fila que pide otro contenedor** (misma decisión; `_otro_contenedor`, `CONTENEDOR_DE_LAS_FILAS`): una fila de
     MAERSK cuyo contenedor no es «40 HC REEFER» (sin distinguir mayúsculas y con los espacios de a uno) queda NO
     ENVIADA sin entrar al portal, con el motivo, en pantalla, en log.txt y en la planilla. El panel web y la consola la
     apartan antes de abrir el navegador, después de la fila sin nave y de la sin ruta, y `reservar_maersk` lleva
-    `_mk_con_el_contenedor_de_la_fila`, por dentro de todos sus decoradores. Las otras navieras no miran el
-    contenedor.
+    `_mk_con_el_contenedor_de_la_fila`, por dentro de todos sus decoradores. Las otras navieras no cortan por el
+    contenedor, pero HYUNDAI lo lee, para elegir REEFER o DRY (`_hmm_llenar_detalles`). Con la consola, una columna de
+    contenedor y la celda vacía, hasta el encargo 64 elegía DRY, y desde entonces REEFER, como por el panel (revisión
+    de código del encargo 65; hasta ahí, este archivo decía que no lo miraban).
     - **Con la celda vacía, los dos lectores le dan «40 HC REEFER»** (decisión de Marcelo, encargo 64,
       `CICLO-maersk-contenedor-consola-y-panel.md`). Hasta ahí, la consola lo hacía solo si la hoja no tenía la
       columna: con la columna y la celda vacía, la fila no decía qué contenedor pedía, y quedaba NO ENVIADA. Otra
@@ -541,6 +550,11 @@ cerrado:
       la misma con que `_web_worker` reparte las de CONSOLIDADO), y solo si la fila trae nave y ruta: la fila sin nave
       o sin ruta lleva la marca de su motivo. Va marcada para correr, como las demás. Lo vigilan
       `test_web.TestPanelCorridas.test_filas_dicen_si_piden_otro_contenedor` y `test_envio.TestLecturaDelPanel`.
+    - **El motivo y la marca muestran el mismo texto** (revisiones del encargo 65): `_contenedor_a_la_vista`, que
+      `/api/filas` trae en `contenedor_a_la_vista` y la página pinta. Va con los espacios de a uno, hasta 40
+      caracteres, y cada carácter de control o invisible como «?». Hasta ahí, la página pintaba la celda entera; un
+      NUL o un ESC dejaba la fila sin su resultado en la planilla descargada, porque openpyxl no los escribe; y uno
+      invisible hacía decir al motivo que la fila pedía «40 HC REEFER». La regla de corte no cambió.
     - **Sin las ramas para otro contenedor** (misma decisión): como la fila llega siempre con «40 HC REEFER»,
       `reservar_maersk` y `_mk_contenedor` ya no miran el contenedor. El commodity busca el salmón congelado, se marca
       el control de temperatura, se escribe «40 Reefer» (`MK_PALABRA_CONTENEDOR`), va el peso reefer de `config.json` y
@@ -738,7 +752,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 791 pruebas al 2026-10-14 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 793 pruebas al 2026-10-14 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -1117,6 +1131,11 @@ línea cambian). De arriba hacia abajo:
      opciones de la nave trae el viaje de la fila» (decisión de Marcelo, `CICLO-cierre-de-frenos.md`). Hasta `4948e16`
      elegían entre todas las de la nave, sin avisarlo. Desde el encargo 32 cortan después de ampliar la búsqueda; hasta
      `4cae528`, con lo primero que veían.
+   - **ONE, MSC, HYUNDAI y CMA-CGM no miran el viaje de la fila:** eligen por la nave, y CMA-CGM, la primera tarjeta que
+     la trae (`reservar_cma` lee el viaje y no lo usa). El 2026-10-14 (encargo 65,
+     `CICLO-corridas-14-10-y-revisiones.md`) la fila de CMA-CGM pedía un viaje que su portal ya no ofrecía, y CMA armó
+     la reserva con la nave en otro viaje, «lista para emitir»; en ONE, MSC y HYUNDAI, el elegido era el de la fila.
+     Que corten como MAERSK y COSCO lo decide Marcelo.
    - MAERSK, si el viaje de la fila está, pero solo en salidas sin «Book», no amplía: NO ENVIADA con
      `SALIDA_NO_RESERVABLE`, «la salida pedida ya no se puede reservar» (decisión de Marcelo,
      `CICLO-ampliar-la-busqueda.md`). Sin viaje en la fila, lo mismo si, ampliada la búsqueda, la nave está solo sin
@@ -1345,6 +1364,11 @@ Las capturas siguen el patrón `<nav>_f<fila>_<n>_<paso>.png`.
   ella y la celda vacía, los dos dan «40 HC REEFER» (`CONTENEDOR_DE_LAS_FILAS`; la consola, a la celda vacía, desde el
   encargo 64: hasta ahí la dejaba vacía). Las planillas de este equipo no la traen (medido el 2026-10-13). MAERSK
   reserva solo «40 HC REEFER» (encargo 63). `test_planilla.TestContenedorDeLaFila` vigila que los dos den lo mismo.
+  - **La columna, con una sola regla** (revisiones del encargo 65): la primera de la fila de encabezados que calza con
+    «contenedor» en `_CAMPOS` (`_campos_de_la_fila`, la de `_mapear`); la consola la aplica en su fila de encabezados.
+    Hasta ahí, la consola tomaba la última con «tipo cont» o «contenedor»: con dos columnas así, o con «Tipo cont.» o
+    «Retiro contenedor», los dos lectores leían otra. Queda una rareza de la regla del panel: «Cant. contenedores»
+    también cuenta como la columna del contenedor (un corte de más, nunca una reserva equivocada).
 - **El día de carga lo lee un solo lector,** `_fecha_planilla` (`CICLO-cola-cuatro-items.md`).
   - Lo usan las seis: COSCO, MSC y ONE por `_desde` (ONE desde `0e15b8a`), y HYUNDAI, MAERSK y CMA. No le des
     a una naviera su propio lector.
