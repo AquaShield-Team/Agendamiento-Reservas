@@ -56,7 +56,8 @@ En MAERSK, el tipo de contenedor es siempre «40 Reefer High», el de las filas,
 (40´)». Antes de elegir cada uno, el programa guarda la lista de opciones (su captura y su HTML, en la carpeta de la
 corrida); si la lista no trae exactamente una, la fila queda NO ENVIADA, con el motivo, sin pulsar nada. Si la planilla
 trae una columna de contenedor y una fila de MAERSK pide otro que «40 HC REEFER», esa fila queda NO ENVIADA, con el
-motivo, sin entrar al portal: resérvala a mano.
+motivo, sin entrar al portal: resérvala a mano. El panel la marca antes de correr, junto a «Reserva N» («otro
+contenedor: …»). Una celda vacía en esa columna vale «40 HC REEFER», en el panel y en la consola.
 
 Cuando el panel te pide resolver algo en el navegador («Te toca a ti»), `log.txt` anota cuándo empezó la pausa, por
 qué, y cuándo terminó: si pulsaste «Ya lo resolví» o «Detener», si pasaron 10 minutos sin respuesta o, con el

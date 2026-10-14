@@ -529,10 +529,29 @@ cerrado:
     ENVIADA sin entrar al portal, con el motivo, en pantalla, en log.txt y en la planilla. El panel web y la consola la
     apartan antes de abrir el navegador, después de la fila sin nave y de la sin ruta, y `reservar_maersk` lleva
     `_mk_con_el_contenedor_de_la_fila`, por dentro de todos sus decoradores. Las otras navieras no miran el
-    contenedor. Con la celda vacía, el panel le da «40 HC REEFER»; la consola, solo si la hoja no tiene la columna:
-    con la columna y la celda vacía, la fila no dice qué contenedor pide, y queda NO ENVIADA. Hasta el encargo 63,
-    MAERSK escribía otra palabra clave con otro contenedor, y sin «REEF», «RF» o «RH» en el texto se saltaba los
-    ajustes reefer.
+    contenedor.
+    - **Con la celda vacía, los dos lectores le dan «40 HC REEFER»** (decisión de Marcelo, encargo 64,
+      `CICLO-maersk-contenedor-consola-y-panel.md`). Hasta ahí, la consola lo hacía solo si la hoja no tenía la
+      columna: con la columna y la celda vacía, la fila no decía qué contenedor pedía, y quedaba NO ENVIADA. Otra
+      forma de escribirlo («40HC REEFER», «40' HC REEFER») sigue NO ENVIADA mientras el equipo no use esa columna
+      (misma decisión).
+    - **El panel la marca antes de correr,** como la fila sin ruta (misma decisión): junto a «Reserva N», porque la
+      tabla no muestra el contenedor, dice «otro contenedor: …», con el que pide, y el registro la cuenta aparte.
+      `/api/filas` trae la marca `otro_contenedor` (`_con_su_marca`), con la naviera de cada fila (`_nav_de_la_fila`,
+      la misma con que `_web_worker` reparte las de CONSOLIDADO), y solo si la fila trae nave y ruta: la fila sin nave
+      o sin ruta lleva la marca de su motivo. Va marcada para correr, como las demás. Lo vigilan
+      `test_web.TestPanelCorridas.test_filas_dicen_si_piden_otro_contenedor` y `test_envio.TestLecturaDelPanel`.
+    - **Sin las ramas para otro contenedor** (misma decisión): como la fila llega siempre con «40 HC REEFER»,
+      `reservar_maersk` y `_mk_contenedor` ya no miran el contenedor. El commodity busca el salmón congelado, se marca
+      el control de temperatura, se escribe «40 Reefer» (`MK_PALABRA_CONTENEDOR`), va el peso reefer de `config.json` y
+      se llenan los ajustes reefer, siempre. Hasta el encargo 63, con otro contenedor escribía otra palabra clave y,
+      sin «REEF», «RF» o «RH» en el texto, buscaba «FISH» y «GOODS», pulsaba la primera opción sin mirar, se saltaba
+      el control de temperatura y los ajustes reefer y ponía 20.000 kg; con el decorador del 63 esas ramas ya no se
+      alcanzaban. Medido: las 21 filas de MAERSK de `logs/`, y las 7 que llegaron a la guarda, pasaron por el lado
+      reefer de cada una; y por el camino real (el reservador decorado, con una página falsa), con 14 formas del
+      contenedor, el de antes y el de ahora hacen lo mismo. Lo vigila `test_clics.TestMaerskSoloReefer`, con la
+      corrida hasta la fecha y una foto: una rama que volviera a mirar el contenedor no cambiaría lo que hace una
+      fila que llega, y solo la foto la ve.
 - **MAERSK elige la fecha de retiro con la regla de Marcelo** (`CICLO-maersk-retiro-y-terminos.md`): el primer día hábil
   después del día en que se corre el programa (`_mk_dia_de_retiro`, `_mk_dia_habil`: de lunes a viernes y sin los
   feriados de Chile) y, si no está habilitado en el calendario, el siguiente día hábil habilitado
@@ -719,7 +738,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 785 pruebas al 2026-10-13 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 791 pruebas al 2026-10-14 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -1229,7 +1248,7 @@ línea cambian). De arriba hacia abajo:
    - MANUAL, como palabra entera (`_fila_manual`, con `_palabra_en`; hasta `c4df3ab` bastaba que fuera parte del texto,
      y «MANUALMENTE» era MANUAL), tiene su propio motivo: «la fila está marcada para
      hacerse a mano». `/api/filas` trae las marcas `sin_nave`, `manual` y, desde el encargo 43, `sin_puerto` y
-     `sin_destino` (`_con_su_marca`). El panel marca por
+     `sin_destino` (`_con_su_marca`), y desde el 64, `otro_contenedor`. El panel marca por
      defecto las filas sin nave que no son MANUAL, para que queden NO ENVIADA en la planilla, y deja sin marcar las
      MANUAL (`marcadaPorDefecto` usa `f.manual`).
    - El panel web y la consola apartan esas filas antes de abrir el navegador, y no lo abren si ninguna trae nave. Los
@@ -1322,9 +1341,10 @@ Las capturas siguen el patrón `<nav>_f<fila>_<n>_<paso>.png`.
   cambias cómo se interpreta una columna, revisa ambos. `leer_reservas` ya no da la nave desde la columna F
   (`nave_de_la_f`, `CICLO-cola-seis-items.md`). «-» en el destino final, sin otra cosa, lo leen los dos como la celda
   vacía, con una sola función (`_destino_final_de`, encargo 43).
-- **El contenedor de la fila** lo leen los dos de una columna «Tipo contenedor» o «Contenedor»; sin la columna, los dos
-  dan «40 HC REEFER», y con ella, el panel también a la celda vacía, y la consola la deja vacía. Las planillas de este
-  equipo no la traen (medido el 2026-10-13). MAERSK reserva solo «40 HC REEFER» (encargo 63).
+- **El contenedor de la fila** lo leen los dos de una columna «Tipo contenedor» o «Contenedor»; sin la columna, o con
+  ella y la celda vacía, los dos dan «40 HC REEFER» (`CONTENEDOR_DE_LAS_FILAS`; la consola, a la celda vacía, desde el
+  encargo 64: hasta ahí la dejaba vacía). Las planillas de este equipo no la traen (medido el 2026-10-13). MAERSK
+  reserva solo «40 HC REEFER» (encargo 63). `test_planilla.TestContenedorDeLaFila` vigila que los dos den lo mismo.
 - **El día de carga lo lee un solo lector,** `_fecha_planilla` (`CICLO-cola-cuatro-items.md`).
   - Lo usan las seis: COSCO, MSC y ONE por `_desde` (ONE desde `0e15b8a`), y HYUNDAI, MAERSK y CMA. No le des
     a una naviera su propio lector.
