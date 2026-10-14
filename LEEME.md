@@ -59,6 +59,11 @@ trae una columna de contenedor y una fila de MAERSK pide otro que «40 HC REEFER
 motivo, sin entrar al portal: resérvala a mano. El panel la marca antes de correr, junto a «Reserva N» («otro
 contenedor: …»). Una celda vacía en esa columna vale «40 HC REEFER», en el panel y en la consola.
 
+Si la fila trae viaje, las seis navieras reservan solo una salida con ese viaje. Si el portal ya no lo ofrece (pasó
+su cierre, por ejemplo), la fila queda NO ENVIADA, con el motivo («ninguna de las opciones de la nave trae el viaje de
+la fila»), y la lista que mostró el portal queda en la carpeta de la corrida: corrige el viaje en la planilla y vuelve a
+armarla.
+
 Cuando el panel te pide resolver algo en el navegador («Te toca a ti»), `log.txt` anota cuándo empezó la pausa, por
 qué, y cuándo terminó: si pulsaste «Ya lo resolví» o «Detener», si pasaron 10 minutos sin respuesta o, con el
 deslizador de CMA, si el portal te dejó pasar o restringió el acceso.
@@ -134,6 +139,10 @@ armando reservas, espera antes a que termine.
 Antes de armar las reservas, el panel vuelve a mirar en qué modo está: si no es el que muestra la página (por ejemplo,
 una pestaña que quedó abierta de un panel que se cerró, mientras se abría otro en el otro modo), no arma nada y te pide
 recargarla (F5).
+
+El panel atiende solo a su propia página: otra página abierta en el mismo navegador no puede subirle una planilla,
+cambiar las credenciales, armar reservas ni apagarlo. Si alguna vez dice que un pedido «no viene de su propia página»,
+recárgala (F5).
 
 ## Credenciales y opciones
 

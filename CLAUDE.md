@@ -696,7 +696,8 @@ python -m playwright show-trace "logs\<carpeta>\traza.zip"
 - Los `.bat` lanzan con `pythonw` (sin consola): los `print` no se ven; todo queda en `logs\`.
 - Al arrancar, `lanzar_web` mira los cuatro puertos, del 8765 al 8768 (`PUERTOS_DEL_PANEL`), antes de tomar uno
   (decisión de Marcelo, encargo 53, `CICLO-bloqueo-cma-y-sandbox.md`). Les pregunta a la vez quién está (`_quien_esta`,
-  con `_panel_en`: su `/api/estado` y el `modo_emision` de su `/api/config`): nadie (None), otro programa (False: otro
+  con `_panel_en`: la marca de la sesión de su página, y con ella su `/api/estado` y el `modo_emision` de su
+  `/api/config`; encargo 66): nadie (None), otro programa (False: otro
   código HTTP, sin hablar HTTP, o un `/api/estado` sin «corriendo») o un panel de AQUASHIELD. Preguntarle a un puerto
   donde nadie escucha tarda 1 s en este equipo, y a los cuatro a la vez, 1 s en total. Si hay un panel de AQUASHIELD,
   decide el primero en el orden de los puertos; si no, toma el primero libre.
@@ -740,6 +741,23 @@ python -m playwright show-trace "logs\<carpeta>\traza.zip"
     `.bat`, ni `AQUASHIELD_EMISION.py`, ni las pruebas dependen del 8765; los manuales y el video tutorial, que salen de
     los generadores (fuera del repo), lo nombran (encargo 52).
   - Tiene un watchdog que apaga el servidor tras 90 s sin sondeos de `/api/estado`.
+  - **Atiende solo a su propia página** (decisión de Marcelo, encargo 66, `CICLO-viaje-y-origen.md`; `_pedido_ajeno`):
+    - **La marca de la sesión:** al arrancar, cada panel crea una al azar (`secrets.token_urlsafe(32)`) y la pone en su
+      página (`META_SESION`); la página la manda en `X-AquaShield-Sesion` (`CABECERA_SESION`) con cada pedido a `/api/`,
+      y sin ella el panel contesta 403 (`PEDIDO_AJENO`). Una página de otro sitio no puede leer la del panel, así que no
+      la tiene. El lanzador la lee de la página (`_sesion_del_panel`) para preguntarle a un panel que ya está y pedirle
+      que se apague; un panel de antes del encargo 66 no la trae, y se le pregunta como antes.
+    - **El origen:** el `Host` tiene que ser el del panel (`127.0.0.1` o `localhost`, con su puerto), el `Origin`, si
+      viene, el de su página, y `Sec-Fetch-Site`, si viene, `same-origin`. Su página se abre desde cualquier lado (el
+      lanzador, un marcador, un enlace), pero no dentro de otra (`Sec-Fetch-Dest`, `X-Frame-Options` y
+      `frame-ancestors`).
+    - **Si el panel se reinició** (el lanzador renueva uno ocioso), una pestaña que quedó abierta tiene la marca de
+      antes: con el 403, lee la nueva de la página del panel y repite el pedido una vez (`renovarSesion`), sin que el
+      operador vea nada. La descarga de la planilla va por el mismo camino (`pedir`): hasta ahí era una navegación a
+      `/api/descargar`, que no puede llevar la marca.
+    - Hasta el encargo 66 atendía a cualquiera que le hablara: una página de otro sitio abierta en el mismo navegador
+      podía subir una planilla, cambiar credenciales, armar una corrida o apagarlo (residual de la revisión de
+      seguridad del encargo 65).
 - Para depurar un portal sin correr toda la planilla: `AQUASHIELD_SOLO_PRIMERA=1` (solo en el modo
   consola `reservas`) y `AQUASHIELD_TRAZA=1`.
 
@@ -752,7 +770,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 793 pruebas al 2026-10-14 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 817 pruebas al 2026-10-14 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -776,6 +794,9 @@ segunda tardó 1.185 s (encargo 53).
   `perfiles/` reales. El arnés trae trampas (navegador, procesos, red externa, Playwright y, desde el encargo 51, la
   ventana de aviso de tkinter levantan `EfectoReal`) y exige las tres llaves del candado apagadas antes y después de
   cada prueba. La de la ventana evita que una prueba, o una mutación, se quede esperando un clic.
+- **Una prueba que habla con el panel lleva su marca** (encargo 66): `soporte.Servidor` la lee de su página y la
+  manda en cada pedido, también ante el panel de un proceso hijo; una prueba que mira el rechazo manda sus propias
+  cabeceras (`cabeceras=`).
 - **Nunca uses el puerto 8765** en una prueba: es el del panel de verdad. Las pruebas del arranque usan
   `puertos_seguidos` (del 20000 al 39999, con los cuatro seguidos libres): el lanzador prueba los puertos que siguen a
   su base, y los que reparte el sistema (desde el 49152) vienen seguidos (29 de 29, medido el 2026-10-05), así que dos
@@ -1080,7 +1101,8 @@ línea cambian). De arriba hacia abajo:
    tamaño y tipo, el peso, el panel Reefer o «I Agree» (encargo 57) o la mercancía, o la página no muestra la
    temperatura guardada (encargo 58), o su campo «Cantidad» no dice 1 (encargo 59), o cuando la lista de tipos de
    contenedor de MAERSK no trae una sola «40 Reefer High» (encargo 62), o la de sus ajustes reefer una sola «Standard
-   (40´)», o la fila de MAERSK pide otro contenedor que «40 HC REEFER» (encargo 63). `DETENIDO`, con «Detener»: en
+   (40´)», o la fila de MAERSK pide otro contenedor que «40 HC REEFER» (encargo 63), o cuando la nave está y ninguna de
+   sus salidas trae el viaje de la fila (en las seis desde el encargo 66). `DETENIDO`, con «Detener»: en
    COSCO y, desde el encargo 56, en la espera del deslizador de CMA-CGM. `REVISAR`, entre otros (en MAERSK
    y en COSCO, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el motivo dice hasta qué fecha buscó (ver
    «Ampliar la búsqueda»). Después: `EMITIDA`, `ENVIADA – REVISAR EN PORTAL`,
@@ -1131,11 +1153,26 @@ línea cambian). De arriba hacia abajo:
      opciones de la nave trae el viaje de la fila» (decisión de Marcelo, `CICLO-cierre-de-frenos.md`). Hasta `4948e16`
      elegían entre todas las de la nave, sin avisarlo. Desde el encargo 32 cortan después de ampliar la búsqueda; hasta
      `4cae528`, con lo primero que veían.
-   - **ONE, MSC, HYUNDAI y CMA-CGM no miran el viaje de la fila:** eligen por la nave, y CMA-CGM, la primera tarjeta que
-     la trae (`reservar_cma` lee el viaje y no lo usa). El 2026-10-14 (encargo 65,
-     `CICLO-corridas-14-10-y-revisiones.md`) la fila de CMA-CGM pedía un viaje que su portal ya no ofrecía, y CMA armó
-     la reserva con la nave en otro viaje, «lista para emitir»; en ONE, MSC y HYUNDAI, el elegido era el de la fila.
-     Que corten como MAERSK y COSCO lo decide Marcelo.
+   - **Desde el encargo 66, las seis** (decisión de Marcelo, `CICLO-viaje-y-origen.md`): si la fila trae viaje, la
+     salida elegida lo trae, con la regla de palabra entera de MAERSK y COSCO (`_trae_el_viaje`: cada palabra del viaje,
+     `_palabras_del_viaje`, entera y sin distinguir mayúsculas; su JavaScript, `_traeLaNave` con esas palabras). Si la
+     nave está y ninguna salida suya lo trae, NO ENVIADA con ese motivo, la captura y el HTML de la lista, sin elegir
+     otra. Hasta ahí elegían por la nave sola, y el 2026-10-14 CMA-CGM armó una reserva con otro viaje, «lista para
+     emitir» (encargo 65, `CICLO-corridas-14-10-y-revisiones.md`).
+     - ONE, en el enlace de la nave de su tarjeta, que trae la nave y su viaje (y su clic lo vuelve a leer,
+       `_JS_ONE_CLIC_TARJETA`); no amplía, y lo decide en sus 8 semanas (`one_f<fila>_detenida`).
+     - MSC, en «Vessel / Voyage» (`_msc_es_la_pedida`), y baja por la lista también con la nave sin ese viaje
+       (`msc_f<fila>_itinerarios`). Su clic no vuelve a leer la tarjeta, como antes (residual del encargo 66).
+     - HYUNDAI, en su «1st Vessel», donde el viaje va entre paréntesis (`_hmm_es_la_pedida`; su clic lo vuelve a
+       leer), y amplía «Duration» también con la nave sin ese viaje (la lista queda en `hmm_f<fila>_naves` y
+       `_naves_mas`). En la interfaz anterior, la tarjeta tiene que traer también las palabras del viaje; con la nave
+       sola, «sin_viaje».
+     - CMA-CGM, en el texto de la tarjeta (`_JS_CMA_RUTAS`: `conViaje`, y `deLaNave` si ninguna lo trae), y carga más
+       rutas también con la nave sin ese viaje; `_cma_seleccionar_itinerario` devuelve None y `reservar_cma` la deja NO
+       ENVIADA (la lista queda en `cma_f<fila>_rutas` y `_mas…`).
+     - Medido antes del cambio, sobre las reservas de `logs/` que llegaron a la guarda: ninguna que trajera el viaje de
+       su fila habría quedado NO ENVIADA; en cada naviera, el viaje del portal es una palabra suelta, escrita como en la
+       planilla. Las que no se pudieron medir (la planilla de esos días ya no está), en el informe.
    - MAERSK, si el viaje de la fila está, pero solo en salidas sin «Book», no amplía: NO ENVIADA con
      `SALIDA_NO_RESERVABLE`, «la salida pedida ya no se puede reservar» (decisión de Marcelo,
      `CICLO-ampliar-la-busqueda.md`). Sin viaje en la fila, lo mismo si, ampliada la búsqueda, la nave está solo sin
@@ -1182,7 +1219,8 @@ línea cambian). De arriba hacia abajo:
      tránsito. Cada tarjeta lo dice en su único `.mid-state`, «Direct» o «Transshipment» (medido en las 12 del 26-09);
      una que no lo dice cuenta como con transbordo. Así, en las dos listas guardadas elige
      la 6.ª (directa, 35 días de tránsito) y no la 5.ª (con transbordo, 33).
-   - CMA todavía no la aplica: falta el HTML de su lista, que se guarda desde `50e3f04`.
+   - CMA todavía no la aplica: falta el HTML de su lista, que se guarda desde `50e3f04`. Desde el encargo 66 sí mira el
+     viaje de la fila (arriba): entre las que lo traen, la primera.
    - Con la regla, ONE y COSCO empataban casi siempre: la misma salida con otro transbordo. El tránsito resuelve
      los 2 empates medidos de COSCO y 6 de los 8 de ONE (`CICLO-cola-siete-items.md`). En ONE quedaban empates entre la
      directa y una con transbordo del mismo tránsito (8 de 32 naves en las 4 listas guardadas; así quedaron NO ENVIADA
