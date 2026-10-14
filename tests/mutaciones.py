@@ -7838,6 +7838,8 @@ CM_QUIETA = TCM + "test_espera_la_lista_quieta"
 CM_SIN_UNA = TCM + "test_sin_una_sola_no_pulsa_nada"
 CM_CAMBIA = TCM + "test_si_la_lista_cambia_mientras_guarda_no_elige"
 CM_FALLA = TCM + "test_el_campo_o_el_clic_que_fallan_cortan"
+CM_REPINTA = TCM + "test_si_el_portal_repinta_antes_del_clic_no_pulsa_otra"
+COLUMNA = "test_planilla.TestContenedorDeLaFila.test_los_dos_lectores_toman_la_misma_columna"
 CM_DECORADOR = TCM + "test_la_reserva_queda_no_enviada_con_su_evidencia"
 CM_LLAMADA = TCM + "test_reservar_maersk_elige_asi_antes_de_la_guarda"
 EV_SOLO_AHI = LD + "test_solo_ahi"
@@ -7917,8 +7919,8 @@ MUTACIONES += [
     dict(id="e63-otra-naviera-tambien", pruebas=[OC_REGLA, OC_WEB],
          viejo='    if nav != "maersk":\n        return ""\n', nuevo=""),
     dict(id="e63-sin-juntar-los-espacios", pruebas=[OC_REGLA, OC_WEB],
-         viejo='    cont = " ".join(str((reserva or {}).get("contenedor") or "").split())\n',
-         nuevo='    cont = str((reserva or {}).get("contenedor") or "").strip()\n'),
+         viejo='        return ""\n    cont = " ".join(str((reserva or {}).get("contenedor") or "").split())\n',
+         nuevo='        return ""\n    cont = str((reserva or {}).get("contenedor") or "").strip()\n'),
     dict(id="e63-distingue-mayusculas", pruebas=[OC_REGLA, OC_PASA, OC_WEB], viejo=REGLA_OC,
          nuevo="    if cont == CONTENEDOR_DE_LAS_FILAS:\n"),
     dict(id="e63-basta-que-sea-reefer", pruebas=[OC_REGLA], viejo=REGLA_OC,
@@ -7932,9 +7934,10 @@ MUTACIONES += [
          viejo='    if not cont:\n        return f"la fila no dice',
          nuevo='    if not cont:\n        return ""\n        return f"la fila no dice'),
     dict(id="e63-motivo-sin-el-valor", pruebas=[OC_REGLA, OC_DECORADOR, OC_WEB, OC_CONSOLA],
-         viejo='"la fila pide el contenedor «{cont[:40]}», ', nuevo='"la fila pide el contenedor «otro», '),
+         viejo='"la fila pide el contenedor «{visto}», ', nuevo='"la fila pide el contenedor «otro», '),
     dict(id="e63-motivo-sin-recortar", pruebas=[OC_REGLA],
-         viejo='"la fila pide el contenedor «{cont[:40]}», ', nuevo='"la fila pide el contenedor «{cont}», '),
+         viejo='"?" if unicodedata.category(c) in ("Cc", "Cf") else c for c in cont[:40])',
+         nuevo='"?" if unicodedata.category(c) in ("Cc", "Cf") else c for c in cont)'),
     # El aviso y el estado.
     dict(id="e63-sin-aviso", pruebas=[OC_DECORADOR, OC_WEB, OC_CONSOLA], viejo=AVISO_OC, nuevo=""),
     dict(id="e63-omitida", pruebas=[OC_DECORADOR, OC_WEB, OC_CONSOLA],
@@ -8039,7 +8042,7 @@ MUTACIONES += [
     # /api/filas: sin la marca, también en la fila sin nave o sin ruta, mirando siempre MAERSK, o con la naviera de la
     # hoja en CONSOLIDADO; y la naviera de la fila, la de la hoja también en CONSOLIDADO (el panel no reparte).
     dict(id="e64-sin-marca-de-otro-contenedor", pruebas=[OTRO_API],
-         viejo="                otro_contenedor=bool(otro),\n", nuevo="                otro_contenedor=False,\n"),
+         viejo="otro_contenedor=bool(otro), ", nuevo="otro_contenedor=False, "),
     dict(id="e64-marca-tambien-sin-nave-o-sin-ruta", pruebas=[OTRO_API], viejo=MARCA_OTRO,
          nuevo="    otro = _otro_contenedor(nav, fila)\n"),
     dict(id="e64-marca-sin-mirar-la-naviera", pruebas=[OTRO_API], viejo=MARCA_OTRO,
@@ -8052,11 +8055,12 @@ MUTACIONES += [
     # La página: sin la marca en la tabla, sin escapar el contenedor, sin el aviso, sin marcarla para correr, o sin su
     # estilo.
     dict(id="e64-panel-sin-marca-en-la-tabla", pruebas=[OTRO_PANEL],
-         viejo="\" <span class='otro-contenedor'>otro contenedor: \" + esc(f.contenedor) + \"</span>\"",
+         viejo=("\" <span class='otro-contenedor'>otro contenedor: \"\n"
+                "                            + esc(f.contenedor_a_la_vista) + \"</span>\""),
          nuevo='""'),
     dict(id="e64-panel-sin-escapar", pruebas=[OTRO_PANEL],
-         viejo="otro contenedor: \" + esc(f.contenedor) + \"</span>\"",
-         nuevo="otro contenedor: \" + f.contenedor + \"</span>\""),
+         viejo="+ esc(f.contenedor_a_la_vista) + \"</span>\"",
+         nuevo="+ f.contenedor_a_la_vista + \"</span>\""),
     dict(id="e64-panel-sin-aviso", pruebas=[OTRO_PANEL],
          viejo="  const otroCont = FILAS.filter(f => f.otro_contenedor).length;\n", nuevo="  const otroCont = 0;\n"),
     dict(id="e64-panel-sin-marcar-para-correr", pruebas=[OTRO_PANEL],
@@ -8086,4 +8090,40 @@ MUTACIONES += [
          nuevo=REEF + "".join("    " + l + "\n" for l in CONTROL_TEMP.splitlines())),
     dict(id="e64-vuelve-la-rama-del-peso", pruebas=[SIN_RAMAS], viejo=".strip() or _peso_reefer()\n",
          nuevo='.strip() or (_peso_reefer() if "REEF" in (reserva.get("contenedor") or "").upper() else "20000")\n'),
+    # Encargo 65, las revisiones del diff de los encargos 62 a 64. El contenedor a la vista: con los caracteres de
+    # control (que openpyxl no escribe) o los invisibles; el motivo, con la celda tal cual; /api/filas sin él; la
+    # página, con la celda.
+    dict(id="e65-a-la-vista-con-controles", pruebas=[OC_REGLA],
+         viejo='    return "".join("?" if unicodedata.category(c) in ("Cc", "Cf") else c for c in cont[:40])\n',
+         nuevo="    return cont[:40]\n"),
+    dict(id="e65-a-la-vista-con-invisibles", pruebas=[OC_REGLA],
+         viejo='unicodedata.category(c) in ("Cc", "Cf")', nuevo='unicodedata.category(c) in ("Cc",)'),
+    dict(id="e65-a-la-vista-sin-juntar-los-espacios", pruebas=[OC_REGLA],
+         viejo='    import unicodedata\n    cont = " ".join(str((reserva or {}).get("contenedor") or "").split())\n',
+         nuevo='    import unicodedata\n    cont = str((reserva or {}).get("contenedor") or "").strip()\n'),
+    dict(id="e65-motivo-con-la-celda", pruebas=[OC_REGLA], viejo="    visto = _contenedor_a_la_vista(reserva)\n",
+         nuevo="    visto = cont[:40]\n"),
+    dict(id="e65-api-sin-el-contenedor", pruebas=[OTRO_API],
+         viejo='contenedor_a_la_vista=_contenedor_a_la_vista(fila) if otro else "",',
+         nuevo='contenedor_a_la_vista="",'),
+    dict(id="e65-panel-con-la-celda", pruebas=[OTRO_PANEL],
+         viejo="esc(f.contenedor_a_la_vista)", nuevo="esc(f.contenedor)"),
+    # La consola, con su propia columna del contenedor otra vez, o con la última que calza.
+    dict(id="e65-consola-con-su-columna", pruebas=[COLUMNA],
+         viejo=('    col_map.pop("tipo", None)\n    col_cont = _campos_de_la_fila(ws, h_row).get("contenedor")\n'
+                '    if col_cont:\n        col_map["tipo"] = col_cont\n'), nuevo=""),
+    dict(id="e65-la-ultima-que-calza", pruebas=[COLUMNA],
+         viejo="            if campo in cabec:\n                continue\n            if any(k in h for k in claves):",
+         nuevo="            if any(k in h for k in claves):"),
+    # Y el clic de _mk_elegir_unica: otra vez al lugar de la opción (como hasta el encargo 64), sin comprobar su texto,
+    # o sin cortar si no se puede tomar. El clic por su lugar no lo ve CM_REPINTA: la comprobación del texto corta antes
+    # del clic (el censo del encargo 65 lo mostró); lo ven las dos que eligen, cuya página no admite ese clic.
+    dict(id="e65-clic-por-posicion",
+         pruebas=[CM_ELIGE, "test_clics.TestReeferMaersk.test_elige_la_unica_con_el_texto_entero"],
+         viejo="        opcion.click(timeout=3000)\n", nuevo="        op.nth(exactas[0]).click(timeout=3000)\n"),
+    dict(id="e65-sin-comprobar-la-opcion", pruebas=[CM_REPINTA], viejo="    if ahora != buscado:\n",
+         nuevo="    if False:\n"),
+    dict(id="e65-la-opcion-que-no-se-toma-sigue", pruebas=[CM_REPINTA],
+         viejo='        raise ObjetivoNoEncontrado(paso, f"la opción «{buscado}», que no pude volver',
+         nuevo='        return\n        raise ObjetivoNoEncontrado(paso, f"la opción «{buscado}», que no pude volver'),
 ]

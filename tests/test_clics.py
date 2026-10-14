@@ -6839,10 +6839,13 @@ class PaginaContenedor(soporte.PaginaFalsa):
     selector u otro JavaScript quedan en 'prohibidos' aunque el programa se trague el error: cada prueba exige esa lista
     vacía."""
 
-    def __init__(self, mod, lecturas, falla_campo=None, falla_clic=None):
+    def __init__(self, mod, lecturas, falla_campo=None, falla_clic=None, repinta=None, falla_tomar=None):
         super().__init__(url="https://portal.invalid/book")
         self.mod, self.lecturas = mod, [list(x) for x in lecturas]
         self.falla_campo, self.falla_clic = falla_campo, falla_clic
+        # 'repinta': la lista que el portal pinta entre la última lectura y el clic; 'falla_tomar': el error al tomar
+        # la opción (encargo 65).
+        self.repinta, self.falla_tomar = repinta, falla_tomar
         self.acciones, self.prohibidos, self.ultima, self.main_frame, self.pesos = [], [], [], None, []
 
     def leer(self):
@@ -6876,11 +6879,21 @@ class PaginaContenedor(soporte.PaginaFalsa):
             raise AssertionError("selector inesperado")
 
         def opcion(i):
-            def pulsar(**k):
-                if pagina.falla_clic:
-                    raise RuntimeError(pagina.falla_clic)
-                pagina.acciones.append(("clic", pagina.ultima[i]))
-            return types.SimpleNamespace(click=pulsar)
+            # Como Playwright: nth(i) se resuelve al usarlo. Desde el encargo 65 el programa toma la opción
+            # (element_handle) y pulsa esa; un clic de nth(i) ya no lo admite esta página.
+            def tomar(**k):
+                if pagina.falla_tomar:
+                    raise RuntimeError(pagina.falla_tomar)
+                if pagina.repinta is not None:
+                    pagina.ultima = list(pagina.repinta)
+                texto = pagina.ultima[i]
+
+                def pulsar(**k):
+                    if pagina.falla_clic:
+                        raise RuntimeError(pagina.falla_clic)
+                    pagina.acciones.append(("clic", texto))
+                return types.SimpleNamespace(text_content=lambda: texto, click=pulsar)
+            return types.SimpleNamespace(element_handle=tomar)
         return types.SimpleNamespace(all_text_contents=self.leer, nth=opcion)
 
     def screenshot(self, path=None, full_page=False, timeout=None):
@@ -6965,6 +6978,21 @@ class TestContenedorMaersk(ConRegistro):
         self.assertEqual(self.cortar(pagina, "cambia"),
                          ("Tipo de contenedor de MAERSK", "la opción «40 Reefer High» de la lista que guardé en la "
                                                           "evidencia: la lista cambió mientras la guardaba"))
+
+    def test_si_el_portal_repinta_antes_del_clic_no_pulsa_otra(self):
+        # Entre la última lectura y el clic el portal repinta la lista: en el lugar de «40 Reefer High» queda la del
+        # embarcador. Hasta el encargo 65, el clic iba a ese lugar (op.nth(i), que se resuelve al pulsar) y la elegía
+        # (revisión de seguridad). Ahora toma la opción, ve que ya dice otra cosa y no pulsa nada; y si no puede
+        # tomarla, tampoco.
+        pagina = PaginaContenedor(self.mod, [[self.ALTA, self.PROPIO]], repinta=[self.PROPIO, self.ALTA])
+        self.assertEqual(self.cortar(pagina, "repinta"),
+                         ("Tipo de contenedor de MAERSK", f"la opción «40 Reefer High»: la que iba a pulsar ya dice "
+                                                          f"«{self.PROPIO}»"))
+        pagina = PaginaContenedor(self.mod, [[self.ALTA]], falla_tomar="el elemento ya no está en la página")
+        self.assertEqual(self.cortar(pagina, "tomar"),
+                         ("Tipo de contenedor de MAERSK", "la opción «40 Reefer High», que no pude volver a leer antes "
+                                                          "del clic (RuntimeError: el elemento ya no está en la "
+                                                          "página)"))
 
     def test_el_campo_o_el_clic_que_fallan_cortan(self):
         pagina = PaginaContenedor(self.mod, [[self.ALTA]], falla_campo="el campo está deshabilitado")

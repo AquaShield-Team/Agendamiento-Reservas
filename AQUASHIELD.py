@@ -397,6 +397,9 @@ def _evidencia_antes_de_la_guarda(page, reg, nombre, momento="en la guarda", com
       (CICLO-maersk-cuatro-puntos.md).
     - _mk_marcar_casilla, si el clic en el resultado del buscador no eligió a AQUACHILE, antes de pulsar su casilla
       («mk_f<fila>_casilla»), con la captura de la ventana (CICLO-maersk-busqueda-vacia.md).
+    - _mk_elegir_unica, con la lista de tipos de contenedor o la de los ajustes reefer abierta, antes de elegir
+      («mk_f<fila>_contenedor» y «mk_f<fila>_reefer»), con la captura de la ventana (decisiones de Marcelo, encargos
+      62 y 63, CICLO-maersk-contenedor.md y CICLO-maersk-otro-contenedor-y-reefer.md).
     - Antes de pulsar una sugerencia de origen o de destino, cuando el ayudante ve la que pulsaría, con la captura de
       la ventana (decisión de Marcelo, CICLO-origen-y-destino.md): «<nav>_f<fila>_origen» y «_destino»; en CMA, con su
       modo («cma_f<fila>_origen_<modo>», «_destino_<modo>» y «_entrega_<modo>», el lugar de entrega), y en MAERSK y
@@ -3147,12 +3150,24 @@ def _sin_ruta(reg, fila, falta):
 CONTENEDOR_DE_LAS_FILAS = "40 HC REEFER"
 
 
+def _contenedor_a_la_vista(reserva):
+    """El contenedor que pide la fila como lo muestran el motivo de la NO ENVIADA (_otro_contenedor) y la marca del
+    panel (/api/filas): con los espacios de a uno, hasta 40 caracteres, y cada carácter de control o de formato como
+    «?» (un NUL, un ESC, un espacio de ancho cero, una marca de orden de bytes). Revisiones del encargo 65: openpyxl no
+    escribe un carácter de control, y la fila quedaba sin su resultado en la planilla descargada; con uno invisible, el
+    motivo decía que la fila pedía «40 HC REEFER», el mismo que acepta; y el panel pintaba la celda entera."""
+    import unicodedata
+    cont = " ".join(str((reserva or {}).get("contenedor") or "").split())
+    return "".join("?" if unicodedata.category(c) in ("Cc", "Cf") else c for c in cont[:40])
+
+
 def _otro_contenedor(nav, reserva):
     """El motivo de la NO ENVIADA si la fila es de MAERSK ('nav', su clave) y su contenedor no es
     CONTENEDOR_DE_LAS_FILAS, sin distinguir mayúsculas y con los espacios de a uno; si no, "". Un contenedor vacío
     tampoco lo es: ningún lector lo da desde el encargo 64 (los dos le dan CONTENEDOR_DE_LAS_FILAS a la celda vacía;
     hasta ahí, la consola la dejaba vacía), pero el decorador de reservar_maersk mira cualquier reserva que le llegue.
-    Las otras navieras no miran el contenedor (decisión de Marcelo, encargo 63)."""
+    Las otras navieras no cortan por el contenedor (decisión de Marcelo, encargo 63); HYUNDAI sí lo lee, para elegir
+    REEFER o DRY (_hmm_llenar_detalles: revisión de código del encargo 65)."""
     if nav != "maersk":
         return ""
     cont = " ".join(str((reserva or {}).get("contenedor") or "").split())
@@ -3160,7 +3175,8 @@ def _otro_contenedor(nav, reserva):
         return ""
     if not cont:
         return f"la fila no dice qué contenedor pide, y en MAERSK el programa reserva solo «{CONTENEDOR_DE_LAS_FILAS}»"
-    return f"la fila pide el contenedor «{cont[:40]}», y en MAERSK el programa reserva solo «{CONTENEDOR_DE_LAS_FILAS}»"
+    visto = _contenedor_a_la_vista(reserva)
+    return f"la fila pide el contenedor «{visto}», y en MAERSK el programa reserva solo «{CONTENEDOR_DE_LAS_FILAS}»"
 
 
 def _sin_el_contenedor(reg, fila, motivo):
@@ -3202,12 +3218,13 @@ def _con_su_marca(fila, nav):
     CICLO-maersk-elige-exacto.md): hasta ahí, esas quedaban NO ENVIADA recién al correr. Desde el encargo 64, también
     «otro_contenedor», si trae nave y ruta y es de MAERSK ('nav', la clave de su naviera: _nav_de_la_fila) y pide otro
     contenedor que el de las filas, lo que diga _otro_contenedor, en el mismo orden en que los dos orquestadores la
-    apartan (decisión de Marcelo, CICLO-maersk-contenedor-consola-y-panel.md)."""
+    apartan (decisión de Marcelo, CICLO-maersk-contenedor-consola-y-panel.md); y desde el encargo 65, con ella,
+    «contenedor_a_la_vista», el que muestra el motivo (_contenedor_a_la_vista), que la página pinta en la marca."""
     nave = fila.get("nave")
     falta = "" if _fila_sin_nave(nave) else _falta_en_la_fila(fila)
     otro = "" if _fila_sin_nave(nave) or falta else _otro_contenedor(nav, fila)
     return dict(fila, sin_nave=_fila_sin_nave(nave) and not _fila_manual(nave), manual=_fila_manual(nave),
-                otro_contenedor=bool(otro),
+                otro_contenedor=bool(otro), contenedor_a_la_vista=_contenedor_a_la_vista(fila) if otro else "",
                 sin_puerto=falta == FILA_SIN_PUERTO, sin_destino=falta == FILA_SIN_DESTINO)
 
 
@@ -3315,6 +3332,15 @@ def leer_reservas(naviera_clave):
             col_map["carga"] = c
         elif "estado" in v:
             col_map["estado"] = c
+
+    # La columna del contenedor, con la regla del panel (_campos_de_la_fila, la de _mapear) en esta fila de encabezados:
+    # hasta el encargo 65, la consola tomaba la última columna con «tipo cont» o «contenedor», y el panel la primera que
+    # calza con _CAMPOS, así que con dos columnas así, o con «Tipo cont.» o «Retiro contenedor», leían otra (revisiones
+    # del encargo 65). Los otros campos no cambian: el elif de arriba sigue apartando esos encabezados.
+    col_map.pop("tipo", None)
+    col_cont = _campos_de_la_fila(ws, h_row).get("contenedor")
+    if col_cont:
+        col_map["tipo"] = col_cont
 
     reservas = []
     for r in range(h_row + 1, ws.max_row + 1):
@@ -10704,8 +10730,19 @@ def _mk_elegir_unica(page, reg, buscado, paso, lista, evidencia):
     if despues != textos:
         raise ObjetivoNoEncontrado(paso, f"la opción «{buscado}» de la lista que guardé en la evidencia: la lista "
                                          f"cambió mientras la guardaba")
+    # El clic va a la opción misma, no a la que ocupe su lugar: op.nth(i) se vuelve a resolver al pulsar, y si el
+    # portal repintaba la lista en ese instante, podía pulsar otra (revisiones del encargo 65). Se toma la opción
+    # (element_handle), se comprueba que su texto sigue siendo el buscado y se pulsa esa: si ya no está, el clic falla.
     try:
-        op.nth(exactas[0]).click(timeout=3000)
+        opcion = op.nth(exactas[0]).element_handle(timeout=3000)
+        ahora = " ".join((opcion.text_content() or "").split())
+    except Exception as e:
+        raise ObjetivoNoEncontrado(paso, f"la opción «{buscado}», que no pude volver a leer antes del clic "
+                                         f"({_texto_error(e)})")
+    if ahora != buscado:
+        raise ObjetivoNoEncontrado(paso, f"la opción «{buscado}»: la que iba a pulsar ya dice «{ahora[:40]}»")
+    try:
+        opcion.click(timeout=3000)
     except Exception as e:
         raise ObjetivoNoEncontrado(paso, f"la opción «{buscado}», que no aceptó el clic ({_texto_error(e)})")
 
@@ -13305,23 +13342,31 @@ def _txt(v):
     return str(v).strip()
 
 
+def _campos_de_la_fila(ws, r):
+    """En qué columna de la fila 'r' estaría cada campo de _CAMPOS si fuera la de encabezados: el primer encabezado
+    que trae una de sus claves, en el orden de _CAMPOS. La usan _mapear y, desde el encargo 65, la consola para la
+    columna del contenedor (leer_reservas)."""
+    cabec = {}
+    for c in range(1, min(ws.max_column, 40) + 1):
+        h = _txt(ws.cell(r, c).value).lower()
+        if not h:
+            continue
+        for campo, claves in _CAMPOS:
+            if campo in cabec:
+                continue
+            if any(k in h for k in claves):
+                cabec[campo] = c
+                break
+    return cabec
+
+
 def _mapear(ws, tope=14):
     """Encuentra la fila de encabezado y en que columna esta cada campo.
     No se usan posiciones fijas: cada planilla acomoda las columnas a su gusto
     y la de COSCO, por ejemplo, parte en la columna B."""
     mejor, mejor_n, mejor_fila = {}, 0, 0
     for r in range(1, min(ws.max_row, tope) + 1):
-        cabec = {}
-        for c in range(1, min(ws.max_column, 40) + 1):
-            h = _txt(ws.cell(r, c).value).lower()
-            if not h:
-                continue
-            for campo, claves in _CAMPOS:
-                if campo in cabec:
-                    continue
-                if any(k in h for k in claves):
-                    cabec[campo] = c
-                    break
+        cabec = _campos_de_la_fila(ws, r)
         if len(cabec) > mejor_n:
             mejor, mejor_n, mejor_fila = cabec, len(cabec), r
     return mejor_fila, mejor
@@ -14841,7 +14886,8 @@ async function verFilas() {
     <tr data-i="${i}" id="tr-${f.fila}">
       <td><input type="checkbox" ${chk} data-chk="${i}"></td>
       <td style="font-weight:600;white-space:nowrap;" title="Fila ${f.fila} del Excel">Reserva ${i + 1}${
-        f.otro_contenedor ? " <span class='otro-contenedor'>otro contenedor: " + esc(f.contenedor) + "</span>"
+        f.otro_contenedor ? " <span class='otro-contenedor'>otro contenedor: "
+                            + esc(f.contenedor_a_la_vista) + "</span>"
                           : ""}</td>
       ${esConsolidado ? `<td style="font-weight:600;color:var(--accent);">${esc(f.naviera || '')}</td>` : ''}
       <td>${f.sin_puerto ? "<span class='sin-ruta'>sin puerto de carga</span> " + esc(f.pol) : esc(f.pol)}</td>

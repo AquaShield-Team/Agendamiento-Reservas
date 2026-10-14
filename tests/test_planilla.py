@@ -500,6 +500,30 @@ class TestContenedorDeLaFila(ConPlanilla):
                 self.assertEqual((consola[6], panel[6]), (m.CONTENEDOR_DE_LAS_FILAS, m.CONTENEDOR_DE_LAS_FILAS))
         self.assertEqual(m.CONTENEDOR_DE_LAS_FILAS, "40 HC REEFER")
 
+    def test_los_dos_lectores_toman_la_misma_columna(self):
+        # La consola toma la columna del contenedor con la regla del panel (_campos_de_la_fila; revisiones del encargo
+        # 65). Hasta ahí, con dos encabezados que traen «contenedor», la consola leía el último y el panel el primero, y
+        # con «Tipo cont.», «Retiro contenedor» o «Depósito contenedor», la consola leía la columna y el panel no. Ahora
+        # los dos leen lo mismo: la J (o la K, si la J no calza), o ninguna.
+        m = self.mod
+        casos = ((("Tipo contenedor", "Cant. contenedores"), "20 DRY"),
+                 (("Cant. contenedores", "Tipo contenedor"), "2"),
+                 (("N° contenedor", "Tipo contenedor"), "2"),
+                 (("Tipo cont.", None), m.CONTENEDOR_DE_LAS_FILAS),
+                 (("Retiro contenedor", None), m.CONTENEDOR_DE_LAS_FILAS),
+                 (("Depósito contenedor", None), m.CONTENEDOR_DE_LAS_FILAS))
+        for (j, k), esperado in casos:
+            with self.subTest(j=j, k=k):
+                wb = openpyxl.load_workbook(self.planilla)
+                ws = wb["MAERSK"]
+                ws["J4"], ws["K4"] = j, k
+                ws["J5"], ws["K5"] = ("20 DRY", 2) if j.startswith("Tipo contenedor") else (2, "20 DRY")
+                wb.save(self.planilla)
+                consola = {f["fila"]: f["contenedor"] for f in m.leer_reservas("maersk")}
+                panel = {f["fila"]: f["contenedor"]
+                         for f in m.leer_filas(openpyxl.load_workbook(self.planilla, data_only=True)["MAERSK"])[2]}
+                self.assertEqual((consola[5], panel[5]), (esperado, esperado))
+
 
 if __name__ == "__main__":
     unittest.main()

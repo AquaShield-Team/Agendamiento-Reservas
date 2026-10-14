@@ -640,8 +640,9 @@ class TestLecturaDelPanel(soporte.CasoAQ):
         js, m = self.mod.JS_INDEX, self.mod
         marcada = re.search(r"^function marcadaPorDefecto\(f\) \{\n.*?\n\}\n", js, re.S | re.M).group(0)
         esc = re.search(r"^function esc\(s\) \{\n.*?\n\}\n", js, re.S | re.M).group(0)
-        marca = ("${\n        f.otro_contenedor ? \" <span class='otro-contenedor'>otro contenedor: \" + "
-                 "esc(f.contenedor) + \"</span>\"\n                          : \"\"}</td>")
+        marca = ("${\n        f.otro_contenedor ? \" <span class='otro-contenedor'>otro contenedor: \"\n"
+                 "                            + esc(f.contenedor_a_la_vista) + \"</span>\"\n"
+                 "                          : \"\"}</td>")
         aviso = (f'" reserva(s) de MAERSK piden otro contenedor que «{m.CONTENEDOR_DE_LAS_FILAS}»: quedan NO '
                  'ENVIADA, " +\n                     "sin entrar al portal. Resérvalas a mano en el portal, o '
                  'corrige el contenedor en la planilla.",')
@@ -649,17 +650,25 @@ class TestLecturaDelPanel(soporte.CasoAQ):
                       'Reserva ${i + 1}' + marca):
             with self.subTest(trozo=trozo[:40]):
                 self.assertEqual(js.count(trozo), 1)
-        filas = [{"nave": "NAVE UNO", "otro_contenedor": True, "contenedor": "20 DRY"},
-                 {"nave": "NAVE UNO", "otro_contenedor": True, "contenedor": "<b>40' HC</b>"},
-                 {"nave": "NAVE UNO", "otro_contenedor": False, "contenedor": "40 HC REEFER"}]
+        # La página pinta el contenedor que muestra el motivo, el que trae /api/filas (contenedor_a_la_vista, desde
+        # el encargo 65), no la celda: recortado y sin caracteres invisibles (revisiones del encargo 65).
+        filas = [{"nave": "NAVE UNO", "otro_contenedor": True, "contenedor": "20 DRY",
+                  "contenedor_a_la_vista": "20 DRY"},
+                 {"nave": "NAVE UNO", "otro_contenedor": True, "contenedor": "<b>40' HC</b>",
+                  "contenedor_a_la_vista": "<b>40' HC</b>"},
+                 {"nave": "NAVE UNO", "otro_contenedor": False, "contenedor": "40 HC REEFER",
+                  "contenedor_a_la_vista": ""},
+                 {"nave": "NAVE UNO", "otro_contenedor": True, "contenedor": "X" * 50,
+                  "contenedor_a_la_vista": "X" * 40}]
         guion = (marcada + esc + f"const filas = {json.dumps(filas)};\n"
                  + "console.log(JSON.stringify([filas.map(marcadaPorDefecto), filas.map(f => `Reserva 1"
                  + marca[:-len("</td>")] + "`)]));\n")
         self.assertEqual(correr_node(self, guion),
-                         [[True, True, True],
+                         [[True, True, True, True],
                           ["Reserva 1 <span class='otro-contenedor'>otro contenedor: 20 DRY</span>",
                            "Reserva 1 <span class='otro-contenedor'>otro contenedor: &lt;b&gt;40' HC&lt;/b&gt;</span>",
-                           "Reserva 1"]])
+                           "Reserva 1",
+                           f"Reserva 1 <span class='otro-contenedor'>otro contenedor: {'X' * 40}</span>"]])
         self.assertIn(".sin-nave, .sin-ruta, .otro-contenedor { color: var(--text-muted); font-style: italic; }",
                       m.CSS_INDEX)
 

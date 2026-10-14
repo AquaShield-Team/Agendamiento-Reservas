@@ -15,6 +15,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import openpyxl
 
 import soporte
 from test_envio import correr_node
@@ -877,9 +878,15 @@ class TestOtroContenedorMaersk(soporte.CasoAQ):
                 self.assertEqual(f(c), "")
         for c, dice in (("20 DRY", "20 DRY"), ("40 DRY", "40 DRY"), ("40HC REEFER", "40HC REEFER"),
                         ("40 HC REEFER SOC", "40 HC REEFER SOC"), ("45 HC REEFER", "45 HC REEFER"),
-                        ("40 REEFER", "40 REEFER"), ("  20   dry ", "20 dry"), ("X" * 50, "X" * 40)):
+                        ("40 REEFER", "40 REEFER"), ("  20   dry ", "20 dry"), ("X" * 50, "X" * 40),
+                        ("20 DRY" + chr(0), "20 DRY?"), ("20" + chr(27) + "DRY" + chr(127), "20?DRY?"),
+                        # Uno invisible, que antes el motivo no mostraba: decía que la fila pedía «40 HC REEFER».
+                        ("40 HC REEFER" + chr(0x200B), "40 HC REEFER?"), (chr(0xFEFF) + "20 DRY", "?20 DRY")):
             with self.subTest(contenedor=c):
                 self.assertEqual(f(c), f"la fila pide el contenedor «{dice}», {self.SOLO}")
+                # La planilla descargada lo puede escribir: openpyxl no escribe un carácter de control (revisión de
+                # seguridad del encargo 65; hasta ahí, la fila quedaba sin su resultado).
+                openpyxl.Workbook().active.cell(1, 1).value = f(c)
         for c in ("", None, "   "):
             with self.subTest(contenedor=c):
                 self.assertEqual(f(c), f"la fila no dice qué contenedor pide, {self.SOLO}")

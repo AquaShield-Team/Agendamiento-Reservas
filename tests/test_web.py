@@ -881,6 +881,9 @@ class TestPanelCorridas(PanelBase):
             self.assertEqual(st, 200)
             return {f["fila"]: f["otro_contenedor"] for f in d["filas"]}
         self.assertEqual(marcas("MAERSK"), {5: True, 6: False})
+        # Con la marca, el contenedor que muestra el motivo (_contenedor_a_la_vista), para la página (encargo 65).
+        st, d = self.srv.json("/api/filas?hoja=MAERSK")
+        self.assertEqual({f["fila"]: f["contenedor_a_la_vista"] for f in d["filas"]}, {5: "20 DRY", 6: ""})
         self.assertEqual(marcas("ONE"), {5: False, 6: False, 7: False, 9: False, 10: False})
         self.assertEqual(marcas("CONSOLIDADO"), {5: False, 6: False, 7: False, 8: False, 9: False, 10: True, 11: False})
         # La fila sin nave, o sin destino, lleva la marca de su motivo, aunque pida otro contenedor: es el orden en que
