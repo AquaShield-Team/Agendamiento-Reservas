@@ -333,18 +333,40 @@ class TestEjecutarReservas(ConPlanilla):
         self.assertIn(f"· ✗ fila 5: NO ENVIADA · la fila pide el contenedor «20 DRY», {solo}. No entro al portal por "
                       "ella: resérvala a mano en el portal, o corrige el contenedor en la planilla si la fila pide "
                       "«40 HC REEFER».", log)
-        # Con la 6 vacía, la consola no le pone el contenedor de las filas: no dice cuál pide, y ninguna va al portal.
-        self.poner("MAERSK", {"J6": None})
+        # Con la 6 escrita de otra forma («40HC REEFER», sin el espacio), tampoco: no es el de las filas, y ninguna va
+        # al portal (decisión de Marcelo, encargo 64: las otras formas quedan NO ENVIADA mientras el equipo no use la
+        # columna). Hasta el encargo 64, la 6 vacía daba lo mismo, «la fila no dice qué contenedor pide»: desde
+        # entonces la consola le pone el de las filas (test_fila_de_maersk_con_la_celda_vacia_va_al_portal).
+        self.poner("MAERSK", {"J6": "40HC REEFER"})
         with soporte.Navieras(self.mod) as n:
             res, carpeta = self.mod.ejecutar_reservas("op_prueba", "maersk", esperar_cierre=lambda: None)
         self.assertEqual((res, len(n.pw.lanzamientos), n.logins, n.reservas),
                          ({5: "NO ENVIADA", 6: "NO ENVIADA"}, 0, [], []))
         ws = openpyxl.load_workbook(self.planilla)["MAERSK"]
-        self.assertTrue(ws["H6"].value.endswith(f" · la fila no dice qué contenedor pide, {solo}"), ws["H6"].value)
+        self.assertTrue(ws["H6"].value.endswith(f" · la fila pide el contenedor «40HC REEFER», {solo}"),
+                        ws["H6"].value)
         log = (Path(carpeta) / "log.txt").read_text(encoding="utf-8")
         self.assertIn("· De las filas de MAERSK con nave y ruta, ninguna pide el contenedor «40 HC REEFER»: no abro el "
                       "navegador ni entro al portal.", log)
         self.assertIn("· ===== RESUMEN RESERVAS =====", log)
+
+    def test_fila_de_maersk_con_la_celda_vacia_va_al_portal(self):
+        # Con la columna de contenedor y la celda vacía, o solo con espacios, la consola le da «40 HC REEFER», igual
+        # que el panel, y la fila va al portal con ese contenedor (decisión de Marcelo, encargo 64,
+        # CICLO-maersk-contenedor-consola-y-panel.md). Hasta ahí quedaba NO ENVIADA, «la fila no dice qué contenedor
+        # pide».
+        self.poner("MAERSK", {"J4": "Tipo contenedor", "J5": None, "J6": "   "})
+        con_su_contenedor = soporte.Navieras(self.mod, respuesta=lambda nav, rsv, on_pausa: ("OK-EJEMPLO",
+                                                                                             rsv["contenedor"]))
+        with con_su_contenedor as n:
+            res, carpeta = self.mod.ejecutar_reservas("op_prueba", "maersk", esperar_cierre=lambda: None)
+        self.assertEqual((res, [r[:2] for r in n.reservas]),
+                         ({5: "OK-EJEMPLO", 6: "OK-EJEMPLO"}, [("maersk", 5), ("maersk", 6)]))
+        ws = openpyxl.load_workbook(self.planilla)["MAERSK"]
+        for celda in ("H5", "H6"):
+            self.assertIn(" · OK-EJEMPLO · ", ws[celda].value)
+            self.assertTrue(ws[celda].value.endswith(" · 40 HC REEFER · SIN EMITIR"), ws[celda].value)
+        self.assertNotIn("contenedor pide", (Path(carpeta) / "log.txt").read_text(encoding="utf-8"))
 
     def test_error_de_escritura_se_muestra_y_queda_en_el_log(self):
         # Planilla de solo lectura (como abierta en Excel): la corrida sigue, y cada resultado

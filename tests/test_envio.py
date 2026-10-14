@@ -629,7 +629,39 @@ class TestLecturaDelPanel(soporte.CasoAQ):
                       '" reserva(s) con nave no traen su puerto de carga o su destino: quedan NO ENVIADA, "'):
             with self.subTest(trozo=trozo):
                 self.assertEqual(js.count(trozo), 1)
-        self.assertIn(".sin-nave, .sin-ruta { color: var(--text-muted); font-style: italic; }", self.mod.CSS_INDEX)
+        self.assertIn(".sin-nave, .sin-ruta, .otro-contenedor { color: var(--text-muted); font-style: italic; }",
+                      self.mod.CSS_INDEX)
+
+    def test_marca_y_cuenta_aparte_las_filas_con_otro_contenedor(self):
+        # La fila de MAERSK que pide otro contenedor se ve marcada antes de correr, junto a «Reserva N» (la tabla no
+        # muestra el contenedor), con el que pide, y se cuenta aparte, como la sin ruta (decisión de Marcelo, encargo
+        # 64, CICLO-maersk-contenedor-consola-y-panel.md; la marca, de /api/filas: test_web). Va marcada para correr,
+        # como las demás: queda NO ENVIADA con su motivo, sin entrar al portal. Hasta ahí, el panel no la distinguía.
+        js, m = self.mod.JS_INDEX, self.mod
+        marcada = re.search(r"^function marcadaPorDefecto\(f\) \{\n.*?\n\}\n", js, re.S | re.M).group(0)
+        esc = re.search(r"^function esc\(s\) \{\n.*?\n\}\n", js, re.S | re.M).group(0)
+        marca = ("${\n        f.otro_contenedor ? \" <span class='otro-contenedor'>otro contenedor: \" + "
+                 "esc(f.contenedor) + \"</span>\"\n                          : \"\"}</td>")
+        aviso = (f'" reserva(s) de MAERSK piden otro contenedor que «{m.CONTENEDOR_DE_LAS_FILAS}»: quedan NO '
+                 'ENVIADA, " +\n                     "sin entrar al portal. Resérvalas a mano en el portal, o '
+                 'corrige el contenedor en la planilla.",')
+        for trozo in (marca, "const otroCont = FILAS.filter(f => f.otro_contenedor).length;", aviso,
+                      'Reserva ${i + 1}' + marca):
+            with self.subTest(trozo=trozo[:40]):
+                self.assertEqual(js.count(trozo), 1)
+        filas = [{"nave": "NAVE UNO", "otro_contenedor": True, "contenedor": "20 DRY"},
+                 {"nave": "NAVE UNO", "otro_contenedor": True, "contenedor": "<b>40' HC</b>"},
+                 {"nave": "NAVE UNO", "otro_contenedor": False, "contenedor": "40 HC REEFER"}]
+        guion = (marcada + esc + f"const filas = {json.dumps(filas)};\n"
+                 + "console.log(JSON.stringify([filas.map(marcadaPorDefecto), filas.map(f => `Reserva 1"
+                 + marca[:-len("</td>")] + "`)]));\n")
+        self.assertEqual(correr_node(self, guion),
+                         [[True, True, True],
+                          ["Reserva 1 <span class='otro-contenedor'>otro contenedor: 20 DRY</span>",
+                           "Reserva 1 <span class='otro-contenedor'>otro contenedor: &lt;b&gt;40' HC&lt;/b&gt;</span>",
+                           "Reserva 1"]])
+        self.assertIn(".sin-nave, .sin-ruta, .otro-contenedor { color: var(--text-muted); font-style: italic; }",
+                      m.CSS_INDEX)
 
     def test_lectura_de_cada_estado(self):
         # «OK-EJEMPLO» es «lista»: no se emitió. Hasta el encargo 34 era «emitida» (CICLO-one-y-maersk-eligen-la-nave.md).

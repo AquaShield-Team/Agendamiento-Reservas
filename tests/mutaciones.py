@@ -172,7 +172,8 @@ MUTACIONES += [
          pruebas=[CON + "test_consola_cosco", CON + "test_consola_hyundai", CON + "test_consola_maersk"],
          viejo='elif "nave" in v or "buque" in v or "vessel" in v:', nuevo='elif "buque" in v or "vessel" in v:'),
     dict(id="consola-otro-contenedor", pruebas=[CON + "test_consola_one"],
-         viejo='if col_map.get("tipo") else "40 HC REEFER"', nuevo='if col_map.get("tipo") else "20 DRY"'),
+         viejo="                              or CONTENEDOR_DE_LAS_FILAS,\n",
+         nuevo="                              or \"20 DRY\",\n"),
     dict(id="consola-no-filtra-notas", pruebas=[CON + "test_consola_one", DIF],
          viejo='"elegir siempre"', nuevo='"elegir nunca"'),
     dict(id="consola-encabezado-desde-fila-3", pruebas=[CON + "test_consola_trampa_de_titulo"],
@@ -460,8 +461,8 @@ MUTACIONES += [
          viejo='        if not elegidas:\n            # Hasta 42247d4',
          nuevo='        if False:\n            # Hasta 42247d4'),
     dict(id="consolidado-procesa-lineas-ajenas", pruebas=[CO + "test_consolidado_reparte_por_naviera"],
-         viejo='sub_elegidas = [f for f in elegidas if _match_nav_key(f.get("naviera")) == nav]',
-         nuevo='sub_elegidas = [f for f in elegidas if _match_nav_key(f.get("naviera")) in (nav, None)]'),
+         viejo='sub_elegidas = [f for f in elegidas if _nav_de_la_fila(nav_obj, f) == nav]',
+         nuevo='sub_elegidas = [f for f in elegidas if _nav_de_la_fila(nav_obj, f) in (nav, None)]'),
     dict(id="login-fallido-reserva-igual", pruebas=[CO + "test_login_fallido_no_reserva"],
          viejo='                if not logueado:\n                    reg.paso(f"No se pudo iniciar sesión en {nombre}; no proceso sus reservas.")',
          nuevo='                if False:\n                    reg.paso(f"No se pudo iniciar sesión en {nombre}; no proceso sus reservas.")'),
@@ -2061,8 +2062,8 @@ MUTACIONES += [
          viejo='            peso_kg = _peso_reefer()\n            gw.fill(peso_kg)\n',
          nuevo='            peso_kg = PESO_REEFER\n            gw.fill(peso_kg)\n'),
     dict(id='reefer-maersk-constante', pruebas=[AY + "TestReefer.test_una_sola_fuente"],
-         viejo='(_peso_reefer() if es_reefer else "20000")',
-         nuevo='(PESO_REEFER if es_reefer else "20000")'),
+         viejo='.strip() or _peso_reefer()\n',
+         nuevo='.strip() or PESO_REEFER\n'),
     dict(id='reefer-cma-constante', pruebas=[AY + "TestReefer.test_una_sola_fuente"],
          viejo='        peso_ok = False\n        peso_kg = _peso_reefer()\n',
          nuevo='        peso_ok = False\n        peso_kg = PESO_REEFER\n'),
@@ -5739,8 +5740,8 @@ MUTACIONES += [
          viejo="function marcadaPorDefecto(f) {\n  return !f.manual;\n}\n",
          nuevo="function marcadaPorDefecto(f) {\n  return !f.manual && !f.sin_puerto && !f.sin_destino;\n}\n"),
     dict(id="panel-sin-estilo-de-ruta", pruebas=[RUTA_PANEL],
-         viejo=".sin-nave, .sin-ruta { color: var(--text-muted); font-style: italic; }\n",
-         nuevo=".sin-nave { color: var(--text-muted); font-style: italic; }\n"),
+         viejo=".sin-nave, .sin-ruta, .otro-contenedor { color: var(--text-muted); font-style: italic; }\n",
+         nuevo=".sin-nave, .otro-contenedor { color: var(--text-muted); font-style: italic; }\n"),
 ]
 
 # --- Encargo 43 · commit 4: «CL» solo en el puerto de carga cuenta como solo el país, igual que «CHILE»
@@ -7876,9 +7877,9 @@ MUTACIONES += [
          viejo='(f"hay {n} entre {len(textos)}: {vistas}" if textos else "la lista no apareció")',
          nuevo='(f"hay {n}" if textos else "la lista no apareció")'),
     dict(id="e62-como-antes", pruebas=[CM_ELIGE, CM_LLAMADA],
-         viejo="    _mk_elegir_contenedor(page, reg, det, reserva.get(\"fila\", \"\"), clave)\n",
+         viejo="    _mk_elegir_contenedor(page, reg, det, reserva.get(\"fila\", \"\"), MK_PALABRA_CONTENEDOR)\n",
          nuevo=("    cand = page.locator(\"mc-option:visible\")\n"
-                "    page.get_by_placeholder(\"Select container type and size\").first.type(clave)\n"
+                "    page.get_by_placeholder(\"Select container type and size\").first.type(MK_PALABRA_CONTENEDOR)\n"
                 "    cand.nth(0).click(timeout=3000)\n    det.append(\"cont=\" + MK_CONTENEDOR)\n")),
 ]
 
@@ -7922,9 +7923,12 @@ MUTACIONES += [
          nuevo="    if cont == CONTENEDOR_DE_LAS_FILAS:\n"),
     dict(id="e63-basta-que-sea-reefer", pruebas=[OC_REGLA], viejo=REGLA_OC,
          nuevo='    if "REEFER" in cont.upper():\n'),
-    dict(id="e63-otro-contenedor-de-las-filas", pruebas=[OC_REGLA, OC_PASA, OC_WEB, OC_CONSOLA],
+    dict(id="e63-otro-contenedor-de-las-filas",
+         pruebas=[OC_REGLA, OC_PASA, OC_WEB, OC_CONSOLA,
+                  "test_envio.TestLecturaDelPanel.test_marca_y_cuenta_aparte_las_filas_con_otro_contenedor",
+                  "test_planilla.TestContenedorDeLaFila.test_los_dos_lectores_dan_el_mismo_contenedor"],
          viejo='CONTENEDOR_DE_LAS_FILAS = "40 HC REEFER"\n', nuevo='CONTENEDOR_DE_LAS_FILAS = "40 REEFER"\n'),
-    dict(id="e63-la-celda-vacia-pasa", pruebas=[OC_REGLA, OC_DECORADOR, OC_CONSOLA],
+    dict(id="e63-la-celda-vacia-pasa", pruebas=[OC_REGLA, OC_DECORADOR],
          viejo='    if not cont:\n        return f"la fila no dice',
          nuevo='    if not cont:\n        return ""\n        return f"la fila no dice'),
     dict(id="e63-motivo-sin-el-valor", pruebas=[OC_REGLA, OC_DECORADOR, OC_WEB, OC_CONSOLA],
@@ -7995,8 +7999,91 @@ MUTACIONES += [
          nuevo='        return\n        raise ObjetivoNoEncontrado(MK_TIPO_REEFER, f"el campo «Select reefer'),
     dict(id="e63-reefer-sin-anotar", pruebas=[RF_ELIGE], viejo='    det.append("reeferCont=" + MK_REEFER)\n', nuevo=""),
     dict(id="e63-reefer-como-antes", pruebas=[RF_LLAMADA],
-         viejo="        _mk_elegir_reefer(page, reg, det, f)\n",
-         nuevo=('        rc = page.get_by_placeholder("Select reefer container type and size").first\n'
-                '        rc.click(timeout=4000)\n'
-                '        page.locator("mc-option:visible").first.click(timeout=3000)\n')),
+         viejo="    _mk_elegir_reefer(page, reg, det, f)\n",
+         nuevo=('    rc = page.get_by_placeholder("Select reefer container type and size").first\n'
+                '    rc.click(timeout=4000)\n'
+                '    page.locator("mc-option:visible").first.click(timeout=3000)\n')),
+]
+
+# --- Encargo 64 (CICLO-maersk-contenedor-consola-y-panel.md): con una columna de contenedor y la celda vacía, la
+# consola le da el contenedor de las filas, como el panel; el panel marca antes de correr la fila de MAERSK que pide
+# otro contenedor, como la sin ruta; y reservar_maersk queda sin las ramas para un contenedor que no es reefer, que ya
+# no se alcanzaban (decisiones de Marcelo). Las que vuelven a poner una rama (e64-vuelve-*) no cambian lo que hace una
+# fila que llega al reservador, que siempre es reefer: las ve solo la foto (SIN_RAMAS).
+LECTORES = "test_planilla.TestContenedorDeLaFila.test_los_dos_lectores_dan_el_mismo_contenedor"
+VACIA_CONSOLA = ER + "test_fila_de_maersk_con_la_celda_vacia_va_al_portal"
+OTRO_API = CO + "test_filas_dicen_si_piden_otro_contenedor"
+OTRO_PANEL = "test_envio.TestLecturaDelPanel.test_marca_y_cuenta_aparte_las_filas_con_otro_contenedor"
+SOLO_REEFER = "test_clics.TestMaerskSoloReefer.test_la_fila_hace_siempre_lo_de_un_reefer"
+SIN_RAMAS = "test_clics.TestMaerskSoloReefer.test_sin_ramas_por_el_contenedor"
+CONSOLA_VACIA = ('                "contenedor": (_s(ws.cell(r, col_map["tipo"]).value) '
+                 'if col_map.get("tipo") else "")\n'
+                 '                              or CONTENEDOR_DE_LAS_FILAS,\n')
+MARCA_OTRO = '    otro = "" if _fila_sin_nave(nave) or falta else _otro_contenedor(nav, fila)\n'
+CONTROL_TEMP = ('    try:\n'
+                '        page.get_by_text("requires temperature control", exact=False).first.click(timeout=3000)\n'
+                '        reg.info("marcado: requiere control de temperatura"); det.append("reefer")\n'
+                '        esperar(page, 1.5)\n'
+                '    except Exception:\n'
+                '        pass\n')
+REEF = '    if "REEF" in (reserva.get("contenedor") or "").upper():\n'
+
+MUTACIONES += [
+    # Los lectores: la consola, con la celda vacía como antes; el panel, con la celda vacía vacía.
+    dict(id="e64-consola-celda-vacia-como-antes", pruebas=[LECTORES, VACIA_CONSOLA], viejo=CONSOLA_VACIA,
+         nuevo=('                "contenedor": _s(ws.cell(r, col_map["tipo"]).value) if col_map.get("tipo") '
+                'else CONTENEDOR_DE_LAS_FILAS,\n')),
+    dict(id="e64-panel-celda-vacia-vacia", pruebas=[LECTORES],
+         viejo='            "contenedor": val("contenedor") or CONTENEDOR_DE_LAS_FILAS,\n',
+         nuevo='            "contenedor": val("contenedor"),\n'),
+    # /api/filas: sin la marca, también en la fila sin nave o sin ruta, mirando siempre MAERSK, o con la naviera de la
+    # hoja en CONSOLIDADO; y la naviera de la fila, la de la hoja también en CONSOLIDADO (el panel no reparte).
+    dict(id="e64-sin-marca-de-otro-contenedor", pruebas=[OTRO_API],
+         viejo="                otro_contenedor=bool(otro),\n", nuevo="                otro_contenedor=False,\n"),
+    dict(id="e64-marca-tambien-sin-nave-o-sin-ruta", pruebas=[OTRO_API], viejo=MARCA_OTRO,
+         nuevo="    otro = _otro_contenedor(nav, fila)\n"),
+    dict(id="e64-marca-sin-mirar-la-naviera", pruebas=[OTRO_API], viejo=MARCA_OTRO,
+         nuevo='    otro = "" if _fila_sin_nave(nave) or falta else _otro_contenedor("maersk", fila)\n'),
+    dict(id="e64-marca-con-la-naviera-de-la-hoja", pruebas=[OTRO_API],
+         viejo="_con_su_marca(f, _nav_de_la_fila(nav_hoja, f))", nuevo="_con_su_marca(f, nav_hoja)"),
+    dict(id="e64-la-fila-con-la-naviera-de-la-hoja", pruebas=[OTRO_API, CO + "test_consolidado_reparte_por_naviera"],
+         viejo='    return _match_nav_key(fila.get("naviera")) if nav_hoja == "todas" else nav_hoja\n',
+         nuevo="    return nav_hoja\n"),
+    # La página: sin la marca en la tabla, sin escapar el contenedor, sin el aviso, sin marcarla para correr, o sin su
+    # estilo.
+    dict(id="e64-panel-sin-marca-en-la-tabla", pruebas=[OTRO_PANEL],
+         viejo="\" <span class='otro-contenedor'>otro contenedor: \" + esc(f.contenedor) + \"</span>\"",
+         nuevo='""'),
+    dict(id="e64-panel-sin-escapar", pruebas=[OTRO_PANEL],
+         viejo="otro contenedor: \" + esc(f.contenedor) + \"</span>\"",
+         nuevo="otro contenedor: \" + f.contenedor + \"</span>\""),
+    dict(id="e64-panel-sin-aviso", pruebas=[OTRO_PANEL],
+         viejo="  const otroCont = FILAS.filter(f => f.otro_contenedor).length;\n", nuevo="  const otroCont = 0;\n"),
+    dict(id="e64-panel-sin-marcar-para-correr", pruebas=[OTRO_PANEL],
+         viejo="function marcadaPorDefecto(f) {\n  return !f.manual;\n}\n",
+         nuevo="function marcadaPorDefecto(f) {\n  return !f.manual && !f.otro_contenedor;\n}\n"),
+    dict(id="e64-panel-sin-estilo", pruebas=[OTRO_PANEL],
+         viejo=".sin-nave, .sin-ruta, .otro-contenedor { color", nuevo=".sin-nave, .sin-ruta { color"),
+    # MAERSK: sin el salmón, sin el salmón exacto, sin el control de temperatura, otra palabra u otro peso.
+    dict(id="e64-commodity-sin-salmon", pruebas=[SOLO_REEFER, SIN_RAMAS],
+         viejo='    terminos = [base_com] if base_com else ["SALMON", "FISH", "SEAFOOD"]\n',
+         nuevo='    terminos = [base_com] if base_com else ["FISH", "GOODS"]\n'),
+    dict(id="e64-commodity-sin-el-salmon-exacto", pruebas=[SOLO_REEFER],
+         viejo="                    if exact_salmon.count():\n                        target = exact_salmon.first\n",
+         nuevo="                    if False:\n                        target = exact_salmon.first\n"),
+    dict(id="e64-sin-control-de-temperatura", pruebas=[SOLO_REEFER, SIN_RAMAS], viejo=CONTROL_TEMP, nuevo=""),
+    dict(id="e64-otra-palabra",
+         pruebas=["test_clics.TestContenedorMaersk.test_el_contenedor_es_el_de_las_filas", SOLO_REEFER],
+         viejo='MK_PALABRA_CONTENEDOR = "40 Reefer"\n', nuevo='MK_PALABRA_CONTENEDOR = "40"\n'),
+    dict(id="e64-otro-peso",
+         pruebas=[SOLO_REEFER, SIN_RAMAS, "test_clics.TestContenedorMaersk.test_elige_la_unica_con_el_texto_entero"],
+         viejo=".strip() or _peso_reefer()\n", nuevo='.strip() or "20000"\n'),
+    # Las ramas que vuelven: los ajustes reefer, el control de temperatura y el peso, otra vez según el contenedor.
+    dict(id="e64-vuelve-la-rama-de-los-ajustes", pruebas=[SIN_RAMAS, RF_LLAMADA],
+         viejo="    _mk_elegir_reefer(page, reg, det, f)\n",
+         nuevo=REEF + "        _mk_elegir_reefer(page, reg, det, f)\n"),
+    dict(id="e64-vuelve-la-rama-del-control", pruebas=[SIN_RAMAS], viejo=CONTROL_TEMP,
+         nuevo=REEF + "".join("    " + l + "\n" for l in CONTROL_TEMP.splitlines())),
+    dict(id="e64-vuelve-la-rama-del-peso", pruebas=[SIN_RAMAS], viejo=".strip() or _peso_reefer()\n",
+         nuevo='.strip() or (_peso_reefer() if "REEF" in (reserva.get("contenedor") or "").upper() else "20000")\n'),
 ]

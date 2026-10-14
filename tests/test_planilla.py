@@ -479,5 +479,27 @@ class TestDestinoFinalConGuion(ConPlanilla):
                          ["", "", "--", "N/A", "", None, "CIUDAD GAMMA"])
 
 
+class TestContenedorDeLaFila(ConPlanilla):
+    def test_los_dos_lectores_dan_el_mismo_contenedor(self):
+        # Decisión de Marcelo (encargo 64, CICLO-maersk-contenedor-consola-y-panel.md): con una columna de contenedor y
+        # la celda vacía, o solo con espacios, la consola le da el contenedor de las filas, «40 HC REEFER», como el
+        # panel. Sin la
+        # columna, los dos ya lo daban; con otro texto, los dos lo dan como viene. Hasta el encargo 64, la consola
+        # dejaba la celda vacía, y la fila de MAERSK quedaba NO ENVIADA, «la fila no dice qué contenedor pide».
+        m = self.mod
+        for celda, esperado in ((None, m.CONTENEDOR_DE_LAS_FILAS), ("   ", m.CONTENEDOR_DE_LAS_FILAS),
+                                ("40 HC REEFER", "40 HC REEFER"), (" 20 DRY ", "20 DRY"), (40, "40")):
+            with self.subTest(celda=celda):
+                wb = openpyxl.load_workbook(self.planilla)
+                wb["MAERSK"]["J4"], wb["MAERSK"]["J5"] = "Tipo contenedor", celda
+                wb.save(self.planilla)
+                consola = {f["fila"]: f["contenedor"] for f in m.leer_reservas("maersk")}
+                panel = {f["fila"]: f["contenedor"]
+                         for f in m.leer_filas(openpyxl.load_workbook(self.planilla, data_only=True)["MAERSK"])[2]}
+                self.assertEqual((consola[5], panel[5]), (esperado, esperado))
+                self.assertEqual((consola[6], panel[6]), (m.CONTENEDOR_DE_LAS_FILAS, m.CONTENEDOR_DE_LAS_FILAS))
+        self.assertEqual(m.CONTENEDOR_DE_LAS_FILAS, "40 HC REEFER")
+
+
 if __name__ == "__main__":
     unittest.main()

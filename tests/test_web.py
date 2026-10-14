@@ -865,6 +865,32 @@ class TestPanelCorridas(PanelBase):
                                   7: (False, True, False, False), 9: (False, False, True, False),
                                   10: (False, False, False, True)})
 
+    def test_filas_dicen_si_piden_otro_contenedor(self):
+        # /api/filas marca, con la regla del programa (_otro_contenedor), la fila de MAERSK que pide otro contenedor que
+        # «40 HC REEFER»: el panel la marca y la cuenta aparte antes de correr, como la sin ruta (decisión de Marcelo,
+        # encargo 64, CICLO-maersk-contenedor-consola-y-panel.md; test_envio.TestLecturaDelPanel). En MAERSK, la 5
+        # pide «20 DRY» y la 6, «40 hc  reefer», el de las filas; en ONE, la misma columna no marca nada; en
+        # CONSOLIDADO, cuenta
+        # la naviera de su columna: la 10 es de MAERSK y la 5, de ONE.
+        celdas = {(h, "J4"): "Tipo contenedor" for h in ("MAERSK", "ONE", "CONSOLIDADO")}
+        self.subir_celdas({**celdas, ("MAERSK", "J5"): "20 DRY", ("MAERSK", "J6"): "40 hc  reefer",
+                           ("ONE", "J5"): "20 DRY", ("CONSOLIDADO", "J5"): "20 DRY", ("CONSOLIDADO", "J10"): "20 DRY"})
+
+        def marcas(hoja):
+            st, d = self.srv.json(f"/api/filas?hoja={hoja}")
+            self.assertEqual(st, 200)
+            return {f["fila"]: f["otro_contenedor"] for f in d["filas"]}
+        self.assertEqual(marcas("MAERSK"), {5: True, 6: False})
+        self.assertEqual(marcas("ONE"), {5: False, 6: False, 7: False, 9: False, 10: False})
+        self.assertEqual(marcas("CONSOLIDADO"), {5: False, 6: False, 7: False, 8: False, 9: False, 10: True, 11: False})
+        # La fila sin nave, o sin destino, lleva la marca de su motivo, aunque pida otro contenedor: es el orden en que
+        # los orquestadores la apartan.
+        self.subir_celdas({**celdas, ("MAERSK", "J5"): "20 DRY", ("MAERSK", "E5"): None, ("MAERSK", "J6"): "20 DRY",
+                           ("MAERSK", "C6"): None, ("MAERSK", "D6"): None})
+        st, d = self.srv.json("/api/filas?hoja=MAERSK")
+        self.assertEqual({f["fila"]: (f["otro_contenedor"], f["sin_nave"], f["sin_destino"]) for f in d["filas"]},
+                         {5: (False, True, False), 6: (False, False, True)})
+
     def test_consolidado_reparte_por_naviera(self):
         with Navieras(self.mod) as n:
             e = self.correr("CONSOLIDADO", [5, 6, 7, 8, 9, 10, 11])

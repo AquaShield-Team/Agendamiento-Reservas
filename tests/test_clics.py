@@ -6908,19 +6908,20 @@ class TestContenedorMaersk(ConRegistro):
     def elegir(self, pagina, nombre):
         reg, vistas, log = self.corrida(nombre)
         det = []
-        self.mod._mk_contenedor(pagina, {"fila": 10, "contenedor": "40 HC REEFER"}, True, reg, det)
+        self.mod._mk_contenedor(pagina, {"fila": 10, "contenedor": "40 HC REEFER"}, reg, det)
         return det, log.read_text(encoding="utf-8")
 
     def cortar(self, pagina, nombre):
         reg, _, _ = self.corrida(nombre)
         with self.assertRaises(self.mod.ObjetivoNoEncontrado) as e:
-            self.mod._mk_contenedor(pagina, {"fila": 10, "contenedor": "40 HC REEFER"}, True, reg, [])
+            self.mod._mk_contenedor(pagina, {"fila": 10, "contenedor": "40 HC REEFER"}, reg, [])
         self.assertEqual(pagina.prohibidos, [])
         self.assertNotIn("clic", [a[0] for a in pagina.acciones])
         return e.exception.paso, e.exception.buscaba
 
     def test_el_contenedor_es_el_de_las_filas(self):
-        self.assertEqual(self.mod.MK_CONTENEDOR, self.ALTA)
+        # Y lo que escribe para que la lista lo traiga: la palabra de antes, fija desde el encargo 64.
+        self.assertEqual((self.mod.MK_CONTENEDOR, self.mod.MK_PALABRA_CONTENEDOR), (self.ALTA, "40 Reefer"))
 
     def test_elige_la_unica_con_el_texto_entero(self):
         # La primera de la lista es la que elegía la regla de antes; las demás traen «40 Reefer High» dentro de otro
@@ -6932,7 +6933,7 @@ class TestContenedorMaersk(ConRegistro):
         self.assertEqual(pagina.acciones, [("escribe", "40 Reefer"), ("captura", "mk_f10_contenedor.png"),
                                            ("clic", " 40 Reefer\n  High ")])
         self.assertEqual(det[0], "cont=40 Reefer High")
-        self.assertEqual(len(pagina.pesos), 1)                         # y sigue con el peso, como antes
+        self.assertEqual(pagina.pesos, ["22500"])                      # y sigue con el peso reefer, como antes
         self.assertIn("lista de tipos de contenedor: 1 de las 4 opciones dicen «40 Reefer High»", log)
         self.assertIn("contenedor tipo: 40 Reefer High", log)
         self.assertIn("evidencia con la lista de tipos de contenedor: mk_f10_contenedor.png", log)
@@ -6982,7 +6983,7 @@ class TestContenedorMaersk(ConRegistro):
         reg, vistas, log = self.corrida("decorador")
 
         def reservar(page, reserva, creds, reg_, on_pausa=None):
-            self.mod._mk_contenedor(page, reserva, True, reg_, [])
+            self.mod._mk_contenedor(page, reserva, reg_, [])
             return ("OK-EJEMPLO", "no debería llegar")
         r = self.mod._sin_clic_a_ciegas("mk")(reservar)(pagina, {"fila": 10, "contenedor": "40 HC REEFER"}, {}, reg)
         self.assertEqual(r, ("NO ENVIADA", f"Tipo de contenedor de MAERSK: no encontré una sola opción «40 Reefer "
@@ -6997,11 +6998,11 @@ class TestContenedorMaersk(ConRegistro):
         funcs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
         f = funcs["reservar_maersk"]
         llamadas = [n for n in ast.walk(f) if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_mk_contenedor"]
-        self.assertEqual([ast.unparse(n) for n in llamadas], ["_mk_contenedor(page, reserva, es_reefer, reg, det)"])
+        self.assertEqual([ast.unparse(n) for n in llamadas], ["_mk_contenedor(page, reserva, reg, det)"])
         self.assertLess(llamadas[0].lineno, linea_guarda(f))
         self.assertEqual([ast.unparse(n) for n in ast.walk(funcs["_mk_contenedor"]) if isinstance(n, ast.Call)
                           and getattr(n.func, "id", "") == "_mk_elegir_contenedor"],
-                         ["_mk_elegir_contenedor(page, reg, det, reserva.get('fila', ''), clave)"])
+                         ["_mk_elegir_contenedor(page, reg, det, reserva.get('fila', ''), MK_PALABRA_CONTENEDOR)"])
 
 
 class PaginaReefer(PaginaContenedor):
@@ -7120,9 +7121,9 @@ class TestReeferMaersk(ConRegistro):
             return [n for n in ast.walk(func) if isinstance(n, ast.Call) and getattr(n.func, "id", "") == nombre]
         reefer = llamadas(f, "_mk_elegir_reefer")
         self.assertEqual([ast.unparse(n) for n in reefer], ["_mk_elegir_reefer(page, reg, det, f)"])
-        si = next(n for n in ast.walk(f) if isinstance(n, ast.If) and n.body
-                  and ast.unparse(n.body[0]) == "_mk_elegir_reefer(page, reg, det, f)")
-        self.assertEqual(ast.unparse(si.test), "es_reefer")
+        # Sin condición, en el cuerpo del reservador: la fila llega siempre con el contenedor de las filas, que es
+        # reefer (desde el encargo 64; hasta ahí, dentro de «if es_reefer:»).
+        self.assertIn("_mk_elegir_reefer(page, reg, det, f)", [ast.unparse(s) for s in f.body])
         temperatura = next(n for n in ast.walk(f) if isinstance(n, ast.Constant)
                            and n.value == "#mc-input-reeferTemperatureInput")
         self.assertLess(llamadas(f, "_mk_contenedor")[0].lineno, reefer[0].lineno)
@@ -7137,6 +7138,120 @@ class TestReeferMaersk(ConRegistro):
         self.assertEqual([ast.unparse(n) for n in llamadas(funcs["_mk_elegir_contenedor"], "_mk_elegir_unica")],
                          ["_mk_elegir_unica(page, reg, MK_CONTENEDOR, MK_TIPO_CONTENEDOR, 'lista de tipos de "
                           "contenedor', f'mk_f{fila}_contenedor')"])
+
+
+class PaginaQueAnota:
+    """Una página de Playwright falsa que anota cada llamada con su camino desde la página (con el primer argumento de
+    texto, o el patrón de su has_text) y devuelve otra igual: count() da 1, y text_content() el salmón congelado, como
+    una lista con una sola opción. Para correr reservar_maersk desde el principio hasta la fecha sin un portal: lo que
+    habla con él de verdad lo reemplaza la prueba (encargo 64)."""
+
+    def __init__(self, anotadas, camino="page"):
+        self._anotadas, self._camino = anotadas, camino
+
+    def __getattr__(self, nombre):
+        if nombre.startswith("__"):
+            raise AttributeError(nombre)
+        return PaginaQueAnota(self._anotadas, f"{self._camino}.{nombre}")
+
+    def __call__(self, *a, **k):
+        que = next((x for x in a if isinstance(x, str)), None)
+        if "has_text" in k:
+            que = getattr(k["has_text"], "pattern", k["has_text"])
+        self._anotadas.append((self._camino, que))
+        nombre = self._camino.rsplit(".", 1)[-1]
+        if nombre == "count":
+            return 1
+        if nombre == "text_content":
+            return "Salmon, frozen, fish fillets"
+        return PaginaQueAnota(self._anotadas, f"{self._camino}({que or ''})")
+
+
+class TestMaerskSoloReefer(ConRegistro):
+    """Desde el encargo 64, reservar_maersk no tiene ramas para un contenedor que no es reefer (decisión de Marcelo,
+    CICLO-maersk-contenedor-consola-y-panel.md): la fila llega siempre con «40 HC REEFER»
+    (_mk_con_el_contenedor_de_la_fila, encargo 63), y esas ramas ya no se alcanzaban. Eran los términos FISH y GOODS
+    del commodity, la primera opción sin mirar, el
+    control de temperatura y los ajustes reefer solo con «REEF», «RF» o «RH» en el texto, otra palabra en el tipo de
+    contenedor y 20.000 kg. Medido: las 21 filas de MAERSK de logs/, y las 7 que llegaron a la guarda, pasaron por el
+    lado reefer de cada una."""
+
+    def correr(self, contenedor, nombre):
+        """El reservador decorado, el de RESERVADORES, desde el principio hasta la fecha (que corta con Fin), con los
+        ayudantes que hablan con el portal (la sesión, las ciudades, las dos listas de contenedor, el genset, las
+        esperas) reemplazados por uno que anota."""
+        anotadas = []
+
+        class Fin(BaseException):
+            pass
+
+        def fecha(page, reserva, reg_, det):
+            anotadas.append(("detalle", tuple(det)))
+            raise Fin()
+        reg, _, log = self.corrida(nombre)
+        reg.captura = lambda page, nombre_cap, **k: anotadas.append(("captura", nombre_cap))
+        m = self.mod
+        cambios = dict(
+            _mk_listo_para_reservar=lambda *a, **k: True, _maersk_cookies=lambda *a, **k: None,
+            _mk_got_it=lambda *a, **k: None, esperar_hasta=lambda *a, **k: True, esperar=lambda *a, **k: None,
+            _mk_ciudad=lambda page, texto, *a, **k: texto,
+            _mk_elegir_contenedor=lambda page, reg_, det, fila, clave: (anotadas.append(("contenedor", clave)),
+                                                                        det.append("cont=" + m.MK_CONTENEDOR)),
+            _mk_elegir_reefer=lambda page, reg_, det, fila: anotadas.append(("reefer", fila)),
+            _mk_genset=lambda page, reg_, det, valor: anotadas.append(("genset", valor)), _mk_fecha=fecha)
+        reserva = {"fila": 10, "pol": "PUERTO ALFA", "destino_orig": "PUERTO BETA", "destino_final": "CIUDAD GAMMA",
+                   "nave": "NAVE PRUEBA DIEZ", "viaje": "V050N", "cant": 1, "contenedor": contenedor}
+        with mock.patch.multiple(m, **cambios), mock.patch.dict(os.environ):
+            os.environ.pop("AQUASHIELD_GENSET", None)
+            with self.assertRaises(Fin):
+                m.RESERVADORES["maersk"](PaginaQueAnota(anotadas), reserva, {"usuario": "u@ejemplo.invalid"}, reg)
+        return anotadas, log.read_text(encoding="utf-8")
+
+    def test_la_fila_hace_siempre_lo_de_un_reefer(self):
+        # Con el contenedor de las filas escrito como lo deja pasar el decorador (en minúsculas, con espacios de más),
+        # hace todo lo de un reefer: el salmón congelado, el control de temperatura, la palabra «40 Reefer», el peso
+        # reefer de config.json, los ajustes reefer, la temperatura y el genset.
+        salmon = r"^\s*salmon,\s*frozen,\s*fish"
+        for contenedor in ("40 HC REEFER", " 40 hc  reefer "):
+            with self.subTest(contenedor=contenedor):
+                anotadas, log = self.correr(contenedor, f"reefer_{len(contenedor)}")
+                escritos = [que for camino, que in anotadas if camino.endswith(".type")]
+                self.assertEqual(escritos, ["SALMON"])
+                self.assertIn(("page.locator(mc-option:visible).filter", salmon), anotadas)
+                self.assertIn((f"page.locator(mc-option:visible).filter({salmon}).first.click", None), anotadas)
+                self.assertIn(("page.get_by_text(requires temperature control).first.click", None), anotadas)
+                self.assertIn(("page.locator(#mc-input-weight).first.fill", "22500"), anotadas)
+                self.assertIn(("page.locator(#mc-input-reeferTemperatureInput).first.fill", "-20"), anotadas)
+                propias = [x for x in anotadas if x[0] in ("contenedor", "reefer", "genset", "detalle")]
+                self.assertEqual(propias, [("contenedor", "40 Reefer"), ("reefer", 10), ("genset", "No"),
+                                           ("detalle", ("commodity=Salmon, frozen, fish fillets", "reefer",
+                                                        "cont=40 Reefer High", "peso=22500", "temp=-20C"))])
+                self.assertIn("commodity 'SALMON' -> Salmon, frozen, fish fillets", log)
+                self.assertIn("marcado: requiere control de temperatura", log)
+
+    def test_sin_ramas_por_el_contenedor(self):
+        # Ni reservar_maersk ni _mk_contenedor leen el contenedor de la fila (lo mira solo el decorador, con
+        # _otro_contenedor), y los pasos de un reefer van sin condición, en el cuerpo del reservador. Una rama que
+        # volviera a mirar el contenedor no cambiaría lo que hace una fila que llega (siempre reefer): la ve esta foto.
+        texto = Path(self.mod.__file__).read_text(encoding="utf-8")
+        funcs = {n.name: n for n in ast.parse(texto).body if isinstance(n, ast.FunctionDef)}
+        for nombre in ("reservar_maersk", "_mk_contenedor"):
+            with self.subTest(funcion=nombre):
+                f = funcs[nombre]
+                self.assertEqual([n.value for n in ast.walk(f) if isinstance(n, ast.Constant)
+                                  and n.value in ("contenedor", "GOODS", "20000", "REEF", "RF", "RH", "HIGH", "HC")],
+                                 [])
+                self.assertNotIn("es_reefer", {n.id for n in ast.walk(f) if isinstance(n, ast.Name)})
+        cuerpo = funcs["reservar_maersk"].body
+        for paso in ("_mk_contenedor(page, reserva, reg, det)", "_mk_elegir_reefer(page, reg, det, f)",
+                     "_mk_genset(page, reg, det, os.environ.get('AQUASHIELD_GENSET', 'No'))",
+                     "terminos = [base_com] if base_com else ['SALMON', 'FISH', 'SEAFOOD']"):
+            with self.subTest(paso=paso):
+                self.assertIn(paso, [ast.unparse(s) for s in cuerpo])
+        self.assertEqual(sum(isinstance(s, ast.Try) and "requires temperature control" in ast.unparse(s)
+                             for s in cuerpo), 1)
+        self.assertEqual(sum(isinstance(s, ast.Try) and "#mc-input-reeferTemperatureInput" in ast.unparse(s)
+                             for s in cuerpo), 1)
 
 
 class PaginaServicios(soporte.PaginaFalsa):

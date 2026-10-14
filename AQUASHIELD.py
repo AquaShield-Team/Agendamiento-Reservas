@@ -3141,16 +3141,18 @@ def _sin_ruta(reg, fila, falta):
 # El contenedor de las filas de MAERSK (decisión de Marcelo, encargo 63, CICLO-maersk-otro-contenedor-y-reefer.md):
 # MAERSK elige siempre «40 Reefer High» y, en los ajustes reefer, «Standard (40´)» (MK_CONTENEDOR, MK_REEFER), que
 # corresponden a este. Es el de las 36 filas de las planillas de este equipo, que no traen columna de contenedor: los
-# dos lectores les dan este valor (medido el 2026-10-13). Una fila de MAERSK que pide otro queda NO ENVIADA sin entrar
-# al portal.
+# dos lectores les dan este valor (medido el 2026-10-13), y también a la celda vacía de esa columna (desde el encargo
+# 64, la consola igual que el panel: decisión de Marcelo, CICLO-maersk-contenedor-consola-y-panel.md). Una fila de
+# MAERSK que pide otro queda NO ENVIADA sin entrar al portal.
 CONTENEDOR_DE_LAS_FILAS = "40 HC REEFER"
 
 
 def _otro_contenedor(nav, reserva):
     """El motivo de la NO ENVIADA si la fila es de MAERSK ('nav', su clave) y su contenedor no es
     CONTENEDOR_DE_LAS_FILAS, sin distinguir mayúsculas y con los espacios de a uno; si no, "". Un contenedor vacío
-    tampoco lo es: lo da la consola con la columna y la celda vacía (el panel web le da CONTENEDOR_DE_LAS_FILAS, y
-    los dos, sin la columna). Las otras navieras no miran el contenedor (decisión de Marcelo, encargo 63)."""
+    tampoco lo es: ningún lector lo da desde el encargo 64 (los dos le dan CONTENEDOR_DE_LAS_FILAS a la celda vacía;
+    hasta ahí, la consola la dejaba vacía), pero el decorador de reservar_maersk mira cualquier reserva que le llegue.
+    Las otras navieras no miran el contenedor (decisión de Marcelo, encargo 63)."""
     if nav != "maersk":
         return ""
     cont = " ".join(str((reserva or {}).get("contenedor") or "").split())
@@ -3191,16 +3193,21 @@ def _palabra_en(texto, palabra, desde=0):
     return -1
 
 
-def _con_su_marca(fila):
+def _con_su_marca(fila, nav):
     """La fila como la lista el panel web (/api/filas), con las marcas de la regla del programa: «manual», si dice
     MANUAL (_fila_manual); «sin_nave», si no trae una nave para reservar (_fila_sin_nave) y no es MANUAL; y, si trae
     nave, «sin_puerto» o «sin_destino», si le falta el puerto de carga o el destino, lo que diga _falta_en_la_fila (la
     fila sin nave dice eso, aunque tampoco traiga la ruta). El panel deja sin marcar las MANUAL, y muestra y cuenta
     aparte las sin nave (CICLO-cola-seis-items.md) y, desde el encargo 43, las sin ruta (decisión de Marcelo,
-    CICLO-maersk-elige-exacto.md): hasta ahí, esas quedaban NO ENVIADA recién al correr."""
+    CICLO-maersk-elige-exacto.md): hasta ahí, esas quedaban NO ENVIADA recién al correr. Desde el encargo 64, también
+    «otro_contenedor», si trae nave y ruta y es de MAERSK ('nav', la clave de su naviera: _nav_de_la_fila) y pide otro
+    contenedor que el de las filas, lo que diga _otro_contenedor, en el mismo orden en que los dos orquestadores la
+    apartan (decisión de Marcelo, CICLO-maersk-contenedor-consola-y-panel.md)."""
     nave = fila.get("nave")
     falta = "" if _fila_sin_nave(nave) else _falta_en_la_fila(fila)
+    otro = "" if _fila_sin_nave(nave) or falta else _otro_contenedor(nav, fila)
     return dict(fila, sin_nave=_fila_sin_nave(nave) and not _fila_manual(nave), manual=_fila_manual(nave),
+                otro_contenedor=bool(otro),
                 sin_puerto=falta == FILA_SIN_PUERTO, sin_destino=falta == FILA_SIN_DESTINO)
 
 
@@ -3371,7 +3378,11 @@ def leer_reservas(naviera_clave):
                 "dia_carga": _s(ws.cell(r, col_map.get("carga", 0)).value) if col_map.get("carga") else "",
                 "nave": "" if nave_de_la_f else nave,
                 "viaje": _s(ws.cell(r, col_map.get("viaje", 0)).value) if col_map.get("viaje") else "",
-                "contenedor": _s(ws.cell(r, col_map.get("tipo", 0)).value) if col_map.get("tipo") else "40 HC REEFER",
+                # Sin la columna o con la celda vacía, el contenedor de las filas, como el panel (leer_filas). Hasta el
+                # encargo 64, con la columna, la celda vacía quedaba vacía, y la fila de MAERSK, NO ENVIADA (decisión de
+                # Marcelo, CICLO-maersk-contenedor-consola-y-panel.md).
+                "contenedor": (_s(ws.cell(r, col_map["tipo"]).value) if col_map.get("tipo") else "")
+                              or CONTENEDOR_DE_LAS_FILAS,
                 "cant": ws.cell(r, col_map.get("cant", 0)).value if col_map.get("cant") else 1,
                 "cotizacion": _s(ws.cell(r, col_map.get("cotiz", 0)).value) if col_map.get("cotiz") else "",
             })
@@ -10346,12 +10357,14 @@ def reservar_maersk(page, reserva, creds, reg, on_pausa=None):
     destino = _mk_ciudad(page, dest, reg, "Destino", campo="destination", evidencia=f"mk_f{f}_destino")
     esperar(page, 0.8)
 
-    # Commodity (obligatorio; desbloquea el resto del formulario). Se prueban
-    # varios términos y se elige la primera opción real de la lista.
-    cont = (reserva.get("contenedor") or "").upper()
-    es_reefer = "REEF" in cont or "RF" in cont or "RH" in cont
+    # Commodity (obligatorio; desbloquea el resto del formulario). Se prueban varios términos y se elige, de la lista,
+    # el salmón congelado, o una opción congelada, o la primera. La fila llega siempre con el contenedor de las filas,
+    # que es reefer (_mk_con_el_contenedor_de_la_fila): las ramas de este reservador para un contenedor que no lo era
+    # (los términos FISH y GOODS, la primera opción sin mirar, sin el control de temperatura ni los ajustes reefer, otra
+    # palabra en el tipo de contenedor y 20.000 kg) se quitaron en el encargo 64, porque ya no se alcanzaban (decisión
+    # de Marcelo, CICLO-maersk-contenedor-consola-y-panel.md).
     base_com = str(reserva.get("commodity") or "").strip()
-    terminos = [base_com] if base_com else (["SALMON", "FISH", "SEAFOOD"] if es_reefer else ["FISH", "GOODS"])
+    terminos = [base_com] if base_com else ["SALMON", "FISH", "SEAFOOD"]
     det = []
     ok = ""
     try:
@@ -10370,14 +10383,13 @@ def reservar_maersk(page, reserva, creds, reg, on_pausa=None):
                 cand = page.locator("mc-option:visible")
                 if cand.count():
                     target = cand.first
-                    if es_reefer:
-                        exact_salmon = cand.filter(has_text=_re_mk.compile(r"^\s*salmon,\s*frozen,\s*fish", _re_mk.I))
-                        if exact_salmon.count():
-                            target = exact_salmon.first
-                        else:
-                            frz = cand.filter(has_text=_re_mk.compile(r"frozen", _re_mk.I))
-                            if frz.count():
-                                target = frz.first
+                    exact_salmon = cand.filter(has_text=_re_mk.compile(r"^\s*salmon,\s*frozen,\s*fish", _re_mk.I))
+                    if exact_salmon.count():
+                        target = exact_salmon.first
+                    else:
+                        frz = cand.filter(has_text=_re_mk.compile(r"frozen", _re_mk.I))
+                        if frz.count():
+                            target = frz.first
                     ok = (target.text_content() or "").strip()[:40]
                     target.click(timeout=3000); break
             if ok:
@@ -10389,13 +10401,12 @@ def reservar_maersk(page, reserva, creds, reg, on_pausa=None):
     # Reefer: (1) marcar control de temperatura. Los ajustes reefer se llenan
     # DESPUES del contenedor principal, porque el portal recien ofrece los tipos
     # reefer una vez que sabe el contenedor elegido.
-    if es_reefer:
-        try:
-            page.get_by_text("requires temperature control", exact=False).first.click(timeout=3000)
-            reg.info("marcado: requiere control de temperatura"); det.append("reefer")
-            esperar(page, 1.5)
-        except Exception:
-            pass
+    try:
+        page.get_by_text("requires temperature control", exact=False).first.click(timeout=3000)
+        reg.info("marcado: requiere control de temperatura"); det.append("reefer")
+        esperar(page, 1.5)
+    except Exception:
+        pass
 
     reg.captura(page, f"mk_f{f}_2_ruta", full=True)
 
@@ -10415,24 +10426,23 @@ def reservar_maersk(page, reserva, creds, reg, on_pausa=None):
 
     # Contenedor (tipo/tamaño, cantidad, peso). Va antes de la fecha porque la
     # fecha suele quedar habilitada al final.
-    _mk_contenedor(page, reserva, es_reefer, reg, det)
+    _mk_contenedor(page, reserva, reg, det)
 
     # Ajustes reefer (van DESPUES del contenedor principal): tipo reefer y
     # temperatura. El input[name=reeferContainer] esta oculto; el campo real se
     # alcanza por su placeholder y trae 'showlistonfocus'. El tipo, la única opción «Standard (40´)», con la evidencia
     # de la lista (_mk_elegir_reefer; decisión de Marcelo, encargo 63).
-    if es_reefer:
-        _mk_elegir_reefer(page, reg, det, f)
-        temp = _temp_reserva(reserva)
-        try:
-            t = page.locator("#mc-input-reeferTemperatureInput").first
-            t.scroll_into_view_if_needed(timeout=2500)
-            t.click(timeout=4000); t.fill(temp, timeout=3000)
-            reg.info(f"reefer temp: {temp}C"); det.append("temp=" + temp + "C")
-        except Exception as e:
-            reg.info(f"reefer temp err: {str(e)[:40]}")
-        # Obligatorio para reefer: sin esto el asistente no avanza.
-        _mk_genset(page, reg, det, os.environ.get("AQUASHIELD_GENSET", "No"))
+    _mk_elegir_reefer(page, reg, det, f)
+    temp = _temp_reserva(reserva)
+    try:
+        t = page.locator("#mc-input-reeferTemperatureInput").first
+        t.scroll_into_view_if_needed(timeout=2500)
+        t.click(timeout=4000); t.fill(temp, timeout=3000)
+        reg.info(f"reefer temp: {temp}C"); det.append("temp=" + temp + "C")
+    except Exception as e:
+        reg.info(f"reefer temp err: {str(e)[:40]}")
+    # Obligatorio para reefer: sin esto el asistente no avanza.
+    _mk_genset(page, reg, det, os.environ.get("AQUASHIELD_GENSET", "No"))
 
     # Fecha (earliest departure): el día de carga o, si no se puede, desde mañana, avisando (_mk_fecha).
     _mk_fecha(page, reserva, reg, det)
@@ -10630,6 +10640,10 @@ def _mk_fecha(page, reserva, reg, det):
 # el retiro del contenedor vacío en «Additional details», y la fila quedó NO ENVIADA en la fecha de retiro.
 MK_CONTENEDOR = "40 Reefer High"
 MK_TIPO_CONTENEDOR = "Tipo de contenedor de MAERSK"
+# Lo que MAERSK escribe en «Select container type and size» para que la lista traiga las opciones: la palabra que la
+# regla de antes armaba con el contenedor de las filas («40» y «Reefer»), la misma desde el encargo 62. Desde el 64 es
+# fija, sin la regla, porque la fila trae siempre ese contenedor.
+MK_PALABRA_CONTENEDOR = "40 Reefer"
 # El tipo de contenedor de los ajustes reefer, en «Select reefer container type and size» (decisión de Marcelo, encargo
 # 63, CICLO-maersk-otro-contenedor-y-reefer.md): la única opción de la lista cuyo texto entero es este, con el acento
 # agudo (U+00B4) que trae el portal. Hasta el encargo 63 pulsaba la primera opción con «40» (o, sin ninguna, la
@@ -10738,23 +10752,14 @@ def _mk_elegir_reefer(page, reg, det, fila):
     esperar(page, 1.5)
 
 
-def _mk_contenedor(page, reserva, es_reefer, reg, det):
+def _mk_contenedor(page, reserva, reg, det):
     """Rellena tipo/tamaño de contenedor, cantidad y peso en el form de MAERSK. El tipo, con _mk_elegir_contenedor: la
-    única opción «40 Reefer High» (encargo 62)."""
-    cont = (reserva.get("contenedor") or "").upper()
+    única opción «40 Reefer High» (encargo 62). La fila trae siempre el contenedor de las filas, reefer
+    (_mk_con_el_contenedor_de_la_fila): desde el encargo 64 no hay otra palabra ni otro peso para otro contenedor."""
     cant = str(reserva.get("cant") or "1").strip() or "1"
-    # El tipo/tamaño es un mc-typeahead: se escribe una palabra clave (la misma de antes del encargo 62) y se elige la
-    # opción (mc-option) por su texto entero.
-    toks = []
-    for n in ("45", "40", "20"):
-        if n in cont:
-            toks.append(n); break
-    if es_reefer:
-        toks.append("Reefer")
-    elif "HIGH" in cont or "HC" in cont:
-        toks.append("High")
-    clave = " ".join(toks) or "40"
-    _mk_elegir_contenedor(page, reg, det, reserva.get("fila", ""), clave)
+    # El tipo/tamaño es un mc-typeahead: se escribe una palabra clave (MK_PALABRA_CONTENEDOR) y se elige la opción
+    # (mc-option) por su texto entero.
+    _mk_elegir_contenedor(page, reg, det, reserva.get("fila", ""), MK_PALABRA_CONTENEDOR)
     # cantidad (si no es 1)
     if cant and cant != "1":
         try:
@@ -10763,7 +10768,7 @@ def _mk_contenedor(page, reserva, es_reefer, reg, det):
         except Exception:
             pass
     # peso por contenedor (obligatorio; ejemplo si no viene en la planilla)
-    peso = str(reserva.get("peso") or "").strip() or (_peso_reefer() if es_reefer else "20000")
+    peso = str(reserva.get("peso") or "").strip() or _peso_reefer()
     try:
         w = page.locator("#mc-input-weight").first
         w.scroll_into_view_if_needed(timeout=2000)
@@ -13351,7 +13356,7 @@ def leer_filas(ws):
             "dia_carga": val("dia_carga"),
             "nave": "" if "completar" in nave.lower() else nave,
             "viaje": val("viaje"),
-            "contenedor": val("contenedor") or "40 HC REEFER",
+            "contenedor": val("contenedor") or CONTENEDOR_DE_LAS_FILAS,
             "cant": cant,
             "cotizacion": val("cotizacion"),
             "temp": val("temp"),
@@ -13623,7 +13628,7 @@ def _web_worker(hoja, usuario, filas_pedidas):
                 reg.paso("Detenido por el operador."); break
 
             if nav_obj == "todas":
-                sub_elegidas = [f for f in elegidas if _match_nav_key(f.get("naviera")) == nav]
+                sub_elegidas = [f for f in elegidas if _nav_de_la_fila(nav_obj, f) == nav]
             else:
                 sub_elegidas = elegidas
             if not sub_elegidas:
@@ -13841,6 +13846,13 @@ def _nav_de_hoja(hoja):
         if any(h_clean == str(a).strip().lower() for a in aliases):
             return clave if clave in RESERVADORES else None
     return None
+
+
+def _nav_de_la_fila(nav_hoja, fila):
+    """La clave de la naviera de 'fila' en una hoja de la naviera 'nav_hoja' (_nav_de_hoja): la de la hoja o, en la que
+    trae todas (CONSOLIDADO), la de su columna Naviera (_match_nav_key). Con ella _web_worker reparte las filas, y
+    /api/filas marca la de MAERSK que pide otro contenedor (encargo 64, CICLO-maersk-contenedor-consola-y-panel.md)."""
+    return _match_nav_key(fila.get("naviera")) if nav_hoja == "todas" else nav_hoja
 
 
 def _reemplazar(tmp, destino, intentos=20, pausa=0.05):
@@ -14211,8 +14223,11 @@ def lanzar_web(puerto=8765, abrir=True):
                     hoja = (q.get("hoja") or [""])[0]
                     if not _WEB["ruta"]:
                         return self._json({"filas": []})
-                    # Cada fila dice si no trae una nave y si el operador la hace a mano (_con_su_marca).
-                    return self._json({"filas": [_con_su_marca(f) for f in _filas_de_hoja(_WEB["ruta"], hoja)]})
+                    # Cada fila dice si no trae una nave, si el operador la hace a mano, si le falta la ruta y si pide
+                    # otro contenedor (_con_su_marca), con la naviera de la fila (_nav_de_la_fila).
+                    nav_hoja = _nav_de_hoja(hoja)
+                    return self._json({"filas": [_con_su_marca(f, _nav_de_la_fila(nav_hoja, f))
+                                                 for f in _filas_de_hoja(_WEB["ruta"], hoja)]})
                 if u.path == "/api/estado":
                     with _LOCK:
                         _WEB["ultimo_latido"] = time.time()
@@ -14803,7 +14818,8 @@ $("#hoja").onchange = verFilas;
 // Hasta f68ce6c la regla vivía aquí. Una fila sin nave (f.sin_nave) también va: queda NO ENVIADA con el motivo, sin
 // entrar al portal (CICLO-solo-la-nave-pedida.md). Hasta a198645 quedaba sin marcar y no llegaba a la planilla. Y la
 // que trae nave y no su puerto de carga o su destino (f.sin_puerto, f.sin_destino), igual, con su marca y su aviso
-// (decisión de Marcelo, encargo 43).
+// (decisión de Marcelo, encargo 43). Y la de MAERSK que pide otro contenedor (f.otro_contenedor), igual, con su marca
+// junto a «Reserva N», porque la tabla no muestra el contenedor (decisión de Marcelo, encargo 64).
 function marcadaPorDefecto(f) {
   return !f.manual;
 }
@@ -14824,7 +14840,9 @@ async function verFilas() {
     return `
     <tr data-i="${i}" id="tr-${f.fila}">
       <td><input type="checkbox" ${chk} data-chk="${i}"></td>
-      <td style="font-weight:600;white-space:nowrap;" title="Fila ${f.fila} del Excel">Reserva ${i + 1}</td>
+      <td style="font-weight:600;white-space:nowrap;" title="Fila ${f.fila} del Excel">Reserva ${i + 1}${
+        f.otro_contenedor ? " <span class='otro-contenedor'>otro contenedor: " + esc(f.contenedor) + "</span>"
+                          : ""}</td>
       ${esConsolidado ? `<td style="font-weight:600;color:var(--accent);">${esc(f.naviera || '')}</td>` : ''}
       <td>${f.sin_puerto ? "<span class='sin-ruta'>sin puerto de carga</span> " + esc(f.pol) : esc(f.pol)}</td>
       <td>${f.sin_destino ? "<span class='sin-ruta'>sin destino</span> " + esc(f.destino_final)
@@ -14843,6 +14861,10 @@ async function verFilas() {
   const sinRuta = FILAS.filter(f => f.sin_puerto || f.sin_destino).length;
   if (sinRuta) feed(sinRuta + " reserva(s) con nave no traen su puerto de carga o su destino: quedan NO ENVIADA, " +
                     "sin entrar al portal. Escríbelos en la planilla si quieres reservarlas.", "f-info", "AVISO");
+  const otroCont = FILAS.filter(f => f.otro_contenedor).length;
+  if (otroCont) feed(otroCont + " reserva(s) de MAERSK piden otro contenedor que «40 HC REEFER»: quedan NO ENVIADA, " +
+                     "sin entrar al portal. Resérvalas a mano en el portal, o corrige el contenedor en la planilla.",
+                     "f-info", "AVISO");
   marcarTabla();
 }
 $("#todas").onclick = (e) => {
@@ -16219,7 +16241,7 @@ tbody tr.fila-emitida td {
     background: rgba(108, 139, 139, 0.06) !important;
 }
 tbody td.nave { font-family: var(--font-mono); font-size: 12px; }
-.sin-nave, .sin-ruta { color: var(--text-muted); font-style: italic; }
+.sin-nave, .sin-ruta, .otro-contenedor { color: var(--text-muted); font-style: italic; }
 
 .chip {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px;
