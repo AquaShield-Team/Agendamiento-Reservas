@@ -5994,8 +5994,10 @@ console.log(JSON.stringify(r.concat([f({toks: ['MAERSK', 'NAVE'], viaje: '541W'}
 """
         normal, al_reves, con_viaje, sin_nave, puerto, entera, viaje_entero, en_minusculas = correr_node(self, guion)
         # Cada salida, con su «Transit time»: hasta 2825153 no lo traía (CICLO-cola-tres-items.md).
+        # Y su plazo de entrega, el «Gate-in deadline» de la tarjeta (encargo 69).
         s = lambda i, calza, salida, book, transito="44 days 6 hours": {"i": i, "calza": calza, "viaje": False,
-                                                                        "salida": salida, "transito": transito, "book": book}
+                                                                        "salida": salida, "transito": transito,
+                                                                        "plazo": "24 Sep 2026, 12:00", "book": book}
         self.assertEqual(normal, [s(0, True, "26 Sep 2026, 18:00", 0), s(1, False, "4 Oct 2026, 18:00", 1, "40 days"),
                                   s(2, True, "11 Oct 2026, 18:00", 1)])      # la que no trae «Book» se ve igual
         self.assertEqual([x["calza"] for x in al_reves], [False, False, False])     # las palabras, en orden
@@ -6012,6 +6014,23 @@ console.log(JSON.stringify(r.concat([f({toks: ['MAERSK', 'NAVE'], viaje: '541W'}
         self.assertEqual([x["viaje"] for x in viaje_entero], [False, True, False, True])
         # Sin distinguir mayúsculas: el viaje llega de la planilla tal como está escrito.
         self.assertEqual([x["viaje"] for x in en_minusculas], [False, True, False, True])
+
+    def test_js_salidas_lee_el_plazo_de_entrega(self):
+        # El plazo de entrega de cada salida, el valor de su «Gate-in deadline», con los espacios de a uno (decisión de
+        # Marcelo, encargo 69): medido en las 80 tarjetas de las 8 listas guardadas, cada una con esa etiqueta una vez.
+        # Sin ella, o sin su valor, ''; con dos, la primera; la etiqueta, sin distinguir mayúsculas.
+        guion = self.DOM_MK + "const f = " + self.mod._JS_MK_SALIDAS + r""";
+const tarjeta = (bloques) => nodo('mc-card', 'new-sailings-card mds', '', [
+  nodo('header', 'new-sailings-group-header', '', bloques)]);
+pagina([tarjeta([bloque('Departure', '17 Oct 2026, 20:30'), bloque('Gate-in deadline', '  15 Oct\n 2026,   21:00 ')]),
+        tarjeta([bloque('Departure', '17 Oct 2026, 20:30')]),
+        tarjeta([bloque('Gate-in deadline', '')]),
+        tarjeta([bloque('GATE-IN DEADLINE', '1 Nov 2026, 10:00')]),
+        tarjeta([bloque('Gate-in deadline', '15 Oct 2026, 21:00'), bloque('Gate-in deadline', '16 Oct 2026, 09:00')])]);
+console.log(JSON.stringify(f({toks: [], viaje: ''}).map(x => x.plazo)));
+"""
+        self.assertEqual(correr_node(self, guion),
+                         ["15 Oct 2026, 21:00", "", "", "1 Nov 2026, 10:00", "15 Oct 2026, 21:00"])
 
     def test_js_salidas_dice_la_primera_con_su_mismo_html(self):
         # Con 'iguales', cada tarjeta dice la primera con su mismo HTML entero: su etiqueta con sus atributos y su
@@ -6103,8 +6122,9 @@ console.log(JSON.stringify(r));
         entorno = {k: v for k, v in os.environ.items() if k != "AQUASHIELD_PRIMERA_NAVE"}
         if prueba:
             entorno["AQUASHIELD_PRIMERA_NAVE"] = "1"
+        self.eleccion = {}
         with mock.patch.dict(os.environ, entorno, clear=True):
-            r = self.mod._mk_elegir_nave(pagina, reserva or {"fila": 30, "nave": "MAERSK NAVE"}, reg)
+            r = self.mod._mk_elegir_nave(pagina, reserva or {"fila": 30, "nave": "MAERSK NAVE"}, reg, self.eleccion)
         return r, pagina.clics, log.read_text(encoding="utf-8")
 
     def test_elige_la_proxima_salida_que_se_puede_reservar(self):
@@ -6258,12 +6278,34 @@ console.log(JSON.stringify(r));
             self.assertIn(f"· ✗ NO ENVIADA · {detalle}", donde)
             self.assertIn(f"salidas que calzan: sale {self.salida(9)} | sale {self.salida(9)}", donde)
 
+    def test_la_elegida_guarda_su_plazo_de_entrega(self):
+        # Si pulsa el «Book» de la elegida, _mk_elegir_nave guarda en 'eleccion' su plazo de entrega, de a un espacio, y
+        # lo dice en log.txt; si no pulsa ningún «Book», no lo toca (decisión de Marcelo, encargo 69).
+        s = lambda i, n, plazo=None: dict({"i": i, "calza": True, "viaje": False, "salida": self.salida(n), "book": 1},
+                                          **({} if plazo is None else {"plazo": plazo}))
+        r, clics, log = self.elegir([[s(0, 9, "  15 Oct\n2026,  21:00 ")]])
+        self.assertEqual((r, clics, self.eleccion), (("nave: MAERSK NAVE", None, None, None), [("book", 0)],
+                                                     {"plazo": "15 Oct 2026, 21:00"}))
+        self.assertIn(f"nave seleccionada: MAERSK NAVE, sale {self.salida(9)}; plazo de entrega («Gate-in deadline»): "
+                      "15 Oct 2026, 21:00", log)
+        # Sin el plazo en su tarjeta (vacío, o una lectura sin él): "", y log.txt no lo nombra.
+        for plazo in ("", None):
+            with self.subTest(plazo=plazo):
+                r, _, log = self.elegir([[s(0, 9, plazo)]])
+                self.assertEqual((r[0], self.eleccion), ("nave: MAERSK NAVE", {"plazo": ""}))
+                self.assertIn(f"nave seleccionada: MAERSK NAVE, sale {self.salida(9)}\n", log)
+        # Sin la nave, o sin poder pulsar su «Book», no lo toca.
+        r, _, _ = self.elegir([[dict(s(0, 9, "15 Oct 2026, 21:00"), calza=False)]])
+        self.assertEqual((r[0], self.eleccion), ("", {}))
+        r, _, _ = self.elegir([[s(0, 9, "15 Oct 2026, 21:00")]], altura=50)
+        self.assertEqual((r[0], r[3][1][:4], self.eleccion), ("", "con ", {}))
+
     def test_sin_una_salida_no_llega_a_la_guarda(self):
         tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
         f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_maersk")
         eleccion = [n for n in ast.walk(f) if isinstance(n, ast.Assign) and "_mk_elegir_nave" in ast.unparse(n.value)]
         self.assertEqual([ast.unparse(n) for n in eleccion],
-                         ["modo, sin_una, sin_nave, sin_book = _mk_elegir_nave(page, reserva, reg)"])
+                         ["modo, sin_una, sin_nave, sin_book = _mk_elegir_nave(page, reserva, reg, eleccion)"])
         sin_una = [n for n in ast.walk(f) if isinstance(n, ast.If) and ast.unparse(n.test) == "sin_una"]
         self.assertEqual([ast.unparse(s) for s in sin_una[0].body],
                          ["return _mk_sin_una_salida(page, reg, reserva, *sin_una)"])
@@ -6468,11 +6510,11 @@ class TestRetiroMaersk(ConRegistro):
     def puesto(self, *fechas, valor=""):
         return dict(self.SIN_FECHA, fechas=list(fechas), valor=valor)
 
-    def retirar(self, pagina, hoy=datetime.date(2026, 9, 28)):
+    def retirar(self, pagina, hoy=datetime.date(2026, 9, 28), **k):
         self.n = getattr(self, "n", 0) + 1
         reg, vistas, log = self.corrida(f"retiro_{self.n}")
         det = []
-        r = self.mod._mk_fecha_de_retiro(pagina, reg, det, 30, hoy)
+        r = self.mod._mk_fecha_de_retiro(pagina, reg, det, 30, hoy, **k)
         return r, det, log.read_text(encoding="utf-8")
 
     def test_el_primer_dia_habil_despues_de_hoy(self):
@@ -6700,6 +6742,92 @@ class TestRetiroMaersk(ConRegistro):
                                                    "no pulsé nada más y la reserva no se envió"))
                 self.assertEqual((pagina.clics, det), ([("boton", "Choose another date")], []))
 
+    def test_el_plazo_de_entrega_que_no_deja_retirar(self):
+        # Si el calendario no tiene un día que cumpla la regla, el motivo dice si es el plazo de entrega de la salida
+        # elegida (decisión de Marcelo, encargo 69, CICLO-plazo-de-entrega-maersk.md): con su «Gate-in deadline» si la
+        # tarjeta lo trae y su fecha es anterior al día que toca; sin él, si el calendario muestra ese día y el último
+        # habilitado es anterior. Medido el 15-10: el plazo vencía ese día, y el calendario habilitaba solo el 15-10.
+        f, d = self.mod._mk_plazo_no_deja, datetime.date
+        sep = self.septiembre()["dias"]
+        hasta = lambda n: [dict(x, habilitado=int(x["fecha"][-2:]) <= n) for x in sep]
+        solo28 = [dict(x, habilitado=x["fecha"] == "2026-09-28") for x in sep]
+        cola = ("no deja retirar el contenedor el 29-09-2026, el primer día hábil después de hoy, ni después (el "
+                "último día habilitado en el calendario de retiro es el 28-09-2026): hay que usar una salida posterior")
+        con = "el plazo de entrega de la salida elegida («Gate-in deadline»: 28 Sep 2026, 21:00) " + cola
+        self.assertEqual(f(solo28, d(2026, 9, 29), "28 Sep 2026, 21:00"), con)
+        self.assertEqual(f(solo28, d(2026, 9, 29), "  28 Sep\n2026,   21:00 "), con)     # de a un espacio
+        self.assertEqual(f(hasta(28), d(2026, 9, 29), "28 Sep 2026, 21:00"), con)        # el último habilitado
+        # El plazo el mismo día que toca, o después: no lo explica, y el motivo queda como antes.
+        for plazo in ("29 Sep 2026, 09:00", "2 Oct 2026, 21:00"):
+            with self.subTest(plazo=plazo):
+                self.assertEqual(f(solo28, d(2026, 9, 29), plazo), "")
+        # Sin días habilitados, lo dice así.
+        self.assertEqual(f(self.septiembre(desde=31)["dias"], d(2026, 9, 29), "28 Sep 2026, 21:00"),
+                         "el plazo de entrega de la salida elegida («Gate-in deadline»: 28 Sep 2026, 21:00) no deja "
+                         "retirar el contenedor el 29-09-2026, el primer día hábil después de hoy, ni después (el "
+                         "calendario de retiro no habilita ningún día): hay que usar una salida posterior")
+        # El texto del plazo, a lo más 40 caracteres.
+        largo = "28 Sep 2026, 21:00 hora local del puerto de carga"
+        self.assertIn(f"(«Gate-in deadline»: {largo[:40]}) no deja", f(solo28, d(2026, 9, 29), largo))
+        # Sin el plazo de la tarjeta (o con uno que no se lee): por el calendario, si muestra el día que toca y el
+        # último habilitado es anterior.
+        sin = "el plazo de entrega de la salida elegida " + cola
+        for plazo in ("", None, "pronto"):
+            with self.subTest(plazo=plazo):
+                self.assertEqual(f(solo28, d(2026, 9, 29), plazo), sin)
+        self.assertEqual(f(hasta(28), d(2026, 9, 29)), sin)
+        # Sin ningún día habilitado, con el día que toca fuera de la vista o con uno habilitado desde ese día: no se
+        # sabe, porque el retiro podría abrir más adelante.
+        for dias, objetivo in ((self.septiembre(desde=31)["dias"], d(2026, 9, 29)), (solo28, d(2026, 10, 1)),
+                               (hasta(29), d(2026, 9, 29)), ([], d(2026, 9, 29)), (None, d(2026, 9, 29))):
+            with self.subTest(objetivo=objetivo, dias=bool(dias)):
+                self.assertEqual(f(dias, objetivo), "")
+
+    def test_el_motivo_dice_el_plazo_de_entrega(self):
+        # El 15-10, como el lunes 28-09 de esta prueba: el calendario habilitaba solo el día de la corrida, y la regla
+        # pedía el siguiente (encargo 68). El motivo dice el plazo de entrega y que hay que usar una salida posterior,
+        # sin otro clic (decisión de Marcelo, encargo 69). La regla no cambia: con un día que la cumple, lo elige.
+        solo28 = dict(self.septiembre(), dias=[dict(x, habilitado=x["fecha"] == "2026-09-28")
+                                               for x in self.septiembre()["dias"]])
+        nada = "no pulsé nada más y la reserva no se envió"
+        cola = ("no deja retirar el contenedor el 29-09-2026, el primer día hábil después de hoy, ni después (el "
+                "último día habilitado en el calendario de retiro es el 28-09-2026): hay que usar una salida posterior")
+        for plazo, texto in (("28 Sep 2026, 21:00", "el plazo de entrega de la salida elegida («Gate-in deadline»: 28 "
+                                                    "Sep 2026, 21:00) " + cola),
+                             ("", "el plazo de entrega de la salida elegida " + cola)):
+            with self.subTest(plazo=plazo):
+                pagina = PaginaRetiro(self.mod, solo28)
+                r, det, log = self.retirar(pagina, plazo=plazo)
+                self.assertEqual(r, ("NO ENVIADA", f"MAERSK: {texto}; {nada}"))
+                self.assertEqual((pagina.clics, det), ([("boton", "Choose another date")], []))
+                self.assertEqual(pagina.capturas, [("mk_f30_calendario.png", False)])
+                self.assertIn(f"· ✗ NO ENVIADA · MAERSK: {texto}; {nada}", log)
+        # Con el plazo después del día que toca, el motivo de siempre.
+        pagina = PaginaRetiro(self.mod, self.septiembre(desde=31))
+        r, _, _ = self.retirar(pagina, plazo="2 Oct 2026, 21:00")
+        self.assertEqual(r, ("NO ENVIADA", "MAERSK: abrí el calendario de la fecha de retiro, pero no hay un día hábil "
+                                           "habilitado del 29-09-2026 al 30-09-2026, el último que muestra el "
+                                           f"calendario, y cambiar de mes es un clic que no está permitido; {nada}"))
+        # Con un día que cumple la regla, lo elige, aunque el plazo sea anterior.
+        pagina = PaginaRetiro(self.mod, self.septiembre(), puesto=self.puesto("2026-09-29"))
+        r, det, _ = self.retirar(pagina, plazo="28 Sep 2026, 21:00")
+        self.assertEqual((r, det), (None, ["retiro=29-09-2026"]))
+
+    def test_reservar_maersk_le_pasa_el_plazo_de_la_elegida(self):
+        # El plazo de entrega de la salida elegida va de _mk_elegir_nave a la fecha de retiro por 'eleccion', un
+        # diccionario nuevo en cada reserva (encargo 69).
+        tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
+        f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_maersk")
+        nuevo = [n for n in ast.walk(f) if isinstance(n, ast.Assign) and ast.unparse(n) == "eleccion = {}"]
+        llamadas = {c.func.id: c for c in ast.walk(f) if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+                    and c.func.id in ("_mk_elegir_nave", "_mk_fecha_de_retiro")}
+        self.assertEqual(len(nuevo), 1)
+        self.assertEqual(ast.unparse(llamadas["_mk_elegir_nave"]), "_mk_elegir_nave(page, reserva, reg, eleccion)")
+        self.assertEqual(ast.unparse(llamadas["_mk_fecha_de_retiro"]),
+                         "_mk_fecha_de_retiro(page, reg, det, f, plazo=eleccion.get('plazo', ''))")
+        self.assertLess(nuevo[0].lineno, llamadas["_mk_elegir_nave"].lineno)
+        self.assertLess(llamadas["_mk_elegir_nave"].lineno, llamadas["_mk_fecha_de_retiro"].lineno)
+
     def test_el_dia_ya_no_esta_al_volver_a_leerlo(self):
         pagina = PaginaRetiro(self.mod, self.septiembre(), dia=False)
         r, det, _ = self.retirar(pagina)
@@ -6785,7 +6913,8 @@ class TestRetiroMaersk(ConRegistro):
         f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_maersk")
         cuerpos = [n.body for n in ast.walk(f) if isinstance(getattr(n, "body", None), list)]
         cuerpo, i = next((c, i) for c in cuerpos for i, s in enumerate(c)
-                         if ast.unparse(s) == "corte = _mk_fecha_de_retiro(page, reg, det, f)")
+                         if ast.unparse(s) == "corte = _mk_fecha_de_retiro(page, reg, det, f, "
+                                              "plazo=eleccion.get('plazo', ''))")
         self.assertEqual(ast.unparse(cuerpo[i + 1]), "if corte:\n    return corte")
         referencia = next(n.lineno for n in ast.walk(f) if isinstance(n, ast.Assign)
                           and ast.unparse(n.targets[0]) == "ref_txt")

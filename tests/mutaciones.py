@@ -1576,8 +1576,8 @@ RT_JS_ATRIBUTO = RT + "test_js_calendario_por_su_atributo"
 RT_JS_OTROS = RT + "test_js_calendario_otros_meses_y_deshabilitados"
 RT_JS_DONE = RT + "test_js_calendario_solo_con_un_done_y_28_dias"
 RT_JS_TARJETA = RT + "test_js_tarjeta_y_avisos_de_cargos"
-LLAMADA_RT = ("            corte = _mk_fecha_de_retiro(page, reg, det, f)\n            if corte:\n"
-              "                return corte\n")
+LLAMADA_RT = ("            corte = _mk_fecha_de_retiro(page, reg, det, f, plazo=eleccion.get(\"plazo\", \"\"))\n"
+              "            if corte:\n                return corte\n")
 
 MUTACIONES += [
     # La regla del día.
@@ -1596,8 +1596,11 @@ MUTACIONES += [
          nuevo="        if d not in fechas:\n            d += datetime.timedelta(days=1)\n            continue\n"
                "            return None, f\"no pude identificar por su fecha el"),
     dict(id="mk-retiro-fecha-invalida-cuenta", pruebas=[RT_REGLA],
-         viejo="        except ValueError:\n            continue\n    if not fechas:\n",
-         nuevo="        except ValueError:\n            fechas[objetivo] = True\n    if not fechas:\n"),
+         # Desde el encargo 69, la lectura de los días va en _mk_fechas_del_calendario, sin el día que toca: la fecha
+         # que no existe cuenta como el 22-09, el que toca en la prueba.
+         viejo="        except ValueError:\n            continue\n    return fechas\n",
+         nuevo=("        except ValueError:\n            fechas[datetime.date(2026, 9, 22)] = True\n"
+                "    return fechas\n")),
     # Los tres clics y lo que corta.
     dict(id="mk-retiro-sin-boton-unico", pruebas=[RT_BOTON],
          viejo="    if boton is None or listos:\n        raise ObjetivoNoEncontrado(\"Fecha de retiro de MAERSK\"",
@@ -1627,8 +1630,8 @@ MUTACIONES += [
          viejo="    if not cal.get(\"raiz\"):\n        return _no_enviada(reg, f\"MAERSK: pulsé «{MK_OTRA_FECHA}»",
          nuevo="    if False:\n        return _no_enviada(reg, f\"MAERSK: pulsé «{MK_OTRA_FECHA}»"),
     dict(id="mk-retiro-sigue-sin-dia", pruebas=[RT_SIN_DIA],
-         viejo="    if elegido is None:\n        return _no_enviada(reg, f\"MAERSK: abrí el calendario",
-         nuevo="    if False:\n        return _no_enviada(reg, f\"MAERSK: abrí el calendario"),
+         viejo="    if elegido is None:\n        no_deja = _mk_plazo_no_deja(",
+         nuevo="    if False:\n        no_deja = _mk_plazo_no_deja("),
     # Revisión del encargo 36: el calendario es el del único «Done» con sus días (hasta ahí, un «Done» cualquiera), y el
     # motivo dice por qué no lo encontró.
     dict(id="mk-retiro-espera-con-dos-done", pruebas=[RT_CALENDARIO],
@@ -8445,4 +8448,78 @@ MUTACIONES += [
     dict(id="e67-palabras-de-una-letra", pruebas=[VJ + "test_las_palabras_del_viaje"],
          viejo='    return [p for p in str(viaje or "").upper().split() if len(p) > 1]\n',
          nuevo='    return str(viaje or "").upper().split()\n'),
+]
+
+# Encargo 69 (CICLO-plazo-de-entrega-maersk.md): el plazo de entrega de la salida elegida de MAERSK, en el motivo de la
+# fecha de retiro cuando el calendario no tiene un día que cumpla la regla.
+PLAZO_JS = ("            if (!plazo && (l.textContent || '').trim().toLowerCase() === '\"\"\" + "
+            "MK_PLAZO_DE_ENTREGA.lower() + \"\"\"') {\n"
+            "                plazo = (v.textContent || '').replace(/\\\\s+/g, ' ').trim();\n            }\n")
+PZ_JS = MK + "test_js_salidas_lee_el_plazo_de_entrega"
+PZ_JS_A = MK + "test_js_salidas_lee_la_salida_y_si_se_puede_reservar"
+PZ_ELEGIDA = MK + "test_la_elegida_guarda_su_plazo_de_entrega"
+PZ_LLAMADA = MK + "test_sin_una_salida_no_llega_a_la_guarda"
+PZ_NO_DEJA = RT + "test_el_plazo_de_entrega_que_no_deja_retirar"
+PZ_MOTIVO = RT + "test_el_motivo_dice_el_plazo_de_entrega"
+PZ_PASA = RT + "test_reservar_maersk_le_pasa_el_plazo_de_la_elegida"
+
+MUTACIONES += [
+    # La lectura: sin el plazo, sin juntar los espacios, el último y no el primero.
+    dict(id="e69-js-sin-plazo", pruebas=[PZ_JS, PZ_JS_A], viejo=PLAZO_JS, nuevo=""),
+    dict(id="e69-js-plazo-sin-espacios", pruebas=[PZ_JS],
+         viejo="                plazo = (v.textContent || '').replace(/\\\\s+/g, ' ').trim();\n",
+         nuevo="                plazo = (v.textContent || '').trim();\n"),
+    dict(id="e69-js-el-ultimo-plazo", pruebas=[PZ_JS],
+         viejo="            if (!plazo && (l.textContent || '')", nuevo="            if ((l.textContent || '')"),
+    # La elección: no lo guarda, lo guarda sin juntar los espacios, no lo dice en log.txt.
+    dict(id="e69-elegida-sin-plazo", pruebas=[PZ_ELEGIDA],
+         viejo='                    eleccion["plazo"] = plazo\n', nuevo='                    eleccion["plazo"] = ""\n'),
+    dict(id="e69-elegida-plazo-crudo", pruebas=[PZ_ELEGIDA],
+         viejo='                plazo = " ".join(str(elegida.get("plazo") or "").split())\n',
+         nuevo='                plazo = str(elegida.get("plazo") or "")\n'),
+    dict(id="e69-log-sin-plazo", pruebas=[PZ_ELEGIDA],
+         viejo=('                         + (f"; plazo de entrega («{MK_PLAZO_DE_ENTREGA}»): {plazo}" '
+                'if plazo else ""))\n'),
+         nuevo='                         + "")\n'),
+    # reservar_maersk: no le pasa 'eleccion' a la elección, o el plazo a la fecha de retiro.
+    dict(id="e69-no-le-pasa-eleccion", pruebas=[PZ_PASA, PZ_LLAMADA],
+         viejo="    modo, sin_una, sin_nave, sin_book = _mk_elegir_nave(page, reserva, reg, eleccion)\n",
+         nuevo="    modo, sin_una, sin_nave, sin_book = _mk_elegir_nave(page, reserva, reg)\n"),
+    dict(id="e69-no-le-pasa-el-plazo", pruebas=[PZ_PASA, RT_ORDEN],
+         viejo='            corte = _mk_fecha_de_retiro(page, reg, det, f, plazo=eleccion.get("plazo", ""))\n',
+         nuevo="            corte = _mk_fecha_de_retiro(page, reg, det, f)\n"),
+    # La fecha de retiro: el motivo de siempre aunque el plazo lo explique.
+    dict(id="e69-motivo-de-siempre", pruebas=[PZ_MOTIVO],
+         viejo="        if no_deja:\n            return _no_enviada(reg, f\"MAERSK: {no_deja}; {_MK_NADA_MAS}\")\n",
+         nuevo="        if False:\n            return _no_enviada(reg, f\"MAERSK: {no_deja}; {_MK_NADA_MAS}\")\n"),
+    # _mk_plazo_no_deja: el plazo del mismo día, o posterior, lo explicaría; sin el plazo, no infiere, o infiere sin
+    # días habilitados, sin el día a la vista, o con el último habilitado el mismo día que toca.
+    dict(id="e69-plazo-igual-no-deja", pruebas=[PZ_NO_DEJA],
+         viejo="        if cuando >= objetivo:\n", nuevo="        if cuando > objetivo:\n"),
+    dict(id="e69-plazo-posterior-no-deja", pruebas=[PZ_NO_DEJA, PZ_MOTIVO],
+         viejo="        if cuando >= objetivo:\n            return \"\"\n",
+         nuevo="        if cuando >= objetivo:\n            pass\n"),
+    dict(id="e69-sin-plazo-no-infiere", pruebas=[PZ_NO_DEJA, PZ_MOTIVO],
+         viejo="    elif not (fechas and min(fechas)", nuevo="    elif True or not (fechas and min(fechas)"),
+    dict(id="e69-sin-plazo-sin-habilitados", pruebas=[PZ_NO_DEJA],
+         viejo="and habilitados and habilitados[-1] < objetivo):",
+         nuevo="and (not habilitados or habilitados[-1] < objetivo)):"),
+    dict(id="e69-sin-plazo-fuera-de-vista", pruebas=[PZ_NO_DEJA],
+         viejo="    elif not (fechas and min(fechas) <= objetivo <= max(fechas) and habilitados",
+         nuevo="    elif not (fechas and habilitados"),
+    dict(id="e69-sin-plazo-el-mismo-dia", pruebas=[PZ_NO_DEJA],
+         viejo="habilitados and habilitados[-1] < objetivo):", nuevo="habilitados and habilitados[-1] <= objetivo):"),
+    # El texto: sin el plazo, sin la salida posterior, con el primer habilitado, sin el recorte.
+    dict(id="e69-texto-sin-el-plazo", pruebas=[PZ_NO_DEJA, PZ_MOTIVO],
+         viejo="    visto = f\" («{MK_PLAZO_DE_ENTREGA}»: {plazo})\" if cuando is not None else \"\"\n",
+         nuevo="    visto = \"\"\n"),
+    dict(id="e69-texto-sin-salida-posterior", pruebas=[PZ_NO_DEJA, PZ_MOTIVO],
+         viejo="ni después ({calendario}): hay que usar una salida posterior\")",
+         nuevo="ni después ({calendario})\")"),
+    dict(id="e69-texto-el-primer-habilitado", pruebas=[PZ_NO_DEJA],
+         viejo="calendario de retiro es el {habilitados[-1]:%d-%m-%Y}\"",
+         nuevo="calendario de retiro es el {habilitados[0]:%d-%m-%Y}\""),
+    dict(id="e69-texto-sin-recorte", pruebas=[PZ_NO_DEJA],
+         viejo="    plazo = \" \".join(str(plazo or \"\").split())[:40]\n",
+         nuevo="    plazo = \" \".join(str(plazo or \"\").split())\n"),
 ]

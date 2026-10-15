@@ -9727,6 +9727,17 @@ def _mk_feriados_saltados(hoy, objetivo, feriados):
     return f"; {lista} {'es feriado' if len(saltados) == 1 else 'son feriados'} en Chile"
 
 
+def _mk_fechas_del_calendario(dias):
+    """Los días de _JS_MK_CALENDARIO que traen una fecha que existe, como {datetime.date: habilitado}."""
+    fechas = {}
+    for d in dias or []:
+        try:
+            fechas[datetime.date.fromisoformat(str(d.get("fecha") or ""))] = bool(d.get("habilitado"))
+        except ValueError:
+            continue
+    return fechas
+
+
 def _mk_elegir_dia_de_retiro(dias, objetivo, feriados=()):
     """El día que se elige en el calendario: 'objetivo' si está habilitado; si no, el siguiente día hábil habilitado
     (_mk_dia_habil): nunca un sábado, un domingo ni un feriado de 'feriados' (decisión de Marcelo,
@@ -9736,12 +9747,7 @@ def _mk_elegir_dia_de_retiro(dias, objetivo, feriados=()):
     la vista, y cada día hábil desde él hasta el elegido, identificado por su fecha: cambiar de mes sería un clic que no
     está entre los permitidos. Devuelve (fecha, "") o (fecha, por qué no es 'objetivo'); o (None, por qué no se puede
     elegir)."""
-    fechas = {}
-    for d in dias or []:
-        try:
-            fechas[datetime.date.fromisoformat(str(d.get("fecha") or ""))] = bool(d.get("habilitado"))
-        except ValueError:
-            continue
+    fechas = _mk_fechas_del_calendario(dias)
     if not fechas:
         return None, "no pude identificar por su fecha ningún día del calendario"
     primero, ultimo = min(fechas), max(fechas)
@@ -9762,6 +9768,36 @@ def _mk_elegir_dia_de_retiro(dias, objetivo, feriados=()):
         d += datetime.timedelta(days=1)
     return None, (f"no hay un día hábil habilitado del {objetivo:%d-%m-%Y} al {ultimo:%d-%m-%Y}, el último que muestra "
                   f"el calendario, y cambiar de mes es un clic que no está permitido")
+
+
+def _mk_plazo_no_deja(dias, objetivo, plazo=""):
+    """Si el plazo de entrega de la salida elegida explica que el calendario de retiro no tenga ningún día que cumpla
+    la regla: el texto del motivo, que lo dice, con el plazo si «Select sailing» lo mostró, y que hay que usar una
+    salida posterior; o "" si no lo explica, y el motivo queda como antes (decisión de Marcelo, encargo 69,
+    CICLO-plazo-de-entrega-maersk.md). La regla no cambia: nunca se retira el mismo día. 'dias' es lo que da
+    _JS_MK_CALENDARIO; 'objetivo', el primer día hábil después de hoy (_mk_dia_de_retiro).
+    - Con el plazo de la tarjeta elegida ('plazo': su «Gate-in deadline», que lee _JS_MK_SALIDAS): lo explica si su
+      fecha es anterior a 'objetivo'.
+    - Sin él (la tarjeta no lo trae, o su fecha no se lee): lo explica si el calendario muestra 'objetivo', habilita
+      algún día y el último habilitado es anterior a 'objetivo'. Sin ningún día habilitado, o sin 'objetivo' a la vista,
+      no se sabe: el retiro podría abrir más adelante, en otro mes (el 02-10 abrió 10 días después de la corrida).
+    Medido el 15-10 (encargo 68, CICLO-corrida-15-10.md): la salida de la fila cerraba la entrega ese día a las 21:00,
+    el calendario habilitaba solo el 15-10, la regla pedía el 16-10, y el motivo decía solo que no había un día hábil
+    habilitado."""
+    plazo = " ".join(str(plazo or "").split())[:40]
+    fechas = _mk_fechas_del_calendario(dias)
+    habilitados = sorted(d for d, habil in fechas.items() if habil)
+    cuando = _mk_fecha_salida(plazo)
+    if cuando is not None:
+        if cuando >= objetivo:
+            return ""
+    elif not (fechas and min(fechas) <= objetivo <= max(fechas) and habilitados and habilitados[-1] < objetivo):
+        return ""
+    visto = f" («{MK_PLAZO_DE_ENTREGA}»: {plazo})" if cuando is not None else ""
+    calendario = (f"el último día habilitado en el calendario de retiro es el {habilitados[-1]:%d-%m-%Y}"
+                  if habilitados else "el calendario de retiro no habilita ningún día")
+    return (f"el plazo de entrega de la salida elegida{visto} no deja retirar el contenedor el {objetivo:%d-%m-%Y}, el "
+            f"primer día hábil después de hoy, ni después ({calendario}): hay que usar una salida posterior")
 
 
 def _mk_resumen_calendario(cal):
@@ -9829,7 +9865,7 @@ def _mk_anotar_cargos(page, reg, antes, anotados):
             reg.info(f"aviso de MAERSK sobre la fecha de retiro{ya}: «{t}»")
 
 
-def _mk_fecha_de_retiro(page, reg, det, f, hoy=None):
+def _mk_fecha_de_retiro(page, reg, det, f, hoy=None, plazo=""):
     """La fecha de retiro de «Additional details» (decisión de Marcelo, CICLO-maersk-retiro-y-terminos.md): el primer
     día hábil después de hoy (_mk_dia_de_retiro) o, si no está habilitado, el siguiente día hábil habilitado, nunca un
     sábado, un domingo ni un feriado de Chile (_mk_elegir_dia_de_retiro, _feriados_de_chile;
@@ -9839,7 +9875,10 @@ def _mk_fecha_de_retiro(page, reg, det, f, hoy=None):
     avisos de cargos y mira la fecha que quedó (_mk_comprobar_retiro). Sin un solo «Choose another date» a la vista, o
     con un «Done» ya en la página, corta sin pulsar nada (ObjetivoNoEncontrado). Después de pulsarlo, si el calendario
     no aparece o el día no se puede elegir por su fecha, devuelve el corte, NO ENVIADA, sin otro clic (FRENO de
-    Marcelo: ningún clic fuera de esos tres, ni cambiar de mes). Si no, None."""
+    Marcelo: ningún clic fuera de esos tres, ni cambiar de mes). Si no, None.
+    Si el calendario no tiene un día que cumpla la regla y el plazo de entrega de la salida elegida ('plazo', que
+    reservar_maersk toma de _mk_elegir_nave) lo explica, el motivo dice eso y que hay que usar una salida posterior
+    (_mk_plazo_no_deja; decisión de Marcelo, encargo 69, CICLO-plazo-de-entrega-maersk.md), sin otro clic."""
     hoy = hoy or datetime.date.today()
     feriados = _feriados_de_chile(hoy)
     objetivo = _mk_dia_de_retiro(hoy, feriados)
@@ -9870,6 +9909,9 @@ def _mk_fecha_de_retiro(page, reg, det, f, hoy=None):
         return _no_enviada(reg, f"MAERSK: pulsé «{MK_OTRA_FECHA}», pero {_mk_sin_calendario(cal)}; {_MK_NADA_MAS}")
     elegido, por_que = _mk_elegir_dia_de_retiro(cal.get("dias"), objetivo, feriados)
     if elegido is None:
+        no_deja = _mk_plazo_no_deja(cal.get("dias"), objetivo, plazo)
+        if no_deja:
+            return _no_enviada(reg, f"MAERSK: {no_deja}; {_MK_NADA_MAS}")
         return _no_enviada(reg, f"MAERSK: abrí el calendario de la fecha de retiro, pero {por_que}; {_MK_NADA_MAS}")
     if por_que:
         reg.paso(f"Fecha de retiro: {por_que}.")
@@ -10635,7 +10677,10 @@ def reservar_maersk(page, reserva, creds, reg, on_pausa=None):
     # Hasta el encargo 39 había aquí una rama para «indefinido», que _mk_desenlace_sailing nunca devuelve.
 
     # Selección de nave (Select sailing): leer y elegir
-    modo, sin_una, sin_nave, sin_book = _mk_elegir_nave(page, reserva, reg)
+    # El plazo de entrega de la salida elegida lo guarda _mk_elegir_nave en 'eleccion', para el motivo de la fecha de
+    # retiro (decisión de Marcelo, encargo 69, CICLO-plazo-de-entrega-maersk.md).
+    eleccion = {}
+    modo, sin_una, sin_nave, sin_book = _mk_elegir_nave(page, reserva, reg, eleccion)
     reg.captura(page, f"mk_f{f}_5_nave", full=True)
     if os.environ.get("AQUASHIELD_DESCUBRIR"):
         _guardar_html(page, "maersk_sailing.html", reg)
@@ -10684,7 +10729,7 @@ def reservar_maersk(page, reserva, creds, reg, on_pausa=None):
             # 1) La fecha de retiro: el primer día hábil después de hoy, o el siguiente día hábil habilitado (decisión
             # de Marcelo, CICLO-maersk-retiro-y-terminos.md y CICLO-maersk-ultimos-puntos.md). Del 24-09 al encargo 36
             # no se elegía, y el portal no pasaba a la revisión sin ella (CICLO-maersk-fecha-de-retiro.md).
-            corte = _mk_fecha_de_retiro(page, reg, det, f)
+            corte = _mk_fecha_de_retiro(page, reg, det, f, plazo=eleccion.get("plazo", ""))
             if corte:
                 return corte
 
@@ -10962,6 +11007,9 @@ def _mk_contenedor(page, reserva, reg, det):
 # bastaba que fuera parte del texto. _mk_elegir_nave lo usa para quedarse con las salidas de la nave que traen ese
 # viaje; si ninguna lo trae, no elige ninguna y la reserva queda NO ENVIADA (decisión de Marcelo,
 # CICLO-cierre-de-frenos.md). Hasta 4948e16 elegía entre todas las de la nave, sin avisarlo.
+# Desde el encargo 69 lee también el plazo de entrega del contenedor de cada salida (MK_PLAZO_DE_ENTREGA), tal como lo
+# muestra su valor, con los espacios de a uno, o '' si la tarjeta no lo trae; _mk_elegir_nave guarda el de la elegida.
+MK_PLAZO_DE_ENTREGA = "Gate-in deadline"
 _JS_MK_SALIDAS = """(args) => {""" + _JS_TRAE_LA_NAVE + _JS_HTML_ENTERO + """
     const T = (args.toks || []).map(s => s.toUpperCase());
     const V = (args.viaje || '').toUpperCase();
@@ -10976,7 +11024,7 @@ _JS_MK_SALIDAS = """(args) => {""" + _JS_TRAE_LA_NAVE + _JS_HTML_ENTERO + """
     const tarjetas = [...document.querySelectorAll('mc-card.new-sailings-card')];
     const enteros = args.iguales ? tarjetas.map(entero) : [];
     return tarjetas.map((c, i) => {
-        let salida = '', suNave = '', transito = '';
+        let salida = '', suNave = '', transito = '', plazo = '';
         for (const b of c.querySelectorAll('.new-sailings-group-header__content')) {
             const l = b.querySelector('.new-sailings-group-header__label');
             const v = b.querySelector('.new-sailings-group-header__value');
@@ -10984,6 +11032,9 @@ _JS_MK_SALIDAS = """(args) => {""" + _JS_TRAE_LA_NAVE + _JS_HTML_ENTERO + """
             if (!salida && (l.textContent || '').trim().toLowerCase() === 'departure') salida = (v.textContent || '').trim();
             if (!suNave && (l.textContent || '').trim().toLowerCase() === 'vessel/voyage') suNave = v.textContent || '';
             if (!transito && (l.textContent || '').trim().toLowerCase() === 'transit time') transito = (v.textContent || '').trim();
+            if (!plazo && (l.textContent || '').trim().toLowerCase() === '""" + MK_PLAZO_DE_ENTREGA.lower() + """') {
+                plazo = (v.textContent || '').replace(/\\s+/g, ' ').trim();
+            }
         }
         const t = suNave.toUpperCase().replace(/\\s+/g, ' ');
         let pos = 0, calza = T.length > 0;
@@ -10993,6 +11044,7 @@ _JS_MK_SALIDAS = """(args) => {""" + _JS_TRAE_LA_NAVE + _JS_HTML_ENTERO + """
             pos = j + x.length;
         }
         return {i: i, calza: calza, viaje: !!V && _palabraEn(t, V, 0) >= 0, salida: salida, transito: transito,
+                plazo: plazo,
                 book: [...c.querySelectorAll("mc-button, button, [role='button']")].filter(esBook).length};
     }).map((s, i) => (args.iguales ? Object.assign(s, {igual: enteros[i] ? enteros.indexOf(enteros[i]) : i}) : s));
 }"""
@@ -11139,7 +11191,7 @@ def _mk_ampliar(page, reg, antes):
     return NO_AMPLIA_MAS
 
 
-def _mk_elegir_nave(page, reserva, reg):
+def _mk_elegir_nave(page, reserva, reg, eleccion=None):
     """En «Select sailing», entre las salidas de la nave de la fila que el portal deja reservar (si la fila trae viaje,
     las de ese viaje), la próxima desde hoy o desde el día de carga (_desde, _proxima_salida; decisión de Marcelo,
     CICLO-proxima-salida.md). Si no está en lo cargado, pide más salidas (_mk_ampliar) hasta encontrarla o hasta que el
@@ -11160,7 +11212,11 @@ def _mk_elegir_nave(page, reserva, reg):
     quedaba REVISAR como una nave que no está. Hasta 4948e16, sin el viaje de la fila elegía entre todas las de la nave.
     Hasta 16d3583 recorría los candidatos del último al primero: con la nave en dos salidas, pulsaba la de la tarjeta
     que venía después en la página. Hasta a198645, con AQUASHIELD_PRIMERA_NAVE, sin nave que calzara tomaba la primera
-    salida que se podía reservar, fuera la nave que fuera (CICLO-solo-la-nave-pedida.md)."""
+    salida que se podía reservar, fuera la nave que fuera (CICLO-solo-la-nave-pedida.md).
+    Con 'eleccion' (un diccionario), si pulsó el «Book» de la elegida le pone su plazo de entrega («plazo»: su «Gate-in
+    deadline» tal como lo muestra la página, o "" si su tarjeta no lo trae), que reservar_maersk le pasa a la fecha de
+    retiro para el motivo (decisión de Marcelo, encargo 69, CICLO-plazo-de-entrega-maersk.md); si no lo pulsó, no lo
+    toca."""
     nave_solicitada = str(reserva.get("nave") or "").strip()
     viaje_solicitado = str(reserva.get("viaje") or "").strip()
     toks = [t for t in nave_solicitada.upper().replace("/", " ").split() if len(t) > 1]
@@ -11200,7 +11256,11 @@ def _mk_elegir_nave(page, reserva, reg):
                 _anotar_desempate(reg, _mk_salidas(cand), desde, _mk_transito)
             sin_pulsar = _mk_pulsar_book(page, elegida["i"])
             if not sin_pulsar:
-                reg.info(f"nave seleccionada: {nave_solicitada}, sale {elegida.get('salida')}")
+                plazo = " ".join(str(elegida.get("plazo") or "").split())
+                if eleccion is not None:
+                    eleccion["plazo"] = plazo
+                reg.info(f"nave seleccionada: {nave_solicitada}, sale {elegida.get('salida')}"
+                         + (f"; plazo de entrega («{MK_PLAZO_DE_ENTREGA}»): {plazo}" if plazo else ""))
                 return f"nave: {nave_solicitada}", None, None, None
             reg.info(f"no pude pulsar el «Book» de la salida elegida: {sin_pulsar}")
             return "", None, None, (elegida, sin_pulsar)
