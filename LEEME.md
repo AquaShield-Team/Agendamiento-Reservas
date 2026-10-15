@@ -59,6 +59,11 @@ trae una columna de contenedor y una fila de MAERSK pide otro que «40 HC REEFER
 motivo, sin entrar al portal: resérvala a mano. El panel la marca antes de correr, junto a «Reserva N» («otro
 contenedor: …»). Una celda vacía en esa columna vale «40 HC REEFER», en el panel y en la consola.
 
+La fecha de retiro del contenedor de MAERSK es el primer día hábil después del día en que corres el programa, nunca el
+mismo día. Si la salida de la fila cierra antes la entrega del contenedor (su «Gate-in deadline» en la lista de
+salidas), el calendario no trae ningún día que sirva: la fila queda NO ENVIADA, y el motivo dice ese plazo y que hay que
+usar una salida posterior. Cambia la nave y el viaje de la fila por los de una salida posterior y vuelve a armarla.
+
 Si la fila trae viaje, las seis navieras reservan solo una salida con ese viaje. Si el portal ya no lo ofrece (pasó
 su cierre, por ejemplo), la fila queda NO ENVIADA, con el motivo («ninguna de las opciones de la nave trae el viaje de
 la fila»), y la lista que mostró el portal queda en la carpeta de la corrida: corrige el viaje en la planilla y vuelve a

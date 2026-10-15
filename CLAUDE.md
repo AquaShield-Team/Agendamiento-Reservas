@@ -609,8 +609,28 @@ cerrado:
     - **Si el plazo para entregar el contenedor de la salida vence el día de la corrida, la regla no deja ningún día**
       (encargo 68, `CICLO-corrida-15-10.md`). El 15-10, la salida de la fila tenía su «Book», y su «GATE-IN DEADLINE»
       era ese mismo día a las 21:00 (OCR de `mk_f10_5_nave.png`). El calendario habilitó solo el 15, la regla pedía el
-      16, y la fila quedó NO ENVIADA. El 14-10, con la misma salida, habilitaba el 14 y el 15, y eligió el 15. Qué hacer
-      con esas salidas lo decide Marcelo.
+      16, y la fila quedó NO ENVIADA. El 14-10, con la misma salida, habilitaba el 14 y el 15, y eligió el 15.
+    - **Desde el encargo 69, el motivo lo dice** (decisión de Marcelo, `CICLO-plazo-de-entrega-maersk.md`). La regla no
+      cambia, nunca se retira el mismo día, y no hay clics nuevos.
+      - `_JS_MK_SALIDAS` lee también el «Gate-in deadline» de cada tarjeta (`MK_PLAZO_DE_ENTREGA`; `plazo`).
+        `_mk_elegir_nave` guarda el de la elegida en el diccionario `eleccion` que le pasa `reservar_maersk`, y este se
+        lo pasa a `_mk_fecha_de_retiro` (`plazo=`).
+      - Si el calendario no tiene un día que cumpla la regla, `_mk_plazo_no_deja` decide si el plazo lo explica: con el
+        plazo de la tarjeta, si su fecha es anterior al día que toca; sin él (la tarjeta no lo trae o no se lee), si el
+        calendario muestra ese día, habilita alguno y el último habilitado es anterior.
+      - Entonces el motivo dice «el plazo de entrega de la salida elegida («Gate-in deadline»: …) no deja retirar el
+        contenedor el …, el primer día hábil después de hoy, ni después (…): hay que usar una salida posterior», con el
+        plazo tal como lo muestra la página (hasta 40 caracteres); si no, el de siempre. Sin ningún día habilitado, o
+        sin el día que toca a la vista, no se lo atribuye al plazo: el retiro podría abrir más adelante (el 02-10 abrió
+        10 días después de la corrida).
+      - Medido en las 8 listas guardadas con tarjetas (`mk_f<fila>_detenida.html`, del 25-09 al 01-10): las 80 tarjetas
+        traen el «Gate-in deadline» una vez; las 68 con «Book», con su valor legible y nunca después de su salida; las 4
+        sin valor no traen «Book». Con los 4 calendarios guardados, el 02-10 y el 14-10 eligen el mismo día de antes, y
+        el del 15-10 da el motivo nuevo.
+      - Lo vigilan `test_clics.TestMaersk` (`test_js_salidas_lee_el_plazo_de_entrega` y
+        `test_la_elegida_guarda_su_plazo_de_entrega`) y `TestRetiroMaersk`
+        (`test_el_plazo_de_entrega_que_no_deja_retirar`, `test_el_motivo_dice_el_plazo_de_entrega` y
+        `test_reservar_maersk_le_pasa_el_plazo_de_la_elegida`).
   - «Review booking» es el único mc-button a la vista con ese texto (`_mk_pulsar_revision`, `MK_REVISION`; en el HTML
     del 27-09, el mc-button y su botón interno son el mismo control), buscado hasta `MK_INTENTOS_REVISION` veces. Sin
     uno solo, NO ENVIADA (`ObjetivoNoEncontrado`, con lo que el portal pide); si está pero no acepta el clic, NO ENVIADA
@@ -789,7 +809,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 828 pruebas al 2026-10-14 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 833 pruebas al 2026-10-15 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
