@@ -62,7 +62,8 @@ contenedor: …»). Una celda vacía en esa columna vale «40 HC REEFER», en el
 Si la fila trae viaje, las seis navieras reservan solo una salida con ese viaje. Si el portal ya no lo ofrece (pasó
 su cierre, por ejemplo), la fila queda NO ENVIADA, con el motivo («ninguna de las opciones de la nave trae el viaje de
 la fila»), y la lista que mostró el portal queda en la carpeta de la corrida: corrige el viaje en la planilla y vuelve a
-armarla.
+armarla. En CMA-CGM cuentan la nave y el viaje del tramo que sale de Chile, el primero de cada ruta: una ruta que
+trae la nave de la fila solo después del transbordo no es la suya.
 
 Cuando el panel te pide resolver algo en el navegador («Te toca a ti»), `log.txt` anota cuándo empezó la pausa, por
 qué, y cuándo terminó: si pulsaste «Ya lo resolví» o «Detener», si pasaron 10 minutos sin respuesta o, con el

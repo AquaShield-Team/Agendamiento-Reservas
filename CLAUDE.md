@@ -746,15 +746,29 @@ python -m playwright show-trace "logs\<carpeta>\traza.zip"
       página (`META_SESION`); la página la manda en `X-AquaShield-Sesion` (`CABECERA_SESION`) con cada pedido a `/api/`,
       y sin ella el panel contesta 403 (`PEDIDO_AJENO`). Una página de otro sitio no puede leer la del panel, así que no
       la tiene. El lanzador la lee de la página (`_sesion_del_panel`) para preguntarle a un panel que ya está y pedirle
-      que se apague; un panel de antes del encargo 66 no la trae, y se le pregunta como antes.
+      que se apague (desde el encargo 67, para el apagar, con `PANEL_ESPERA_LARGA`); un panel de antes del encargo 66
+      no la trae, y se le pregunta como antes. **Protege del navegador, no de otro programa de este equipo:** cualquiera
+      que no sea una página web lee `/` y la tiene, como el lanzador (revisión de seguridad del encargo 67).
     - **El origen:** el `Host` tiene que ser el del panel (`127.0.0.1` o `localhost`, con su puerto), el `Origin`, si
       viene, el de su página, y `Sec-Fetch-Site`, si viene, `same-origin`. Su página se abre desde cualquier lado (el
       lanzador, un marcador, un enlace), pero no dentro de otra (`Sec-Fetch-Dest`, `X-Frame-Options` y
-      `frame-ancestors`).
+      `frame-ancestors`). Un pedido con dos `Host` no se atiende (encargo 67: `http.server` toma el primero).
+    - **El cuerpo de un POST** (revisión del encargo 67, `CICLO-revisiones-msc-y-cma.md`): el panel mira de dónde viene
+      antes de leerlo. A uno de otro origen le contesta el 403 sin leer su cuerpo (lo descarta si es de
+      `DESCARTE_MAX` o menos, para que la respuesta llegue entera); uno de su origen sin la marca se lee, para que su
+      página reciba el 403 y se renueve. Uno que no dice cuánto trae o trae más de `CUERPO_MAX` (20 MB; la planilla
+      de este equipo pesa 13 KB), 413 sin leerlo (`_largo_del_cuerpo`). Cada parte de un pedido se espera hasta
+      `PANEL_PLAZO_PEDIDO` s (30; hipótesis). Hasta ahí leía entero, en memoria, el cuerpo de cualquier POST antes de
+      mirar de dónde venía (+269 MB con uno ajeno de 300 MB, medido por la revisión de seguridad), y una conexión muda
+      retenía su hilo para siempre.
     - **Si el panel se reinició** (el lanzador renueva uno ocioso), una pestaña que quedó abierta tiene la marca de
       antes: con el 403, lee la nueva de la página del panel y repite el pedido una vez (`renovarSesion`), sin que el
       operador vea nada. La descarga de la planilla va por el mismo camino (`pedir`): hasta ahí era una navegación a
-      `/api/descargar`, que no puede llevar la marca.
+      `/api/descargar`, que no puede llevar la marca. Desde el encargo 67 compara la marca nueva con la que usó el
+      pedido rechazado: de dos pedidos a la vez con la de antes, el segundo no repetía y su 403 llegaba al operador.
+    - **El nombre de la planilla que se descarga** va en ASCII en `filename` y entero en `filename*` (`_disposicion`),
+      y la página lee primero el segundo (`nombreDeDescarga`). Hasta el encargo 67, con una raya larga o un emoji en el
+      nombre, el panel mandaba un 200 y después un 500, y la descarga fallaba.
     - Hasta el encargo 66 atendía a cualquiera que le hablara: una página de otro sitio abierta en el mismo navegador
       podía subir una planilla, cambiar credenciales, armar una corrida o apagarlo (residual de la revisión de
       seguridad del encargo 65).
@@ -770,7 +784,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 817 pruebas al 2026-10-14 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 828 pruebas al 2026-10-14 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -1102,7 +1116,8 @@ línea cambian). De arriba hacia abajo:
    temperatura guardada (encargo 58), o su campo «Cantidad» no dice 1 (encargo 59), o cuando la lista de tipos de
    contenedor de MAERSK no trae una sola «40 Reefer High» (encargo 62), o la de sus ajustes reefer una sola «Standard
    (40´)», o la fila de MAERSK pide otro contenedor que «40 HC REEFER» (encargo 63), o cuando la nave está y ninguna de
-   sus salidas trae el viaje de la fila (en las seis desde el encargo 66). `DETENIDO`, con «Detener»: en
+   sus salidas trae el viaje de la fila (en las seis desde el encargo 66), o la tarjeta que eligió MSC ya no es la
+   misma justo antes del clic (encargo 67). `DETENIDO`, con «Detener»: en
    COSCO y, desde el encargo 56, en la espera del deslizador de CMA-CGM. `REVISAR`, entre otros (en MAERSK
    y en COSCO, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el motivo dice hasta qué fecha buscó (ver
    «Ampliar la búsqueda»). Después: `EMITIDA`, `ENVIADA – REVISAR EN PORTAL`,
@@ -1155,21 +1170,28 @@ línea cambian). De arriba hacia abajo:
      `4cae528`, con lo primero que veían.
    - **Desde el encargo 66, las seis** (decisión de Marcelo, `CICLO-viaje-y-origen.md`): si la fila trae viaje, la
      salida elegida lo trae, con la regla de palabra entera de MAERSK y COSCO (`_trae_el_viaje`: cada palabra del viaje,
-     `_palabras_del_viaje`, entera y sin distinguir mayúsculas; su JavaScript, `_traeLaNave` con esas palabras). Si la
+     `_palabras_del_viaje`, entera y sin distinguir mayúsculas, y desde el encargo 67, como COSCO, sin las de una letra,
+     como un «/» suelto entre dos viajes; su JavaScript, `_traeLaNave` con esas palabras). Si la
      nave está y ninguna salida suya lo trae, NO ENVIADA con ese motivo, la captura y el HTML de la lista, sin elegir
      otra. Hasta ahí elegían por la nave sola, y el 2026-10-14 CMA-CGM armó una reserva con otro viaje, «lista para
      emitir» (encargo 65, `CICLO-corridas-14-10-y-revisiones.md`).
      - ONE, en el enlace de la nave de su tarjeta, que trae la nave y su viaje (y su clic lo vuelve a leer,
        `_JS_ONE_CLIC_TARJETA`); no amplía, y lo decide en sus 8 semanas (`one_f<fila>_detenida`).
      - MSC, en «Vessel / Voyage» (`_msc_es_la_pedida`), y baja por la lista también con la nave sin ese viaje
-       (`msc_f<fila>_itinerarios`). Su clic no vuelve a leer la tarjeta, como antes (residual del encargo 66).
+       (`msc_f<fila>_itinerarios`). Desde el encargo 67 (decisión de Marcelo, `CICLO-revisiones-msc-y-cma.md`), su clic
+       vuelve a leer la tarjeta elegida (`_JS_MSC_CLIC_NAVE`, con lo que leyó `_JS_MSC_NAVES`): el mismo «Vessel /
+       Voyage», la misma ETD y la misma ETA, y un solo «Select» a la vista (uno en cada una de las 302 tarjetas de las
+       11 listas guardadas). Si no, NO ENVIADA sin pulsar, con el motivo (`MSC_NO_PULSE`, `_msc_no_pulse`) y la lista
+       en `msc_f<fila>_itinerarios`. Hasta ahí pulsaba la i-ésima sin volver a leerla, y si el clic fallaba seguía
+       como si la nave no estuviera: REVISAR «nave … no está en MSC».
      - HYUNDAI, en su «1st Vessel», donde el viaje va entre paréntesis (`_hmm_es_la_pedida`; su clic lo vuelve a
        leer), y amplía «Duration» también con la nave sin ese viaje (la lista queda en `hmm_f<fila>_naves` y
        `_naves_mas`). En la interfaz anterior, la tarjeta tiene que traer también las palabras del viaje; con la nave
        sola, «sin_viaje».
-     - CMA-CGM, en el texto de la tarjeta (`_JS_CMA_RUTAS`: `conViaje`, y `deLaNave` si ninguna lo trae), y carga más
-       rutas también con la nave sin ese viaje; `_cma_seleccionar_itinerario` devuelve None y `reservar_cma` la deja NO
-       ENVIADA (la lista queda en `cma_f<fila>_rutas` y `_mas…`).
+     - CMA-CGM, desde el encargo 67 en el «Ref. de viaje» del primer tramo de la ruta (`_JS_CMA_RUTAS`: `conViaje`, y
+       `deLaNave` si ninguna lo trae; ver «La nave con todas sus palabras»), y carga más rutas también con la nave sin
+       ese viaje; `_cma_seleccionar_itinerario` devuelve None y `reservar_cma` la deja NO ENVIADA (la lista queda en
+       `cma_f<fila>_rutas` y `_mas…`). En el encargo 66, en el texto de toda la tarjeta.
      - Medido antes del cambio, sobre las reservas de `logs/` que llegaron a la guarda: ninguna que trajera el viaje de
        su fila habría quedado NO ENVIADA; en cada naviera, el viaje del portal es una palabra suelta, escrita como en la
        planilla. Las que no se pudieron medir (la planilla de esos días ya no está), en el informe.
@@ -1284,11 +1306,16 @@ línea cambian). De arriba hacia abajo:
        Marcelo, `CICLO-ampliar-la-busqueda.md`). Hasta `4cae528`, el texto de toda la tarjeta: la nave de la fila estaba
        como MAIN VESSEL en una tarjeta, como 1ST VESSEL en otra y en los dos en una tercera. `_JS_HMM_INDICE_NAVE` queda
        solo para la interfaz anterior (`a.preview-area`);
-     - CMA, todavía el texto de toda la tarjeta. Medido en un caso (la misma fila en las corridas del 24 y el 25-09,
-       con los detalles abiertos, `CICLO-ampliar-msc-y-cma.md`): la nave que sale de Chile es el valor de «Buque
-       principal» de la tarjeta, y también el «Buque» del primer tramo de «Mostrar detalles», desde el puerto chileno
-       hasta Callao; «Primer servicio» es el nombre de un servicio; y `_JS_CMA_RUTAS` la encuentra. Calzar solo con
-       «Buque principal» lo decide Marcelo.
+     - CMA, desde el encargo 67 (decisión de Marcelo, `CICLO-revisiones-msc-y-cma.md`), solo el primer tramo de la
+       ruta, el que sale del POL: la nave que sale de Chile (`primerTramo`, en `_JS_CMA_RUTAS`). En los detalles de cada
+       tarjeta (`.route-wrapper`, en la página aunque estén plegados), su único `ul.route` trae el `li` de la cápsula
+       «POL» y, justo después, el `li.more-infos.vessel` de ese tramo, con un «Buque» y un «Ref. de viaje»; la nave se
+       compara con el primero y el viaje con el segundo. Medido en las 38 tarjetas de las 10 listas guardadas (del 27-09
+       al 14-10): dos tramos, el primero sale del POL, en Chile, y es el `main-leg`, y su «Buque» y su «Ref. de viaje»
+       son los del resumen («Buque principal» y «Ref. de viaje»); el segundo, después del transbordo, trae otra nave y
+       otro viaje. Con la regla por campo, las 9 corridas con su lista guardada eligen la misma ruta que antes. Una
+       ruta sin ese tramo legible no calza, y el motivo de la nave que no está dice cuántas no pudo leer
+       (`ilegibles`). Hasta ahí, el texto de toda la tarjeta, que trae también la nave y el viaje del segundo tramo.
    - Hasta `9051f43`: HYUNDAI aceptaba la primera palabra, que en la planilla es el prefijo de la naviera (así armó
      reservas con otro buque); ONE, la nave sin su última palabra o esa palabra sola; CMA, la nave sin sus prefijos;
      y MSC, COSCO y ONE calzaban con todas las tarjetas si la fila no traía palabras de nave.
