@@ -606,6 +606,11 @@ cerrado:
       estaba habilitado, y el 12 es feriado en Chile (medido sin red sobre el HTML guardado). La tarde del 02-10, en el
       portal, lo leyó por su cabecera, eligió el 13 con los mismos días habilitados, y la tarjeta lo mostró (encargo 49,
       `CICLO-corridas-de-la-tarde-02-10.md`).
+    - **Si el plazo para entregar el contenedor de la salida vence el día de la corrida, la regla no deja ningún día**
+      (encargo 68, `CICLO-corrida-15-10.md`). El 15-10, la salida de la fila tenía su «Book», y su «GATE-IN DEADLINE»
+      era ese mismo día a las 21:00 (OCR de `mk_f10_5_nave.png`). El calendario habilitó solo el 15, la regla pedía el
+      16, y la fila quedó NO ENVIADA. El 14-10, con la misma salida, habilitaba el 14 y el 15, y eligió el 15. Qué hacer
+      con esas salidas lo decide Marcelo.
   - «Review booking» es el único mc-button a la vista con ese texto (`_mk_pulsar_revision`, `MK_REVISION`; en el HTML
     del 27-09, el mc-button y su botón interno son el mismo control), buscado hasta `MK_INTENTOS_REVISION` veces. Sin
     uno solo, NO ENVIADA (`ObjetivoNoEncontrado`, con lo que el portal pide); si está pero no acepta el clic, NO ENVIADA
@@ -1183,7 +1188,8 @@ línea cambian). De arriba hacia abajo:
        Voyage», la misma ETD y la misma ETA, y un solo «Select» a la vista (uno en cada una de las 302 tarjetas de las
        11 listas guardadas). Si no, NO ENVIADA sin pulsar, con el motivo (`MSC_NO_PULSE`, `_msc_no_pulse`) y la lista
        en `msc_f<fila>_itinerarios`. Hasta ahí pulsaba la i-ésima sin volver a leerla, y si el clic fallaba seguía
-       como si la nave no estuviera: REVISAR «nave … no está en MSC».
+       como si la nave no estuviera: REVISAR «nave … no está en MSC». El 15-10, en el portal, la tarjeta seguía siendo
+       la misma, y pulsó (encargo 68, `CICLO-corrida-15-10.md`).
      - HYUNDAI, en su «1st Vessel», donde el viaje va entre paréntesis (`_hmm_es_la_pedida`; su clic lo vuelve a
        leer), y amplía «Duration» también con la nave sin ese viaje (la lista queda en `hmm_f<fila>_naves` y
        `_naves_mas`). En la interfaz anterior, la tarjeta tiene que traer también las palabras del viaje; con la nave
@@ -1316,6 +1322,7 @@ línea cambian). De arriba hacia abajo:
        otro viaje. Con la regla por campo, las 9 corridas con su lista guardada eligen la misma ruta que antes. Una
        ruta sin ese tramo legible no calza, y el motivo de la nave que no está dice cuántas no pudo leer
        (`ilegibles`). Hasta ahí, el texto de toda la tarjeta, que trae también la nave y el viaje del segundo tramo.
+       El 15-10, en el portal, las 6 rutas traían su primer tramo legible (encargo 68, `CICLO-corrida-15-10.md`).
    - Hasta `9051f43`: HYUNDAI aceptaba la primera palabra, que en la planilla es el prefijo de la naviera (así armó
      reservas con otro buque); ONE, la nave sin su última palabra o esa palabra sola; CMA, la nave sin sus prefijos;
      y MSC, COSCO y ONE calzaban con todas las tarjetas si la fila no traía palabras de nave.
