@@ -442,8 +442,7 @@ MUTACIONES += [
          viejo='    if hoja not in wb.sheetnames:\n        return []',
          nuevo='    if hoja not in wb.sheetnames:\n        return [{"fila": 0}]'),
     dict(id="descarga-otro-nombre", pruebas=[PL + "test_descarga_de_resultados"],
-         viejo="f'attachment; filename=\"{nom} - resultados {marca}.xlsx\"'",
-         nuevo="f'attachment; filename=\"{nom}-resultados {marca}.xlsx\"'"),
+         viejo='_disposicion(f"{nom} - resultados {marca}.xlsx")', nuevo='_disposicion(f"{nom}-resultados {marca}.xlsx")'),
     dict(id="descarga-sin-planilla-404", pruebas=[SP + "test_descarga_sin_planilla"],
          viejo='return self._env(400, "text/plain; charset=utf-8", "No hay planilla cargada.")',
          nuevo='return self._env(404, "text/plain; charset=utf-8", "No hay planilla cargada.")'),
@@ -2639,12 +2638,12 @@ MUTACIONES += [
     dict(id="hmm-nave-sin-guarda-vacia", pruebas=[TH + "test_js_nave_con_todas_sus_palabras"],
          viejo="    if (T.length === 0) return { idx: -1, motivo: 'sin_nave' };\n", nuevo=""),
     dict(id="cma-nave-sin-prefijos", pruebas=[C1 + "test_js_rutas_nave_con_todas_sus_palabras"],
-         viejo="const matched = _traeLaNave(upperTxt, toks);",
-         nuevo="const matched = _traeLaNave(upperTxt, toks.filter(tk => !['MSC', 'CMA', 'CGM', 'HMM', 'ONE', 'COSCO', "
-               "'MV'].includes(tk)));"),
+         viejo="const matched = !!tramo && _traeLaNave(vessel.toUpperCase(), toks);",
+         nuevo="const matched = !!tramo && _traeLaNave(vessel.toUpperCase(), toks.filter(tk => !['MSC', 'CMA', 'CGM', "
+               "'HMM', 'ONE', 'COSCO', 'MV'].includes(tk)));"),
     dict(id="cma-nave-sin-guarda-vacia", pruebas=[C1 + "test_js_rutas_nave_con_todas_sus_palabras"],
-         viejo="const matched = _traeLaNave(upperTxt, toks);",
-         nuevo="const matched = toks.every(tk => _palabraEn(upperTxt, tk, 0) >= 0);"),
+         viejo="const matched = !!tramo && _traeLaNave(vessel.toUpperCase(), toks);",
+         nuevo="const matched = !!tramo && toks.every(tk => _palabraEn(vessel.toUpperCase(), tk, 0) >= 0);"),
     # El calce de CMA como era hasta 9051f43, en sus tres lugares: las palabras sin los prefijos de naviera, que se
     # pasaban a la lectura como «sigToks» y le bastaban para calzar.
     dict(id="cma-vuelve-sin-prefijos", pruebas=[C1 + "test_itinerario_comodin_no_se_busca_como_nave"], cambios=[
@@ -2654,8 +2653,9 @@ MUTACIONES += [
         ('res = _cma_js(page, _JS_CMA_RUTAS, {"toks": toks, "viaje": _palabras_del_viaje(viaje_pedido)})',
          'res = _cma_js(page, _JS_CMA_RUTAS, {"toks": toks, "viaje": _palabras_del_viaje(viaje_pedido), '
          '"sigToks": sig_toks})'),
-        ("const matched = _traeLaNave(upperTxt, toks);",
-         "const matched = _traeLaNave(upperTxt, toks) || _traeLaNave(upperTxt, args.sigToks || []);")]),
+        ("const matched = !!tramo && _traeLaNave(vessel.toUpperCase(), toks);",
+         "const matched = !!tramo && (_traeLaNave(vessel.toUpperCase(), toks) || "
+         "_traeLaNave(vessel.toUpperCase(), args.sigToks || []));")]),
     dict(id="cma-comodin-se-busca", pruebas=[C1 + "test_itinerario_comodin_no_se_busca_como_nave"],
          viejo="nave_pedida.upper()) if len(t) > 1]\n            if nave_especificada else [])\n",
          nuevo="nave_pedida.upper()) if len(t) > 1])\n"),
@@ -3223,8 +3223,8 @@ MUTACIONES += [
     dict(id="mk-nave-parte-del-texto", pruebas=[CON_EL_AYUDANTE, MK + "test_js_salidas_lee_la_salida_y_si_se_puede_reservar"],
          viejo="            const j = _palabraEn(t, x, pos);", nuevo="            const j = t.indexOf(x, pos);"),
     dict(id="cma-nave-parte-del-texto", pruebas=[CON_EL_AYUDANTE, C1 + "test_js_rutas_nave_con_todas_sus_palabras"],
-         viejo="const matched = _traeLaNave(upperTxt, toks);",
-         nuevo="const matched = toks.length > 0 && toks.every(tk => upperTxt.includes(tk));"),
+         viejo="const matched = !!tramo && _traeLaNave(vessel.toUpperCase(), toks);",
+         nuevo="const matched = !!tramo && toks.length > 0 && toks.every(tk => vessel.toUpperCase().includes(tk));"),
     # MSC: el aviso de «ese barco con otro viaje», como parte del texto.
     dict(id="msc-parecidas-parte-del-texto", pruebas=[NC + "test_msc_y_cosco_calzan_con_el_ayudante"],
          viejo='parecidas = [n["nave"] for n in naves if _trae_la_nave(_norm(n.get("nave")), toks[:2])]',
@@ -8156,9 +8156,10 @@ MUTACIONES += [
          viejo="    return not palabras or _trae_la_nave(texto, palabras)\n",
          nuevo="    return bool(palabras) and _trae_la_nave(texto, palabras)\n"),
     dict(id="e66-palabras-sin-mayusculas", pruebas=[VJ + "test_las_palabras_del_viaje", VJ + "test_trae_el_viaje"],
-         viejo='    return str(viaje or "").upper().split()\n', nuevo='    return str(viaje or "").split()\n'),
+         viejo='    return [p for p in str(viaje or "").upper().split() if len(p) > 1]\n',
+         nuevo='    return [p for p in str(viaje or "").split() if len(p) > 1]\n'),
     dict(id="e66-palabras-en-una", pruebas=[VJ + "test_las_palabras_del_viaje"],
-         viejo='    return str(viaje or "").upper().split()\n',
+         viejo='    return [p for p in str(viaje or "").upper().split() if len(p) > 1]\n',
          nuevo='    return [str(viaje or "").upper().strip()] if str(viaje or "").strip() else []\n'),
     # ONE: el clic sin volver a leer el viaje, sin filtrar, sin cortar, eligiendo entre todas, o sin pasarle el viaje.
     dict(id="e66-one-clic-sin-el-viaje", pruebas=[ONE_V + "test_js_clic_vuelve_a_leer_el_viaje"],
@@ -8223,10 +8224,12 @@ MUTACIONES += [
          viejo="    const matchIdx = cards.findIndex(c => c.matched && c.conViaje);\n",
          nuevo="    const matchIdx = cards.findIndex(c => c.matched);\n"),
     dict(id="e66-cma-viaje-como-parte", pruebas=[CMA_JS],
-         viejo="        const conViaje = viaje.length === 0 || _traeLaNave(upperTxt, viaje);\n",
-         nuevo="        const conViaje = viaje.length === 0 || viaje.every(x => upperTxt.includes(x));\n"),
+         viejo="        const conViaje = viaje.length === 0 || (!!tramo && _traeLaNave(voyage.toUpperCase(), viaje));\n",
+         nuevo=("        const conViaje = viaje.length === 0 || (!!tramo && viaje.every(x => "
+                "voyage.toUpperCase().includes(x)));\n")),
     dict(id="e66-cma-sin-contar-la-nave", pruebas=[CMA_JS],
-         viejo="            deLaNave: cards.filter(c => c.matched).length, msg:", nuevo="            deLaNave: 0, msg:"),
+         viejo="            deLaNave: cards.filter(c => c.matched).length, ilegibles:",
+         nuevo="            deLaNave: 0, ilegibles:"),
     dict(id="e66-cma-sin-pasar-el-viaje", pruebas=[CMA_SIN],
          viejo='{"toks": toks, "viaje": _palabras_del_viaje(viaje_pedido)}', nuevo='{"toks": toks, "viaje": []}'),
     dict(id="e66-cma-sin-viaje-como-revisar", pruebas=[CMA_SIN],
@@ -8277,7 +8280,8 @@ MUTACIONES += [
                 "                if u.path in (\"/\", \"/index.html\"):")),
     dict(id="e66-post-sin-revisar", pruebas=[PSP + "test_api_sin_la_marca_no_atiende"],
          viejo=('            cuerpo = self.rfile.read(largo) if largo else b""\n'
-                "            if self._ajeno(u.path):\n                return\n"),
+                '            if por_que:\n'
+                '                return self._env(403, "text/plain; charset=utf-8", PEDIDO_AJENO)\n'),
          nuevo='            cuerpo = self.rfile.read(largo) if largo else b""\n'),
     dict(id="e66-pagina-sin-la-marca", pruebas=[PSP + "test_la_pagina_trae_su_marca_y_no_va_dentro_de_otra"],
          viejo=("    pagina = HTML_INDEX.replace(META_SESION, META_SESION.replace('content=\"\"', "
@@ -8330,9 +8334,9 @@ MUTACIONES += [
          viejo='  o.headers = Object.assign({}, o.headers || {}, { "X-AquaShield-Sesion": SESION });\n',
          nuevo='  o.headers = Object.assign({}, { "X-AquaShield-Sesion": SESION });\n'),
     dict(id="e66-js-sin-renovar", pruebas=[MSE + "test_cada_pedido_con_la_marca_y_una_renovacion"],
-         viejo="  if (r.status === 403 && await renovarSesion()) r = await fetch(ruta, conSesion(opts));\n", nuevo=""),
+         viejo="  if (r.status === 403 && await renovarSesion(usada)) r = await fetch(ruta, conSesion(opts));\n", nuevo=""),
     dict(id="e66-js-renueva-con-la-misma", pruebas=[MSE + "test_cada_pedido_con_la_marca_y_una_renovacion"],
-         viejo="    if (!m || m[1] === SESION) return false;\n", nuevo="    if (!m) return false;\n"),
+         viejo="    if (!m || m[1] === usada) return false;\n", nuevo="    if (!m) return false;\n"),
     dict(id="e66-descarga-sin-su-nombre", pruebas=[MSE + "test_la_descarga_con_la_marca"],
          viejo='    a.download = nombreDeDescarga(r.headers.get("Content-Disposition"));\n',
          nuevo='    a.download = "planilla.xlsx";\n'),
@@ -8341,4 +8345,104 @@ MUTACIONES += [
     dict(id="e66-descarga-por-navegacion", pruebas=[MSE + "test_la_descarga_con_la_marca"],
          viejo='    const r = await pedir("/api/descargar");\n',
          nuevo='    window.location = "/api/descargar"; return;\n    const r = await pedir("/api/descargar");\n'),
+]
+
+# Encargo 67 (CICLO-revisiones-msc-y-cma.md): MSC vuelve a leer la tarjeta antes del clic; CMA-CGM compara la nave y el
+# viaje con el primer tramo; y lo técnico de la revisión de código del encargo 66 (el cuerpo de un POST, la descarga, la
+# renovación de la marca, la espera del lanzador y las palabras del viaje).
+MSC67, CMA67 = "test_clics.TestMsc.", "test_clics.TestCma."
+MSC_RELEE, MSC_CORTA = MSC67 + "test_js_clic_vuelve_a_leer_la_tarjeta", MSC67 + "test_si_la_tarjeta_cambio_no_pulsa"
+CMA_TRAMO = CMA67 + "test_js_rutas_solo_el_primer_tramo"
+CMA_ILEGIBLES = CMA67 + "test_itinerario_dice_las_rutas_que_no_pudo_leer"
+MUTACIONES += [
+    # MSC: el clic sin volver a leer, sin mirar la ETA, sin mirar el «Select», con dos «Select»; reservar_msc que sigue
+    # sin pulsar, que no le pasa lo que leyó, que da por pulsado lo que falló; el motivo de la falla; el motivo ya
+    # escrito que no se usa.
+    dict(id="e67-msc-clic-sin-releer", pruebas=[MSC_RELEE],
+         viejo="    if(t.nave!==args.nave || t.etd!==args.etd || t.eta!==args.eta) return 'otra';\n", nuevo=""),
+    dict(id="e67-msc-clic-sin-la-eta", pruebas=[MSC_RELEE],
+         viejo="t.etd!==args.etd || t.eta!==args.eta) return 'otra';", nuevo="t.etd!==args.etd) return 'otra';"),
+    dict(id="e67-msc-clic-sin-mirar-el-select", pruebas=[MSC_RELEE],
+         viejo="    if(!t.sel) return 'sin-select';\n", nuevo=""),
+    dict(id="e67-msc-clic-con-varios-select", pruebas=[MSC_RELEE],
+         viejo="    if(bs.length!==1) return 'varios-select';\n", nuevo="    if(!bs.length) return 'varios-select';\n"),
+    dict(id="e67-msc-sigue-sin-pulsar", pruebas=[MSC_CORTA],
+         viejo=("        if pulso != MSC_PULSADO:\n            return _msc_salida_ambigua(page, reg, reserva, [elegida], "
+                "\"\", desde, por_que=_msc_no_pulse(pulso))\n"), nuevo=""),
+    dict(id="e67-msc-clic-sin-lo-leido", pruebas=[MS + "test_reservar_msc_no_toma_la_primera"],
+         viejo='pulso = page.evaluate(_JS_MSC_CLIC_NAVE, {"i": elegida["i"], "nave": elegida.get("nave", ""),',
+         nuevo='pulso = page.evaluate(_JS_MSC_CLIC_NAVE, {"i": elegida["i"], "nave": "",'),
+    dict(id="e67-msc-falla-como-pulsado", pruebas=[MSC_CORTA],
+         viejo='            pulso = f"error: {str(e)[:60]}"\n', nuevo="            pulso = MSC_PULSADO\n"),
+    dict(id="e67-msc-motivo-de-la-falla", pruebas=[MSC_CORTA],
+         viejo=('        return f"el JavaScript que vuelve a leer la tarjeta elegida y la pulsa falló '
+                '({str(pulso)[7:]})"\n'), nuevo='        return "falló"\n'),
+    dict(id="e67-msc-sin-el-motivo-escrito", pruebas=[MSC_CORTA],
+         viejo=("    if por_que is None:\n"
+                "        por_que = _por_que_sin_salida(motivo, _msc_salidas(exacta), desde, _msc_transito)\n"),
+         nuevo="    por_que = _por_que_sin_salida(motivo, _msc_salidas(exacta), desde, _msc_transito)\n"),
+    # CMA: la nave o el viaje del texto de la tarjeta, sin mirar el POL, el segundo tramo, con dos «Buque», sin contar
+    # las ilegibles, el motivo sin ellas.
+    dict(id="e67-cma-nave-del-texto", pruebas=[CMA_TRAMO],
+         viejo="        const matched = !!tramo && _traeLaNave(vessel.toUpperCase(), toks);\n",
+         nuevo="        const matched = _traeLaNave(txt.toUpperCase(), toks);\n"),
+    dict(id="e67-cma-viaje-del-texto", pruebas=[CMA_TRAMO],
+         viejo="        const conViaje = viaje.length === 0 || (!!tramo && _traeLaNave(voyage.toUpperCase(), viaje));\n",
+         nuevo="        const conViaje = viaje.length === 0 || _traeLaNave(txt.toUpperCase(), viaje);\n"),
+    dict(id="e67-cma-sin-el-pol", pruebas=[CMA_TRAMO],
+         viejo="        if (pols.length !== 1) return null;\n        const tramo = lis[lis.indexOf(pols[0]) + 1];\n",
+         nuevo="        const tramo = lis.find(li => li.matches('li.more-infos.vessel'));\n"),
+    dict(id="e67-cma-segundo-tramo", pruebas=[CMA_TRAMO],
+         viejo="        const tramo = lis[lis.indexOf(pols[0]) + 1];\n",
+         nuevo="        const tramo = lis.filter(li => li.matches('li.more-infos.vessel')).pop();\n"),
+    dict(id="e67-cma-con-dos-buques", pruebas=[CMA_TRAMO],
+         viejo="        if (buque.length !== 1 || ref.length !== 1 || !buque[0] || !ref[0]) return null;\n",
+         nuevo="        if (!buque[0] || !ref[0]) return null;\n"),
+    dict(id="e67-cma-sin-contar-las-ilegibles", pruebas=[CMA_TRAMO],
+         viejo="ilegibles: cards.filter(c => !c.legible).length,", nuevo="ilegibles: 0,"),
+    dict(id="e67-cma-motivo-sin-las-ilegibles", pruebas=[CMA_ILEGIBLES],
+         viejo=('    sin_leer = (f"; no pude leer el primer tramo (la nave que sale de Chile) de {ilegibles} de las "\n'
+                "                f\"{int(ultimo_resultado.get('cardsCount') or ilegibles)} rutas\" "
+                "if ilegibles else \"\")\n"),
+         nuevo='    sin_leer = ""\n'),
+    # El POST: el de otro origen se lee entero, o se atiende como uno sin la marca; sin el tope; un largo con cifras que
+    # no son ASCII.
+    dict(id="e67-post-ajeno-se-lee-entero", pruebas=[PSP + "test_un_post_de_otro_origen_no_se_lee"],
+         viejo="                if largo is not None and largo <= DESCARTE_MAX:\n",
+         nuevo="                if largo is not None:\n"),
+    dict(id="e67-post-ajeno-como-sin-la-marca", pruebas=[PSP + "test_un_post_de_otro_origen_no_se_lee"],
+         viejo="            if por_que and por_que != SIN_LA_MARCA:\n", nuevo="            if False:\n"),
+    dict(id="e67-cuerpo-sin-tope", pruebas=[PSP + "test_un_cuerpo_fuera_de_medida_no_se_lee"],
+         viejo="    return largo if largo <= CUERPO_MAX else None\n", nuevo="    return largo\n"),
+    dict(id="e67-largo-con-otras-cifras", pruebas=[PSP + "test_un_cuerpo_fuera_de_medida_no_se_lee"],
+         viejo="    if not (texto.isascii() and texto.isdigit()):\n", nuevo="    if not texto.isdigit():\n"),
+    # La revisión de seguridad: sin plazo por pedido, con dos Host, la página que se guarda en la caché.
+    dict(id="e67-sin-plazo-por-pedido", pruebas=[PSP + "test_un_pedido_mudo_no_retiene_el_panel"],
+         viejo="        timeout = PANEL_PLAZO_PEDIDO                 # revisión de seguridad del encargo 67\n", nuevo=""),
+    dict(id="e67-dos-host-pasan", pruebas=[PSP + "test_pedido_ajeno"],
+         viejo=('    if hasattr(cabeceras, "get_all") and len(cabeceras.get_all("Host") or []) > 1:\n'
+                '        return "su Host no es el del panel"\n'), nuevo=""),
+    dict(id="e67-pagina-en-la-cache", pruebas=[PSP + "test_la_pagina_trae_su_marca_y_no_va_dentro_de_otra"],
+         viejo='            self.send_header("Cache-Control", "no-store")\n', nuevo=""),
+    # La descarga: el nombre con latin-1, sin filename* en ASCII; la página sin leer filename*, o sin su respaldo.
+    dict(id="e67-descarga-en-latin1", pruebas=[PL + "test_descarga_con_un_nombre_fuera_de_latin1"],
+         viejo="c if 32 <= ord(c) < 127 and c not in", nuevo="c if 32 <= ord(c) < 256 and c not in"),
+    dict(id="e67-descarga-sin-codificar", pruebas=[PL + "test_descarga_con_un_nombre_fuera_de_latin1"],
+         viejo="filename*=UTF-8''{quote(nombre, safe='')}", nuevo="filename*=UTF-8''{nombre}"),
+    dict(id="e67-js-sin-filename-estrella", pruebas=[MSE + "test_el_nombre_de_la_descarga"],
+         viejo="  if (u) { try { return decodeURIComponent(u[1]); } catch (e) { /* sigue con filename */ } }\n",
+         nuevo=""),
+    dict(id="e67-js-filename-estrella-sin-respaldo", pruebas=[MSE + "test_el_nombre_de_la_descarga"],
+         viejo="  if (u) { try { return decodeURIComponent(u[1]); } catch (e) { /* sigue con filename */ } }\n",
+         nuevo="  if (u) return decodeURIComponent(u[1]);\n"),
+    # La renovación comparando con la marca de ahora (dos pedidos a la vez); la espera corta del lanzador; las palabras
+    # del viaje con las de una letra.
+    dict(id="e67-js-compara-con-la-de-ahora", pruebas=[MSE + "test_dos_pedidos_a_la_vez_con_la_marca_vieja"],
+         viejo="    if (!m || m[1] === usada) return false;\n", nuevo="    if (!m || m[1] === SESION) return false;\n"),
+    dict(id="e67-apagar-con-la-espera-corta", pruebas=[ARR_V + "test_el_apagar_lee_la_marca_con_la_espera_larga"],
+         viejo="        sesion = _sesion_del_panel(puerto, PANEL_ESPERA_LARGA)\n",
+         nuevo="        sesion = _sesion_del_panel(puerto)\n"),
+    dict(id="e67-palabras-de-una-letra", pruebas=[VJ + "test_las_palabras_del_viaje"],
+         viejo='    return [p for p in str(viaje or "").upper().split() if len(p) > 1]\n',
+         nuevo='    return str(viaje or "").upper().split()\n'),
 ]

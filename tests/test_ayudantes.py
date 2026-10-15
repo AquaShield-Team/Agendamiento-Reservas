@@ -560,7 +560,8 @@ class TestNaveCompleta(soporte.CasoAQ):
                                ("_JS_HMM_INDICE_NAVE", ["_traeLaNave(v, T)"]),
                                ("_JS_HMM_TARJETAS", ["_traeLaNave(primera, T)"]),
                                ("_JS_MK_SALIDAS", ["_palabraEn(t, x, pos)"]),
-                               ("_JS_CMA_RUTAS", ["_traeLaNave(upperTxt, toks)"])):
+                               # Desde el encargo 67, CMA, con la nave del primer tramo (primerTramo).
+                               ("_JS_CMA_RUTAS", ["_traeLaNave(vessel.toUpperCase(), toks)"])):
             with self.subTest(js=nombre):
                 js = getattr(self.mod, nombre)
                 self.assertTrue(js.split("=>", 1)[1].lstrip().startswith("{" + self.mod._JS_TRAE_LA_NAVE))
@@ -637,10 +638,16 @@ class TestViajeDeLaFila(soporte.CasoAQ):
                 self.assertIs(self.mod._trae_el_viaje(texto, viaje), trae)
 
     def test_las_palabras_del_viaje(self):
-        # Como toma COSCO las del viaje: en mayúsculas y separadas por cualquier espacio en blanco.
+        # Como toma COSCO las del viaje: en mayúsculas, separadas por cualquier espacio en blanco y sin las de una letra,
+        # como un «/» o un «-» suelto (revisión del encargo 67: hasta ahí las dejaba, y «ZZ101E / ZZ102E» pedía también
+        # un «/» como palabra, que ninguna salida trae).
         f = self.mod._palabras_del_viaje
         self.assertEqual([f("zz101e"), f(" ZZ 101E "), f("ZZ\t101E"), f(""), f(None), f("  "), f(101)],
                          [["ZZ101E"], ["ZZ", "101E"], ["ZZ", "101E"], [], [], [], ["101"]])
+        self.assertEqual([f("ZZ101E / ZZ102E"), f("ZZ101E -"), f("A"), f("- ZZ101E")],
+                         [["ZZ101E", "ZZ102E"], ["ZZ101E"], [], ["ZZ101E"]])
+        self.assertIs(self.mod._trae_el_viaje("ONE NAVE UNO ZZ101E", "ZZ101E -"), True)
+        self.assertIs(self.mod._trae_el_viaje("ONE NAVE UNO ZZ101E", "ZZ101E / ZZ102E"), False)
 
     def test_la_misma_regla_en_javascript(self):
         # ONE, HYUNDAI y CMA-CGM la comparan en su JavaScript con _traeLaNave y las palabras que les pasa el programa

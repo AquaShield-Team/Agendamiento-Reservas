@@ -952,10 +952,6 @@ class TestLoQueFaltaALaVista(soporte.CasoAQ):
         self.assertIn('if (!r.ok) { const e = new Error(await r.text()); e.status = r.status; throw e; }', js)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestMarcaDeLaSesion(soporte.CasoAQ):
     """La página manda la marca de la sesión del panel en cada pedido, y la renueva una vez si el panel se reinició
     (decisión de Marcelo, encargo 66, CICLO-viaje-y-origen.md). Se corre en Node, fuera del navegador."""
@@ -1017,6 +1013,48 @@ const probar = async (ruta, opts) => {
             [403, no, pide("otra-mas"), "otra-mas"], [403, no, pide("otra-mas"), "otra-mas"],
             [403, no, pide("otra-mas"), "otra-mas"]])
 
+    def test_dos_pedidos_a_la_vez_con_la_marca_vieja(self):
+        # Dos pedidos salen a la vez con la marca de antes de que el panel se reiniciara: los dos reciben el 403, y los
+        # dos repiten con la nueva (revisión del encargo 67). Hasta ahí el segundo veía la marca nueva, que ya había
+        # leído el primero, como «la misma», no repetía, y su 403 llegaba al operador.
+        guion = (r"""global.document = {querySelector: (s) => s === 'meta[name="aquashield-sesion"]'
+  ? {getAttribute: (a) => (a === 'content' ? 'marca-vieja' : null)} : null};
+""" + self.trozo(r"^const RX_SESION = .*?;\n") + "let SESION = sesionDeLaPagina();\n"
+                  + self.funciones("sesionDeLaPagina", "conSesion", "renovarSesion", "pedir", "api") + r"""
+const paginas = [];
+global.fetch = async (ruta, opts) => {
+  await new Promise(r => setImmediate(r));
+  const h = (opts && opts.headers) || {};
+  if (ruta === '/') {
+    paginas.push(ruta);
+    await new Promise(r => setImmediate(r));
+    return {ok: true, status: 200, text: async () => '<meta name="aquashield-sesion" content="marca-nueva">'};
+  }
+  const ok = h['X-AquaShield-Sesion'] === 'marca-nueva';
+  return {ok, status: ok ? 200 : 403, text: async () => (ok ? '' : 'no viene de su página'), json: async () => ({ruta})};
+};
+(async () => {
+  const r = await Promise.all(['/api/estado', '/api/config', '/api/filas'].map(ruta =>
+    api(ruta).catch(e => [e.status, e.message])));
+  console.log(JSON.stringify([r, SESION, paginas.length]));
+})();
+""")
+        # Cada uno lee la página una vez, y repite una vez.
+        self.assertEqual(correr_node(self, guion), [[{"ruta": "/api/estado"}, {"ruta": "/api/config"},
+                                                    {"ruta": "/api/filas"}], "marca-nueva", 3])
+
+    def test_el_nombre_de_la_descarga(self):
+        # El nombre, entero, de filename* si lo trae; si no, o si no se puede leer, de filename (revisión del encargo 67;
+        # el panel manda los dos, _disposicion). La cabecera, la que arma el programa.
+        d = self.mod._disposicion("Reservas – octubre 🐟 - resultados 14-10_0935.xlsx")
+        guion = self.funciones("nombreDeDescarga") + "console.log(JSON.stringify([" + ", ".join(
+            "nombreDeDescarga(" + json.dumps(c) + ")" for c in (
+                d, 'attachment; filename="Plan.xlsx"', "attachment; filename=\"Plan.xlsx\"; filename*=UTF-8''%E2%80",
+                "attachment; filename*=utf-8''Plan%20B.xlsx", None, "")) + "]));\n"
+        self.assertEqual(correr_node(self, guion), ["Reservas – octubre 🐟 - resultados 14-10_0935.xlsx", "Plan.xlsx",
+                                                    "Plan.xlsx", "Plan B.xlsx", "planilla - resultados.xlsx",
+                                                    "planilla - resultados.xlsx"])
+
     def test_la_descarga_con_la_marca(self):
         # La planilla con los resultados llega por pedir, con la marca, y se guarda con el nombre que da el panel; un
         # error del panel queda a la vista. Hasta el encargo 66 era una navegación a /api/descargar, sin la marca.
@@ -1055,3 +1093,7 @@ const r = [];
             [["", "No pude descargar la planilla: sin red"], 0, "planilla - resultados.xlsx",
              "planilla - resultados.xlsx"]])
         self.assertNotIn('window.location = "/api/descargar"', self.mod.JS_INDEX)
+
+
+if __name__ == "__main__":
+    unittest.main()

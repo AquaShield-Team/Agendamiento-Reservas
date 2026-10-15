@@ -3243,9 +3243,11 @@ def _trae_la_nave(texto, palabras):
 
 
 def _palabras_del_viaje(viaje):
-    """Las palabras del viaje de la fila, en mayúsculas y separadas por espacios, como las toma COSCO (que deja
-    fuera las de una letra): [] si la fila no trae viaje."""
-    return str(viaje or "").upper().split()
+    """Las palabras del viaje de la fila, en mayúsculas y separadas por espacios, como las toma COSCO: sin las de una
+    letra, como un «/» o un «-» suelto entre dos viajes. [] si la fila no trae viaje. Hasta la revisión del encargo 67
+    las dejaba (el docstring ya decía que no), y «070E / 071E» pedía también un «/» como palabra, que ninguna salida
+    trae: la fila quedaba NO ENVIADA."""
+    return [p for p in str(viaje or "").upper().split() if len(p) > 1]
 
 
 def _trae_el_viaje(texto, viaje):
@@ -4873,13 +4875,28 @@ _JS_MSC_NAVES = """()=>{
     });
 }"""
 
-_JS_MSC_CLIC_NAVE = """(i)=>{
-    const cards=[...document.querySelectorAll('div.shipment-grid-list')];
-    const c=cards[i]; if(!c) return false;
-    const b=[...c.querySelectorAll('button,a')]
-        .find(x=>/^\\s*select\\s*$/i.test((x.textContent||'').trim()));
-    if(!b) return false;
-    b.scrollIntoView({block:'center'}); b.click(); return true;
+# Pulsa el «Select» de la tarjeta elegida, {i, nave, etd, eta}, solo si, al volver a leer la lista con _JS_MSC_NAVES en
+# el mismo JavaScript, la tarjeta i sigue siendo la elegida: el mismo «Vessel / Voyage» (la nave y su viaje), la misma
+# ETD y la misma ETA, con su «Select» a la vista, y uno solo (medido en las 302 tarjetas de las 11 listas guardadas,
+# del 24-09 al 14-10: uno por tarjeta). Devuelve MSC_PULSADO si pulsó; si no, por qué no (MSC_NO_PULSE), sin pulsar
+# nada. Decisión de Marcelo, encargo 67 (CICLO-revisiones-msc-y-cma.md): hasta ahí pulsaba la i-ésima sin volver a
+# leerla, y si la lista se repintaba entre la lectura y el clic, podía pulsar otra salida; ONE, HYUNDAI y CMA-CGM ya
+# la volvían a leer.
+MSC_PULSADO = "pulsado"
+MSC_NO_PULSE = {"sin-tarjeta": "la tarjeta elegida ya no estaba",
+                "otra": "la tarjeta elegida ya no era la misma (cambió su «Vessel / Voyage», su ETD o su ETA)",
+                "sin-select": "el «Select» de la tarjeta elegida ya no estaba a la vista",
+                "varios-select": "la tarjeta elegida traía más de un «Select»"}
+_JS_MSC_CLIC_NAVE = """(args)=>{
+    const t=(""" + _JS_MSC_NAVES + """)().find(x=>x.i===args.i);
+    if(!t) return 'sin-tarjeta';
+    if(t.nave!==args.nave || t.etd!==args.etd || t.eta!==args.eta) return 'otra';
+    if(!t.sel) return 'sin-select';
+    const c=[...document.querySelectorAll('div.shipment-grid-list')][args.i];
+    const bs=[...c.querySelectorAll('button,a')]
+        .filter(x=>/^\\s*select\\s*$/i.test((x.textContent||'').trim()));
+    if(bs.length!==1) return 'varios-select';
+    bs[0].scrollIntoView({block:'center'}); bs[0].click(); return 'pulsado';
 }"""
 
 # MSC no tiene botón de ampliar: las demás naves aparecen al bajar por la lista (decisión de Marcelo,
@@ -5093,15 +5110,27 @@ def _msc_elegir_salida(exacta, desde):
     return _proxima_salida(_msc_salidas(exacta), desde, _msc_transito)
 
 
-def _msc_salida_ambigua(page, reg, reserva, exacta, motivo, desde):
+def _msc_salida_ambigua(page, reg, reserva, exacta, motivo, desde, por_que=None):
     """No queda una sola salida de MSC para la nave de la fila: no se elige ninguna. Deja la captura y el HTML de la lista
-    (msc_f<fila>_itinerarios), sin clics ni esperas, y la reserva queda NO ENVIADA con el motivo."""
+    (msc_f<fila>_itinerarios), sin clics ni esperas, y la reserva queda NO ENVIADA con el motivo. Con 'por_que', ese
+    motivo, ya escrito: el de la salida elegida que no se pulsó porque, al volver a leerla, había cambiado (encargo 67,
+    _msc_no_pulse)."""
     reg.info("itinerarios que calzan: " + " | ".join(f"{x.get('nave')} ETD {x.get('etd')}" for x in exacta[:6])[:400])
     _evidencia_antes_de_la_guarda(page, reg, f"msc_f{reserva['fila']}_itinerarios", "en la lista de itinerarios",
                                   completa=False)
-    por_que = _por_que_sin_salida(motivo, _msc_salidas(exacta), desde, _msc_transito)
+    if por_que is None:
+        por_que = _por_que_sin_salida(motivo, _msc_salidas(exacta), desde, _msc_transito)
     return _no_enviada(reg, f"MSC: no elegí salida para esa nave ('{reserva['nave']}'): {por_que}. Revisa la fila y "
                             f"elige la salida en el portal.")
+
+
+def _msc_no_pulse(pulso):
+    """En palabras, por qué no se pulsó la salida elegida de MSC, con lo que devolvió _JS_MSC_CLIC_NAVE (MSC_NO_PULSE) o
+    con la falla del JavaScript: el motivo de la reserva NO ENVIADA (encargo 67)."""
+    if str(pulso).startswith("error: "):
+        return f"el JavaScript que vuelve a leer la tarjeta elegida y la pulsa falló ({str(pulso)[7:]})"
+    razon = MSC_NO_PULSE.get(pulso, f"no pude confirmar que la tarjeta elegida siguiera siendo la misma ({pulso!r})")
+    return f"al volver a leer la lista justo antes de pulsar, {razon}; no pulsé nada"
 
 
 def _msc_kendo_dropdown(page, wid, tokens, reg, etiqueta):
@@ -5604,12 +5633,19 @@ def reservar_msc(page, reserva, creds, reg, on_pausa=None):
         _anotar_desempate(reg, _msc_salidas(exacta), desde, _msc_transito)
     modo = ""
     if elegida:
+        # Pulsa la tarjeta elegida solo si, al volver a leer la lista justo antes, sigue siendo la misma
+        # (_JS_MSC_CLIC_NAVE). Si no, NO ENVIADA sin pulsar, con la lista en su evidencia (decisión de Marcelo, encargo
+        # 67, CICLO-revisiones-msc-y-cma.md). Hasta ahí pulsaba la i-ésima sin volver a leerla, y si el clic no salía
+        # seguía como si la nave no estuviera, con un motivo que lo decía.
         try:
-            if page.evaluate(_JS_MSC_CLIC_NAVE, elegida["i"]):
-                modo = f"exacto:{elegida['nave']}"
-                reg.info(f"nave seleccionada -> {elegida['nave']} ETD {elegida.get('etd','')}")
+            pulso = page.evaluate(_JS_MSC_CLIC_NAVE, {"i": elegida["i"], "nave": elegida.get("nave", ""),
+                                                      "etd": elegida.get("etd", ""), "eta": elegida.get("eta", "")})
         except Exception as e:
-            reg.info(f"error al seleccionar: {str(e)[:60]}")
+            pulso = f"error: {str(e)[:60]}"
+        if pulso != MSC_PULSADO:
+            return _msc_salida_ambigua(page, reg, reserva, [elegida], "", desde, por_que=_msc_no_pulse(pulso))
+        modo = f"exacto:{elegida['nave']}"
+        reg.info(f"nave seleccionada -> {elegida['nave']} ETD {elegida.get('etd','')}")
 
     if not modo:
         # El mismo barco con OTRO viaje es la confusion mas cara: se avisa aparte.
@@ -11701,8 +11737,17 @@ def _cma_completar_info_extra(page, reserva, reg):
 # CICLO-cola-tres-items.md y CICLO-cola-seis-items.md), y se pulsa la primera que calza. Hasta f68ce6c iba escrita
 # dentro de _cma_seleccionar_itinerario y bastaba que cada palabra fuera parte del texto de la tarjeta. Desde el
 # encargo 66 (decisión de Marcelo, CICLO-viaje-y-origen.md), si la fila trae viaje (sus palabras, args.viaje), la que
-# calza tiene que traerlas también en su texto (conViaje), y sin una así devuelve cuántas traen la nave (deLaNave): el
-# 2026-10-14 eligió la primera con la nave, con otro viaje, porque el de la fila ya no se ofrecía.
+# calza tiene que traerlo también (conViaje), y sin una así devuelve cuántas traen la nave (deLaNave): el 2026-10-14
+# eligió la primera con la nave, con otro viaje, porque el de la fila ya no se ofrecía.
+# Desde el encargo 67 (decisión de Marcelo, CICLO-revisiones-msc-y-cma.md), la nave y el viaje se comparan solo con el
+# primer tramo de la tarjeta, el que sale del POL: la nave que sale de Chile (primerTramo). En los detalles de cada
+# tarjeta (.route-wrapper, en la página aunque estén plegados), su único ul.route trae un li con la cápsula «POL» y,
+# justo después, el li.more-infos.vessel de ese tramo, con un <dt> «Buque» y uno «Ref. de viaje», cada uno con su <dd>.
+# Medido en las 38 tarjetas de las 10 listas guardadas (del 27-09 al 14-10): dos tramos, el primero sale del POL, en
+# Chile, y es el main-leg, y su «Buque» y su «Ref. de viaje» son los del resumen («Buque principal» y «Ref. de viaje»);
+# el segundo tramo, después del transbordo, trae otra nave y otro viaje. Hasta ahí se comparaban con el texto de toda la
+# tarjeta, que trae también los del segundo tramo. Una tarjeta sin ese tramo legible no calza (legible: false), y se
+# cuenta (ilegibles).
 _JS_CMA_RUTAS = r"""(args)=>{""" + _JS_TRAE_LA_NAVE + r"""
     const toks = args.toks || [];
     const viaje = args.viaje || [];
@@ -11741,26 +11786,42 @@ _JS_CMA_RUTAS = r"""(args)=>{""" + _JS_TRAE_LA_NAVE + r"""
         return card;
     }
 
+    const limpio = e => (e ? (e.textContent || '') : '').replace(/\s+/g, ' ').trim();
+    const esPol = li => [...li.querySelectorAll('.capsule')].some(s => limpio(s) === 'POL');
+    const valores = (raiz, rotulo) => [...raiz.querySelectorAll('dt')]
+        .filter(dt => limpio(dt).toLowerCase() === rotulo)
+        .map(dt => { let n = dt.nextElementSibling; while (n && n.tagName !== 'DD') n = n.nextElementSibling;
+                     return n ? limpio(n) : null; });
+    function primerTramo(card) {
+        const rutas = [...card.querySelectorAll('.route-wrapper ul.route')];
+        if (rutas.length !== 1) return null;
+        const lis = [...rutas[0].children];
+        const pols = lis.filter(esPol);
+        if (pols.length !== 1) return null;
+        const tramo = lis[lis.indexOf(pols[0]) + 1];
+        if (!tramo || !tramo.matches('li.more-infos.vessel')) return null;
+        const buque = valores(tramo, 'buque'), ref = valores(tramo, 'ref. de viaje');
+        if (buque.length !== 1 || ref.length !== 1 || !buque[0] || !ref[0]) return null;
+        return {buque: buque[0], ref: ref[0]};
+    }
+
     const cards = [];
     for (let i = 0; i < allBtns.length; i++) {
         const btn = allBtns[i];
         const card = getCard(btn);
         const txt = (card.innerText || card.textContent || '').replace(/\s+/g, ' ').trim();
-        const upperTxt = txt.toUpperCase();
         const isSelected = /^\s*(deseleccionar|deselect)\s*$/i.test((btn.textContent || '').trim());
 
-        let vMatch = txt.match(/(?:Buque\s+principal|Main\s+vessel)\s*[:\s]+([A-Z0-9\s\.\-_]+?)(?=\s*(?:Primer\s+servicio|Ref\.|\bPOD\b|\bPOL\b|Terminal|Port\s+Cut|Viaje|Voyage|Service|\n|\r|$))/i) ||
-                     txt.match(/(?:Buque|Vessel)\s*[:\s]+([A-Z0-9\s\.\-_]+?)(?=\s*(?:Primer\s+servicio|Ref\.|\bPOD\b|\bPOL\b|Terminal|Port\s+Cut|Viaje|Voyage|Service|\n|\r|$))/i);
-        let vessel = vMatch ? vMatch[1].trim() : '';
+        const tramo = primerTramo(card);
+        const vessel = tramo ? tramo.buque : '';
 
         let cMatch = txt.match(/Port\s+Cut[- ]off\s*[:\s]+([^\n\r]+?)(?=\s*(?:Buque|Main\s+vessel|Primer|Ref\.|\n|\r|$))/i);
         let cutoff = cMatch ? cMatch[1].trim() : '';
 
-        let rMatch = txt.match(/(?:Ref\.\s*de\s*viaje|Voyage\s*ref|Ref\.)\s*[:\s]+([A-Z0-9\-_]+)/i);
-        let voyage = rMatch ? rMatch[1].trim() : '';
+        const voyage = tramo ? tramo.ref : '';
 
-        const matched = _traeLaNave(upperTxt, toks);
-        const conViaje = viaje.length === 0 || _traeLaNave(upperTxt, viaje);
+        const matched = !!tramo && _traeLaNave(vessel.toUpperCase(), toks);
+        const conViaje = viaje.length === 0 || (!!tramo && _traeLaNave(voyage.toUpperCase(), viaje));
 
         cards.push({
             idx: i,
@@ -11769,7 +11830,8 @@ _JS_CMA_RUTAS = r"""(args)=>{""" + _JS_TRAE_LA_NAVE + r"""
             voyage: voyage,
             isSelected: isSelected,
             matched: matched,
-            conViaje: conViaje
+            conViaje: conViaje,
+            legible: !!tramo
         });
     }
 
@@ -11794,7 +11856,8 @@ _JS_CMA_RUTAS = r"""(args)=>{""" + _JS_TRAE_LA_NAVE + r"""
     });
 
     return {ok: false, match: false, cardsCount: cards.length, ofrecidas: ofrecidas,
-            deLaNave: cards.filter(c => c.matched).length, msg: 'nave no encontrada en este bloque'};
+            deLaNave: cards.filter(c => c.matched).length, ilegibles: cards.filter(c => !c.legible).length,
+            msg: 'nave no encontrada en este bloque'};
 }"""
 
 
@@ -11986,8 +12049,13 @@ def _cma_seleccionar_itinerario(page, reserva, reg):
     reg.paso(f"CMA · ALERTA: Nave '{nave_pedida}' NO disponible en las opciones del portal.")
     reg.info(f"CMA · Rutas ofrecidas en el portal: {ofrecidas_txt}")
     reg.info("CMA · NO se selecciona nave errónea para evitar reservas incorrectas.")
-    return False, (f"CMA: nave '{nave_pedida}' no disponible en el portal: {donde} (rutas ofrecidas: {ofrecidas_txt}). "
-                   "No se seleccionó nave errónea.")
+    # Desde el encargo 67 la nave se lee en el primer tramo de cada ruta (_JS_CMA_RUTAS, primerTramo): si en alguna no
+    # se pudo leer, el motivo lo dice, porque entonces «no disponible» puede no ser cierto.
+    ilegibles = int(ultimo_resultado.get("ilegibles") or 0)
+    sin_leer = (f"; no pude leer el primer tramo (la nave que sale de Chile) de {ilegibles} de las "
+                f"{int(ultimo_resultado.get('cardsCount') or ilegibles)} rutas" if ilegibles else "")
+    return False, (f"CMA: nave '{nave_pedida}' no disponible en el portal: {donde}{sin_leer} (rutas ofrecidas: "
+                   f"{ofrecidas_txt}). No se seleccionó nave errónea.")
 
 
 # El panel Reefer de CMA es el único cajón o diálogo a la vista (si hay uno dentro de otro, cuenta el de afuera). Lo
@@ -14159,6 +14227,23 @@ META_SESION = '<meta name="aquashield-sesion" content="">'
 RX_SESION = '<meta name="aquashield-sesion" content="([A-Za-z0-9_-]+)">'
 CABECERAS_DE_LA_PAGINA = {"X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'"}
 PEDIDO_AJENO = "El panel no atiende este pedido: no viene de su propia página. Si es la tuya, recárgala (F5)."
+# Por qué _pedido_ajeno no atiende un pedido de su propio origen que no trae la marca: una pestaña de antes de que el
+# panel se reiniciara, que se renueva con el 403 (renovarSesion). El panel lee su cuerpo antes de contestar; el de un
+# pedido de otro origen, no (revisión del encargo 67).
+SIN_LA_MARCA = "no trae la marca de la sesión del panel"
+# El cuerpo más largo que el panel lee de un POST: la planilla de este equipo pesa 13 KB (medido el 2026-10-14), y una
+# planilla de reservas no llega ni cerca. Uno que no dice cuánto trae, o trae más, no se lee: 413 (revisión del encargo
+# 67; hasta ahí el panel leía entero, en memoria, el cuerpo de cualquier POST, también antes de mirar de dónde venía).
+CUERPO_MAX = 20 * 1024 * 1024
+CUERPO_FUERA_DE_MEDIDA = "El panel no atiende este pedido: no dice cuánto trae, o trae más de 20 MB."
+# Lo que el panel lee y descarta del cuerpo de un pedido de otro origen antes de contestarle el 403, para que la
+# respuesta no se corte (al cerrar con datos sin leer, Windows puede cortar la conexión antes de que llegue). Si trae
+# más, no lo lee y cierra.
+DESCARTE_MAX = 64 * 1024
+# Los segundos que el panel espera cada parte de un pedido (su línea, sus cabeceras, su cuerpo) antes de cortar la
+# conexión: sin plazo, una conexión que no manda nada retenía su hilo para siempre (revisión de seguridad del encargo
+# 67). Su página pide y recibe en milisegundos. Hipótesis: no está medido con el equipo cargado.
+PANEL_PLAZO_PEDIDO = 30
 
 
 def _pedido_ajeno(ruta, cabeceras, puerto, sesion):
@@ -14173,6 +14258,8 @@ def _pedido_ajeno(ruta, cabeceras, puerto, sesion):
     host = cab("Host").lower()
     if host not in (f"127.0.0.1:{puerto}", f"localhost:{puerto}"):
         return "su Host no es el del panel"
+    if hasattr(cabeceras, "get_all") and len(cabeceras.get_all("Host") or []) > 1:
+        return "su Host no es el del panel"
     origen = cab("Origin").lower()
     if origen and origen != f"http://{host}":
         return "viene de otro origen"
@@ -14185,8 +14272,29 @@ def _pedido_ajeno(ruta, cabeceras, puerto, sesion):
         return "no lo pide la página del panel"
     if ruta.startswith("/api/") and not hmac.compare_digest(cab(CABECERA_SESION).encode("utf-8"),
                                                             str(sesion).encode("utf-8")):
-        return "no trae la marca de la sesión del panel"
+        return SIN_LA_MARCA
     return ""
+
+
+def _largo_del_cuerpo(cabeceras):
+    """Cuántos bytes trae el cuerpo de un pedido al panel, por su Content-Length: de 0 a CUERPO_MAX, o None si no es
+    un número o pasa de CUERPO_MAX (revisión del encargo 67). Sin Content-Length, 0, como antes."""
+    texto = str(cabeceras.get("Content-Length") or "0").strip()
+    if not (texto.isascii() and texto.isdigit()):
+        return None
+    largo = int(texto)
+    return largo if largo <= CUERPO_MAX else None
+
+
+def _disposicion(nombre):
+    """La cabecera Content-Disposition de la planilla que se descarga, con su nombre: en ASCII para quien no lee más
+    (cada carácter que no lo es, o que es una comilla, una barra invertida o un control, como «_») y entero en
+    filename* (RFC 5987), que la página lee primero (nombreDeDescarga). Revisión del encargo 67: hasta ahí iba entero
+    en filename, y http.server la escribe en latin-1: con una raya larga o un emoji en el nombre de la planilla, el
+    panel mandaba un 200 y después un 500, y la descarga fallaba."""
+    from urllib.parse import quote
+    ascii_ = "".join(c if 32 <= ord(c) < 127 and c not in '"\\' else "_" for c in nombre)
+    return f"attachment; filename=\"{ascii_}\"; filename*=UTF-8''{quote(nombre, safe='')}"
 
 
 def _sesion_del_panel(puerto, espera=1.0):
@@ -14327,7 +14435,9 @@ def _ceder_al_previo(puerto, previo, propio, abrir):
     # Instancia ociosa anterior, en el mismo modo: pedirle que se apague para renovar, con la marca de su sesión si su
     # página la trae (encargo 66; un panel de antes no la trae, y se le pide igual)
     try:
-        sesion = _sesion_del_panel(puerto)
+        # Con la espera larga, como la segunda pregunta de lanzar_web: con el equipo cargado, la página puede tardar más
+        # de 1 s, y sin la marca el panel no atiende el apagar (revisión del encargo 67).
+        sesion = _sesion_del_panel(puerto, PANEL_ESPERA_LARGA)
     except Exception:
         sesion = ""
     try:
@@ -14397,6 +14507,8 @@ def lanzar_web(puerto=8765, abrir=True):
     pagina = HTML_INDEX.replace(META_SESION, META_SESION.replace('content=""', f'content="{sesion}"'), 1)
 
     class H(BaseHTTPRequestHandler):
+        timeout = PANEL_PLAZO_PEDIDO                 # revisión de seguridad del encargo 67
+
         def log_message(self, *a):
             pass                                   # sin ruido en la consola
 
@@ -14504,8 +14616,7 @@ def lanzar_web(puerto=8765, abrir=True):
                     marca = _dt.datetime.now().strftime("%d-%m_%H%M")
                     return self._env(
                         200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        datos, {"Content-Disposition":
-                                f'attachment; filename="{nom} - resultados {marca}.xlsx"'})
+                        datos, {"Content-Disposition": _disposicion(f"{nom} - resultados {marca}.xlsx")})
                 if u.path in ("/api/apagar", "/api/shutdown", "/api/salir"):
                     def _apagar():
                         time.sleep(0.4)
@@ -14522,10 +14633,24 @@ def lanzar_web(puerto=8765, abrir=True):
         def do_POST(self):
             u = urlparse(self.path)
             q = parse_qs(u.query)
-            largo = int(self.headers.get("Content-Length") or 0)
+            # Antes de leer el cuerpo, de dónde viene (revisión del encargo 67): uno de otro origen recibe el 403 sin
+            # que el panel lea su cuerpo (lo descarta si es corto, para que la respuesta llegue entera); uno de su
+            # origen sin la marca (una pestaña de antes de que el panel se reiniciara), con el cuerpo leído, para que su
+            # página reciba el 403 y se renueve. Ninguno se lee si no dice cuánto trae o pasa de CUERPO_MAX. Hasta ahí
+            # leía entero, en memoria, el cuerpo de cualquier POST antes de mirar de dónde venía.
+            por_que = _pedido_ajeno(u.path, self.headers, self.server.server_address[1], sesion)
+            largo = _largo_del_cuerpo(self.headers)
+            if por_que and por_que != SIN_LA_MARCA:
+                if largo is not None and largo <= DESCARTE_MAX:
+                    self.rfile.read(largo)
+                self.close_connection = True
+                return self._env(403, "text/plain; charset=utf-8", PEDIDO_AJENO, {"Connection": "close"})
+            if largo is None:
+                self.close_connection = True
+                return self._env(413, "text/plain; charset=utf-8", CUERPO_FUERA_DE_MEDIDA, {"Connection": "close"})
             cuerpo = self.rfile.read(largo) if largo else b""
-            if self._ajeno(u.path):
-                return
+            if por_que:
+                return self._env(403, "text/plain; charset=utf-8", PEDIDO_AJENO)
             try:
                 if u.path == "/api/planilla":
                     nombre = (q.get("nombre") or ["planilla.xlsx"])[0]
@@ -15006,18 +15131,23 @@ function conSesion(opts) {
   o.headers = Object.assign({}, o.headers || {}, { "X-AquaShield-Sesion": SESION });
   return o;
 }
-async function renovarSesion() {
+// Se compara con la marca que usó el pedido rechazado ('usada'), no con la de ahora: si otro pedido ya la renovó
+// mientras este esperaba, la de la página sigue siendo otra que la usada, y este también repite. Hasta la revisión del
+// encargo 67, de dos pedidos a la vez con la marca vieja, el segundo veía la nueva como «la misma», no repetía y su 403
+// llegaba al operador.
+async function renovarSesion(usada) {
   try {
     const r = await fetch("/", { cache: "no-store" });
     const m = RX_SESION.exec(r.ok ? await r.text() : "");
-    if (!m || m[1] === SESION) return false;
+    if (!m || m[1] === usada) return false;
     SESION = m[1];
     return true;
   } catch (e) { return false; }
 }
 async function pedir(ruta, opts) {
+  const usada = SESION;
   let r = await fetch(ruta, conSesion(opts));
-  if (r.status === 403 && await renovarSesion()) r = await fetch(ruta, conSesion(opts));
+  if (r.status === 403 && await renovarSesion(usada)) r = await fetch(ruta, conSesion(opts));
   return r;
 }
 async function api(ruta, opts) {
@@ -15257,8 +15387,13 @@ $("#wg-descargar").onclick = async () => {
     notaVisible("No pude descargar la planilla: " + e.message);
   }
 };
+// El nombre, entero, de filename* (RFC 5987) si lo trae; si no, o si no se puede leer, de filename (revisión del
+// encargo 67: el panel manda los dos, _disposicion).
 function nombreDeDescarga(cabecera) {
-  const m = /filename="([^"]+)"/.exec(String(cabecera || ""));
+  const c = String(cabecera || "");
+  const u = /filename\*=UTF-8''([^;\s]+)/i.exec(c);
+  if (u) { try { return decodeURIComponent(u[1]); } catch (e) { /* sigue con filename */ } }
+  const m = /filename="([^"]+)"/.exec(c);
   return m ? m[1] : "planilla - resultados.xlsx";
 }
 

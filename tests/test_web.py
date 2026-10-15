@@ -450,11 +450,31 @@ class TestPanelPlanilla(PanelBase):
             self.mod._WEB.update({"hoja": "ONE", "resultados": {"5": {"estado": "EMITIDA", "booking": "BKGFALSO03"}}})
         st, cab, cuerpo = self.srv.completo("/api/descargar")
         self.assertEqual(st, 200)
+        # Desde la revisión del encargo 67, el nombre también entero en filename* (_disposicion).
         self.assertRegex(cab["Content-Disposition"],
-                         r'^attachment; filename="Mi Planilla - resultados \d\d-\d\d_\d{4}\.xlsx"$')
+                         r'^attachment; filename="Mi Planilla - resultados \d\d-\d\d_\d{4}\.xlsx"; '
+                         r"filename\*=UTF-8''Mi%20Planilla%20-%20resultados%20\d\d-\d\d_\d{4}\.xlsx$")
         ws = openpyxl.load_workbook(BytesIO(cuerpo))["ONE"]
         self.assertEqual((ws["H5"].value, ws["I5"].value), ("EMITIDA", "BKGFALSO03"))
         self.assertEqual(temporal.read_bytes(), antes, "la descarga tocó la planilla subida")
+
+    def test_descarga_con_un_nombre_fuera_de_latin1(self):
+        # Una planilla con una raya larga o un emoji en su nombre se descarga igual: el nombre va en ASCII en filename
+        # y entero en filename* (_disposicion, revisión del encargo 67). Hasta ahí http.server escribía la cabecera en
+        # latin-1, y el panel mandaba un 200 y después un 500.
+        self.subir("Reservas – octubre 🐟.xlsx")
+        st, cab, cuerpo = self.srv.completo("/api/descargar")
+        self.assertEqual(st, 200)
+        self.assertRegex(cab["Content-Disposition"],
+                         r"^attachment; filename=\"Reservas _ octubre _ - resultados \d\d-\d\d_\d{4}\.xlsx\"; "
+                         r"filename\*=UTF-8''Reservas%20%E2%80%93%20octubre%20%F0%9F%90%9F%20-%20resultados%20"
+                         r"\d\d-\d\d_\d{4}\.xlsx$")
+        openpyxl.load_workbook(BytesIO(cuerpo))
+        f = self.mod._disposicion
+        self.assertEqual(f('a"b\\c\r\nd.xlsx'), "attachment; filename=\"a_b_c__d.xlsx\"; "
+                                                 "filename*=UTF-8''a%22b%5Cc%0D%0Ad.xlsx")
+        self.assertEqual(f("Plan N°.xlsx").encode("latin-1"), b"attachment; filename=\"Plan N_.xlsx\"; "
+                                                              b"filename*=UTF-8''Plan%20N%C2%B0.xlsx")
 
     def test_numero_de_reserva_igual_en_el_panel_y_en_la_planilla(self):
         # La columna «N° de reserva emitida» dice lo mismo en el panel (n_reserva de /api/estado) y en la planilla: el
@@ -1322,6 +1342,15 @@ class TestPanelSoloSuPagina(PanelBase):
         for ruta, cambia, motivo in casos:
             with self.subTest(ruta=ruta, cambia=cambia):
                 self.assertEqual(f(ruta, {**base, **cambia}, p, s), motivo)
+        # Dos cabeceras Host, la buena primero: no (revisión de seguridad del encargo 67; http.server toma la primera, y
+        # ningún navegador manda dos). Con una sola, como siempre.
+        from email.message import Message
+        uno, dos = Message(), Message()
+        for k, v in (("Host", f"127.0.0.1:{p}"), (cab, s)):
+            uno[k] = v
+        for k, v in (("Host", f"127.0.0.1:{p}"), ("Host", "otro.example"), (cab, s)):
+            dos[k] = v
+        self.assertEqual((f("/api/estado", uno, p, s), f("/api/estado", dos, p, s)), ("", host))
 
     def test_las_mismas_constantes(self):
         m = self.mod
@@ -1343,6 +1372,8 @@ class TestPanelSoloSuPagina(PanelBase):
         self.assertEqual(pagina.count('name="aquashield-sesion"'), 1)
         self.assertNotIn(sesion, self.mod.HTML_INDEX)                # la pone el panel al servirla
         self.assertEqual((cab["X-Frame-Options"], cab["Content-Security-Policy"]), ("DENY", "frame-ancestors 'none'"))
+        # Y no se guarda en la caché del navegador: lleva la marca (revisión de seguridad del encargo 67).
+        self.assertEqual(cab["Cache-Control"], "no-store")
         # Se abre desde cualquier lado: el lanzador o un marcador, la página misma, un enlace de otro sitio.
         for cabs in ({"Sec-Fetch-Site": "none", "Sec-Fetch-Dest": "document"},
                      {"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Dest": "empty"},
@@ -1376,6 +1407,83 @@ class TestPanelSoloSuPagina(PanelBase):
                      {"Host": f"localhost:{p}", "Origin": f"http://localhost:{p}", "Sec-Fetch-Site": "same-origin"}):
             with self.subTest(cabs=cabs):
                 self.assertEqual(self.srv.completo("/api/estado", cabeceras={**self.marca(), **cabs})[0], 200)
+
+    def crudo(self, cabeceras, cuerpo=b"", ruta="/api/planilla", espera=5):
+        """Un POST escrito a mano por un socket, con las 'cabeceras' tal cual (un Content-Length que no es el del
+        cuerpo, por ejemplo): (estado, cuerpo de la respuesta) o None si no contestó en 'espera' s."""
+        with socket.create_connection(("127.0.0.1", self.srv.puerto), timeout=espera) as s:
+            s.sendall((f"POST {ruta} HTTP/1.1\r\n" + "".join(f"{k}: {v}\r\n" for k, v in cabeceras.items())
+                       + "\r\n").encode("latin-1") + cuerpo)
+            datos = b""
+            try:
+                while True:
+                    trozo = s.recv(65536)
+                    if not trozo:
+                        break
+                    datos += trozo
+            except socket.timeout:
+                return None
+        cabeza, _, resto = datos.partition(b"\r\n\r\n")
+        return int(cabeza.split(b" ")[1]), resto.decode("utf-8")
+
+    def test_un_post_de_otro_origen_no_se_lee(self):
+        # Desde la revisión del encargo 67, el panel mira de dónde viene un POST antes de leer su cuerpo: a uno de otro
+        # origen le contesta el 403 sin leerlo (si es corto lo descarta, para que la respuesta llegue entera), y cierra.
+        # Hasta ahí leía entero, en memoria, el cuerpo de cualquier POST: una página de otro sitio podía mandarle
+        # cuerpos enormes. Con 10 o 50 MB anunciados y ninguno enviado, contesta igual: no los espera. Los 10 MB caben en
+        # CUERPO_MAX: solo el origen evita leerlos (con los 50 MB solos, leer el cuerpo ajeno no se veía: el censo).
+        p, ajeno = self.srv.puerto, self.mod.PEDIDO_AJENO
+        self.assertLess(self.mod.DESCARTE_MAX, 10_000_000)
+        self.assertLess(10_000_000, self.mod.CUERPO_MAX)
+        for cabs in ({"Host": f"127.0.0.1:{p}", "Origin": "http://otro.example"},
+                     {"Host": f"otro.example:{p}"},
+                     {"Host": f"127.0.0.1:{p}", "Sec-Fetch-Site": "cross-site"}):
+            with self.subTest(cabs=cabs):
+                for largo in ("10000000", "50000000"):
+                    self.assertEqual(self.crudo({**cabs, **self.marca(), "Content-Length": largo}), (403, ajeno))
+                self.assertEqual(self.crudo({**cabs, "Content-Length": "2"}, b"{}"), (403, ajeno))
+        # Uno de su origen sin la marca (una pestaña de antes de que el panel se reiniciara): se lee, y 403.
+        self.assertEqual(self.crudo({"Host": f"127.0.0.1:{p}", "Content-Length": "2"}, b"{}"), (403, ajeno))
+        st, e = self.srv.json("/api/estado")
+        self.assertEqual((st, e["corriendo"]), (200, False))
+
+    def test_un_cuerpo_fuera_de_medida_no_se_lee(self):
+        # Un POST que no dice cuánto trae, o trae más de CUERPO_MAX, no se lee: 413, también con la marca (revisión del
+        # encargo 67). La planilla de este equipo pesa 13 KB.
+        p, maximo = self.srv.puerto, self.mod.CUERPO_MAX
+        self.assertEqual(maximo, 20 * 1024 * 1024)
+        for largo in (str(maximo + 1), "abc", "-1", "1e3", "²"):
+            with self.subTest(largo=largo):
+                self.assertEqual(self.crudo({"Host": f"127.0.0.1:{p}", **self.marca(), "Content-Length": largo}),
+                                 (413, self.mod.CUERPO_FUERA_DE_MEDIDA))
+        f = self.mod._largo_del_cuerpo
+        self.assertEqual([f({}), f({"Content-Length": "0"}), f({"Content-Length": " 12 "}),
+                          f({"Content-Length": str(maximo)}), f({"Content-Length": str(maximo + 1)}),
+                          f({"Content-Length": "x"})], [0, 0, 12, maximo, None, None])
+
+    def test_un_pedido_mudo_no_retiene_el_panel(self):
+        # Un pedido que no termina de llegar (aquí, con la mitad del cuerpo) se corta a los PANEL_PLAZO_PEDIDO s, y el
+        # panel sigue atendiendo (revisión de seguridad del encargo 67; hasta ahí, sin plazo, retenía su hilo para
+        # siempre). Con un plazo de 1 s, en un panel aparte.
+        mod, _ = soporte.cargar()
+        mod.PANEL_PLAZO_PEDIDO = 1
+        srv = soporte.Servidor(mod, puertos_seguidos(1)).iniciar()
+        try:
+            cabeza = (f"POST /api/planilla HTTP/1.1\r\nHost: 127.0.0.1:{srv.puerto}\r\n"
+                      f"{mod.CABECERA_SESION}: {srv.marca()}\r\nContent-Length: 100\r\n\r\n")
+            with socket.create_connection(("127.0.0.1", srv.puerto), timeout=10) as s:
+                s.sendall(cabeza.encode("latin-1") + b"0123456789")
+                inicio = time.time()
+                try:
+                    datos = s.recv(65536)
+                except ConnectionResetError:
+                    datos = b""
+                cerrada = time.time() - inicio
+            self.assertEqual(datos, b"")
+            self.assertLess(cerrada, 8)
+            self.assertEqual(srv.json("/api/estado")[0], 200)
+        finally:
+            srv.apagar()
 
     def test_de_otro_origen_no_atiende_aunque_traiga_la_marca(self):
         p = self.srv.puerto
@@ -1783,6 +1891,16 @@ class TestArranqueDelPanel(unittest.TestCase):
             self.assertFalse(srv.hilo.is_alive())               # se apagó: el pedido llevaba su marca
         finally:
             srv.apagar()
+
+    def test_el_apagar_lee_la_marca_con_la_espera_larga(self):
+        # Al panel ocioso del mismo modo, el lanzador le lee la marca con PANEL_ESPERA_LARGA, como su segunda pregunta:
+        # con el equipo cargado, su página puede tardar más de 1 s, y sin la marca no atiende el apagar (revisión del
+        # encargo 67; hasta ahí, con 1 s).
+        mod, _ = soporte.cargar()
+        esperas = []
+        with mock.patch.object(mod, "_sesion_del_panel", lambda puerto, espera=1.0: esperas.append(espera) or ""):
+            self.assertFalse(mod._ceder_al_previo(puertos_seguidos(1), ({"corriendo": False}, False), False, False))
+        self.assertEqual(esperas, [mod.PANEL_ESPERA_LARGA])
 
     def test_instancia_previa_ociosa_se_apaga(self):
         # Le pide que se apague y toma su puerto. Hasta el encargo 52 esperaba 0,6 s y, si el puerto seguía tomado,

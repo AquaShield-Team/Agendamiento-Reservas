@@ -77,6 +77,9 @@ PERMITIDOS = {
     # Entre 05cfdb7 y el encargo 33, _JS_ONE_SEMANAS («primero-sin-filtro»: 2) ampliaba las semanas de ONE: el único
     # selector «N weeks» y su opción más larga. ONE ya no pasa de 8 semanas (CICLO-ampliar-msc-y-cma.md).
     ("reservar_msc", "_msc_puerto", "primero-sin-filtro"): 1,                # ESPECÍFICO: la ciudad
+    # Desde el encargo 67, el clic de MSC vuelve a leer la tarjeta elegida y pulsa su único «Select» (hasta ahí, el
+    # primero de esa tarjeta, con find, que ninguna forma de esta foto veía; CICLO-revisiones-msc-y-cma.md).
+    ("reservar_msc", "_JS_MSC_CLIC_NAVE", "primero-sin-filtro"): 1,          # ESPECÍFICO: el único «Select» de la elegida
     ("reservar_cma", "_cma_completar_info_extra", "primero-sin-filtro"): 1,  # ESPECÍFICO: «40…High Cube»
     ("reservar_cma", "_cma_aviso", "ultimo-por-posicion"): 1,                # NO ES CLIC: lee el último aviso
     ("reservar_cma", "_cma_comentarios", "textarea-en-js"): 1,               # ESPECÍFICO: placeholder o etiqueta
@@ -1632,6 +1635,96 @@ console.log(JSON.stringify(f()));
         self.assertIs(self.mod._msc_elegir_salida([b, c], hoy)[0], c)
         self.assertEqual(self.mod._msc_elegir_salida([b, dict(c, eta=self.etd(52))], hoy), (None, "empate"))
 
+    # El DOM falso de la lista de itinerarios de MSC para _JS_MSC_CLIC_NAVE: cada tarjeta, un div.shipment-grid-list con
+    # su texto («Vessel / Voyage … ETD … ETA …») y sus botones «Select» (uno, como en las 302 tarjetas medidas en las 11
+    # listas guardadas; encargo 67).
+    DOM_MSC = r"""
+const boton = (visible = true) => ({textContent: ' Select ', offsetParent: visible ? {} : null, clics: 0,
+                                    scrollIntoView() {}, click() { this.clics++; }});
+const tarjeta = (texto, botones = [boton()]) => ({textContent: texto + ' Select', botones,
+                                                  querySelectorAll: () => botones});
+const pagina = (tarjetas) => { global.document = {querySelectorAll: () => tarjetas}; return tarjetas; };
+const UNO = 'Vessel / Voyage MSC NAVE UNO / FA001E ETD 03 Oct 2026 12:00 ETA 12 Nov 2026 06:00';
+const DOS = 'Vessel / Voyage MSC NAVE DOS / FA002E ETD 05 Oct 2026 12:00 ETA 14 Nov 2026 06:00';
+const elegida = {i: 0, nave: 'MSC NAVE UNO FA001E', etd: '03 OCT 2026', eta: '12 NOV 2026'};
+"""
+
+    def test_js_clic_vuelve_a_leer_la_tarjeta(self):
+        # Desde el encargo 67, el clic vuelve a leer la lista con _JS_MSC_NAVES y pulsa el «Select» de la tarjeta i solo
+        # si sigue siendo la elegida: el mismo «Vessel / Voyage», la misma ETD y la misma ETA, con un solo «Select» a la
+        # vista (decisión de Marcelo, CICLO-revisiones-msc-y-cma.md). Si no, dice por qué y no pulsa nada. Hasta ahí
+        # pulsaba la i-ésima sin volver a leerla.
+        guion = self.DOM_MSC + "const f = " + self.mod._JS_MSC_CLIC_NAVE + r""";
+const correr = (tarjetas, args) => {
+  pagina(tarjetas);
+  return [f(args), tarjetas.map(t => t.botones.map(b => b.clics))];
+};
+console.log(JSON.stringify([
+  correr([tarjeta(UNO), tarjeta(DOS)], elegida),
+  correr([tarjeta(DOS), tarjeta(UNO)], elegida),
+  correr([tarjeta(UNO)], Object.assign({}, elegida, {nave: 'MSC NAVE UNO FA009E'})),
+  correr([tarjeta(UNO)], Object.assign({}, elegida, {etd: '05 OCT 2026'})),
+  correr([tarjeta(UNO)], Object.assign({}, elegida, {eta: ''})),
+  correr([tarjeta(UNO)], Object.assign({}, elegida, {i: 3})),
+  correr([tarjeta(UNO, [boton(false)])], elegida),
+  correr([tarjeta(UNO, [boton(), boton()])], elegida),
+]));
+"""
+        self.assertEqual(correr_node(self, guion), [
+            ["pulsado", [[1], [0]]],
+            ["otra", [[0], [0]]],             # la lista se repintó y en la posición i hay otra salida
+            ["otra", [[0]]],                  # otro viaje
+            ["otra", [[0]]],                  # otra ETD
+            ["otra", [[0]]],                  # otra ETA
+            ["sin-tarjeta", [[0]]],
+            ["sin-select", [[0]]],            # su «Select» ya no se ve
+            ["varios-select", [[0, 0]]],
+        ])
+
+    def test_si_la_tarjeta_cambio_no_pulsa(self):
+        # Si _JS_MSC_CLIC_NAVE no pulsó, NO ENVIADA con la lista en su evidencia y el motivo de por qué no pulsó, sin
+        # pulsar nada más (encargo 67). Hasta ahí, si el clic no salía, seguía como si la nave no estuviera: REVISAR
+        # «nave … no está en MSC», que no era cierto.
+        hoy = datetime.date.today()
+        elegida = {"i": 7, "nave": "NAVE PRUEBA ZZ101A", "etd": self.etd(6), "eta": self.etd(40), "sel": True}
+        reg, vistas, log = self.corrida("msc_cambio")
+        pagina = soporte.PaginaFalsa(texto=lambda js, *a: {"html": "<body>lista sintetica</body>", "sombras": 0}
+                                     if js == self.mod._JS_HTML_COMPLETO else None)
+        reserva = {"fila": 10, "nave": "NAVE PRUEBA", "viaje": "ZZ101A"}
+        for pulso, por_que in (
+                ("otra", "al volver a leer la lista justo antes de pulsar, la tarjeta elegida ya no era la misma (cambió "
+                         "su «Vessel / Voyage», su ETD o su ETA); no pulsé nada"),
+                ("sin-tarjeta", "al volver a leer la lista justo antes de pulsar, la tarjeta elegida ya no estaba; no "
+                                "pulsé nada"),
+                ("sin-select", "al volver a leer la lista justo antes de pulsar, el «Select» de la tarjeta elegida ya no "
+                               "estaba a la vista; no pulsé nada"),
+                ("varios-select", "al volver a leer la lista justo antes de pulsar, la tarjeta elegida traía más de un "
+                                  "«Select»; no pulsé nada"),
+                (None, "al volver a leer la lista justo antes de pulsar, no pude confirmar que la tarjeta elegida "
+                       "siguiera siendo la misma (None); no pulsé nada"),
+                ("error: boom", "el JavaScript que vuelve a leer la tarjeta elegida y la pulsa falló (boom)")):
+            with self.subTest(pulso=pulso):
+                self.assertEqual(self.mod._msc_no_pulse(pulso), por_que)
+                detalle = (f"MSC: no elegí salida para esa nave ('NAVE PRUEBA'): {por_que}. Revisa la fila y elige la "
+                           "salida en el portal.")
+                self.assertEqual(self.mod._msc_salida_ambigua(pagina, reg, reserva, [elegida], "", hoy,
+                                                              por_que=self.mod._msc_no_pulse(pulso)),
+                                 ("NO ENVIADA", detalle))
+        self.assertEqual(pagina.capturas[-1], ("msc_f10_itinerarios.png", False))
+        self.assertTrue((log.parent / "msc_f10_itinerarios.html").exists())
+        # reservar_msc: el clic recibe lo que leyó de la elegida, y si no devuelve MSC_PULSADO, corta así, antes de la
+        # guarda; una falla del JavaScript también.
+        tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
+        f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_msc")
+        cortes = [n for n in ast.walk(f) if isinstance(n, ast.If) and ast.unparse(n.test) == "pulso != MSC_PULSADO"]
+        self.assertEqual([ast.unparse(n.body[0]) for n in cortes],
+                         ["return _msc_salida_ambigua(page, reg, reserva, [elegida], '', desde, "
+                          "por_que=_msc_no_pulse(pulso))"])
+        trys = [n for n in ast.walk(f) if isinstance(n, ast.Try) and "_JS_MSC_CLIC_NAVE" in ast.unparse(n.body[0])]
+        self.assertEqual([ast.unparse(h.body[0]) for n in trys for h in n.handlers],
+                         ["pulso = f'error: {str(e)[:60]}'"])
+        self.assertLess(cortes[0].lineno, linea_guarda(f))
+
     def test_salida_ambigua_queda_no_enviada_con_evidencia(self):
         hoy = datetime.date.today()
         exacta = [{"i": 7, "nave": "NAVE PRUEBA 002E", "etd": self.etd(6)},
@@ -2312,7 +2405,10 @@ console.log(JSON.stringify(f()));
         self.assertEqual([ast.unparse(r) for n in sin_una for r in ast.walk(n) if isinstance(r, ast.Return)],
                          ["return _msc_salida_ambigua(page, reg, reserva, exacta, motivo, desde)"])
         clics = [n for n in ast.walk(f) if isinstance(n, ast.Call) and "_JS_MSC_CLIC_NAVE" in [ast.unparse(a) for a in n.args]]
-        self.assertEqual([ast.unparse(n) for n in clics], ["page.evaluate(_JS_MSC_CLIC_NAVE, elegida['i'])"])
+        # Desde el encargo 67, con lo que leyó de la elegida, para volver a leerla (test_js_clic_vuelve_a_leer_la_tarjeta).
+        self.assertEqual([ast.unparse(n) for n in clics],
+                         ["page.evaluate(_JS_MSC_CLIC_NAVE, {'i': elegida['i'], 'nave': elegida.get('nave', ''), "
+                          "'etd': elegida.get('etd', ''), 'eta': elegida.get('eta', '')})"])
         self.assertLess(sin_una[0].lineno, clics[0].lineno)
         self.assertLess(clics[0].lineno, linea_guarda(f))
 
@@ -2647,24 +2743,80 @@ class TestCma(ConRegistro):
         función; desde CICLO-cola-seis-items.md es _JS_CMA_RUTAS, que lleva al principio _JS_TRAE_LA_NAVE."""
         return self.mod._JS_CMA_RUTAS
 
-    def test_js_rutas_nave_con_todas_sus_palabras(self):
-        guion = "const f = " + self.js_rutas() + r""";
-const nodo = (tag, texto, hijos = []) => {
-  const n = {tagName: tag.toUpperCase(), texto, hijos, parentElement: null, offsetParent: {}, id: '', clics: 0,
-             getBoundingClientRect: () => ({width: 10, height: 10}), scrollIntoView() {}, click() { this.clics++; }};
+    # El DOM falso de «Route choices», con la forma medida en las 38 tarjetas de las 10 listas guardadas (del 27-09 al
+    # 14-10; encargo 67, CICLO-revisiones-msc-y-cma.md): cada ruta trae su resumen («Buque principal» y «Ref. de viaje»)
+    # y, en .route-wrapper, sus tramos: el li con la cápsula «POL», el primer tramo (li.more-infos.vessel main-leg, con
+    # su «Buque» y su «Ref. de viaje»), el transbordo y el segundo tramo. ruta([nave1, viaje1, nave2, viaje2], resumen,
+    # sin): sin 'resumen', el resumen trae el primer tramo, como en las 38; 'sin' quita los tramos, el POL de los tramos,
+    # o le pone al primer tramo un segundo «Buque» ('dos-buques'). Hasta el encargo 67 la ruta era un texto suelto
+    # («Buque principal: …»), porque el programa leía el texto de toda la tarjeta.
+    DOM_CMA = r"""
+const nodo = (tag, cls, texto, hijos = []) => {
+  const n = {tagName: tag.toUpperCase(), className: cls, texto, hijos, parentElement: null, offsetParent: {}, id: '',
+             clics: 0, getBoundingClientRect: () => ({width: 10, height: 10}), scrollIntoView() {},
+             click() { this.clics++; }};
   Object.defineProperty(n, 'textContent', {get() { return [this.texto, ...this.hijos.map(h => h.textContent)].join(' '); }});
+  Object.defineProperty(n, 'children', {get() { return this.hijos; }});
+  Object.defineProperty(n, 'nextElementSibling', {get() {
+    const p = this.parentElement; return p ? p.hijos[p.hijos.indexOf(this) + 1] || null : null; }});
   const todos = (x) => x.hijos.flatMap(h => [h, ...todos(h)]);
   n.contains = (x) => x === n || todos(n).includes(x);
-  n.querySelectorAll = (sel) => todos(n).filter(e => sel.split(',').some(s => e.tagName === s.trim().toUpperCase()));
+  n.matches = (sel) => calza(n, sel);
+  n.querySelectorAll = (sel) => todos(n).filter(e => calza(e, sel));
+  n.querySelector = (sel) => n.querySelectorAll(sel)[0] || null;
   hijos.forEach(h => { h.parentElement = n; });
   return n;
 };
-// Cada ruta: su buque principal, su corte y su botón «Seleccionar», como las opciones de «Route choices».
-const ruta = (nave) => nodo('div', '', [nodo('p', 'Buque principal: ' + nave), nodo('p', 'Port Cut-off: 01/10/2026'),
-                                        nodo('button', 'Seleccionar')]);
-const correr = (naves, toks) => {
-  const body = nodo('body', '', [nodo('div', '', naves.map(ruta))]);
+// Un selector de etiqueta y clases, y la combinación de descendientes: lo que usa _JS_CMA_RUTAS. Otro, falla.
+const simple = (e, s) => {
+  const m = s.match(/^([a-z]*)((?:\.[\w-]+)*)$/i);
+  if (!m) throw new Error('selector sin soporte: ' + s);
+  const clases = (e.className || '').split(/\s+/);
+  return (!m[1] || e.tagName === m[1].toUpperCase()) && m[2].split('.').filter(Boolean).every(c => clases.includes(c));
+};
+const calza = (e, sel) => sel.split(',').some(s => {
+  const partes = s.trim().split(/\s+/);
+  if (!simple(e, partes[partes.length - 1])) return false;
+  let a = e.parentElement;
+  for (let k = partes.length - 2; k >= 0; k--) {
+    while (a && !simple(a, partes[k])) a = a.parentElement;
+    if (!a) return false;
+    a = a.parentElement;
+  }
+  return true;
+});
+const dl = (pares) => nodo('dl', '', '', pares.map(([dt, dd]) => nodo('div', '', '', [nodo('dt', '', dt),
+                                                                                      nodo('dd', '', dd)])));
+const pol = () => nodo('li', 'ico-dot', '', [nodo('div', 'state-row', '', [nodo('span', 'capsule', 'POL'),
+                                                                           nodo('span', '', 'PUERTO, CL')])]);
+const tramo = (cls, nave, viaje, otra) => nodo('li', 'more-infos vessel ' + cls, '', [nodo('ul', '', '', [
+  nodo('li', '', '', [dl([['Buque', nave]])]), ...(otra ? [nodo('li', '', '', [dl([['Buque', otra]])])] : []),
+  nodo('li', '', '', [dl([['servicio', 'SERVICIO 1'], ['Ref. de viaje', viaje]])])])]);
+const ruta = ([nave1, viaje1, nave2, viaje2], resumen, sin = []) => {
+  const [rn, rv] = resumen || [nave1, viaje1];
+  const otra = sin.includes('dos-buques') ? 'NAVE PRUEBA' : undefined;
+  const tramos = sin.includes('tramos') ? [] : [nodo('div', 'route-wrapper', '', [nodo('div', 'simple-route', '', [
+    nodo('ul', 'route', '', [...(sin.includes('pol') ? [] : [pol()]), tramo('main-leg', nave1, viaje1, otra),
+                             nodo('li', 'transhipment', 'TRANSBORDO'), tramo('2', nave2, viaje2)])])])];
+  return nodo('li', '', '', [nodo('article', 'card-route-horizontal', '', [
+    nodo('div', 'wrap-card', '', [nodo('ul', 'route', '', [pol(), nodo('li', 'more-infos vessel', '', [nodo('ul', '', '', [
+        nodo('li', '', '', [dl([['Port Cut-off', '01-oct-2026'], ['Buque principal', rn]])]),
+        nodo('li', '', '', [dl([['Primer servicio', 'SERVICIO 1'], ['Ref. de viaje', rv]])])])])]),
+      nodo('div', 'actions', '', [nodo('button', 'o-button primary', 'Seleccionar')])]),
+    ...tramos])]);
+};
+const pagina = (rutas) => {
+  const body = nodo('body', '', '', [nodo('main', '', '', [nodo('ul', '', '', rutas)])]);
   global.document = {querySelectorAll: (s) => body.querySelectorAll(s)};
+  return body;
+};
+"""
+
+    def test_js_rutas_nave_con_todas_sus_palabras(self):
+        # Cada ruta, con la nave en su primer tramo (y en su resumen) y otra en el segundo.
+        guion = self.DOM_CMA + "const f = " + self.js_rutas() + r""";
+const correr = (naves, toks) => {
+  const body = pagina(naves.map(n => ruta([n, 'ZZ001A', 'BUQUE DOS', 'ZZ009Z'])));
   const r = f({toks});
   return [!!r.ok, body.querySelectorAll('button').map(b => b.clics)];
 };
@@ -2687,25 +2839,13 @@ console.log(JSON.stringify([
         ])
 
     def test_js_rutas_con_el_viaje_de_la_fila(self):
-        # Desde el encargo 66, si la fila trae viaje, la ruta que se pulsa lo trae también en su texto, como palabra
-        # entera (decisión de Marcelo, CICLO-viaje-y-origen.md); si la nave está y ninguna lo trae, no pulsa nada y dice
-        # cuántas rutas traen la nave (deLaNave). El 2026-10-14, CMA-CGM pulsó la primera con la nave, con otro viaje.
-        guion = "const f = " + self.js_rutas() + r""";
-const nodo = (tag, texto, hijos = []) => {
-  const n = {tagName: tag.toUpperCase(), texto, hijos, parentElement: null, offsetParent: {}, id: '', clics: 0,
-             getBoundingClientRect: () => ({width: 10, height: 10}), scrollIntoView() {}, click() { this.clics++; }};
-  Object.defineProperty(n, 'textContent', {get() { return [this.texto, ...this.hijos.map(h => h.textContent)].join(' '); }});
-  const todos = (x) => x.hijos.flatMap(h => [h, ...todos(h)]);
-  n.contains = (x) => x === n || todos(n).includes(x);
-  n.querySelectorAll = (sel) => todos(n).filter(e => sel.split(',').some(s => e.tagName === s.trim().toUpperCase()));
-  hijos.forEach(h => { h.parentElement = n; });
-  return n;
-};
-const ruta = ([nave, viaje]) => nodo('div', '', [nodo('p', 'Buque principal: ' + nave), nodo('p', 'Ref. de viaje: ' + viaje),
-                                                 nodo('p', 'Port Cut-off: 01/10/2026'), nodo('button', 'Seleccionar')]);
+        # Desde el encargo 66, si la fila trae viaje, la ruta que se pulsa lo trae también, como palabra entera (decisión
+        # de Marcelo, CICLO-viaje-y-origen.md); si la nave está y ninguna lo trae, no pulsa nada y dice cuántas rutas
+        # traen la nave (deLaNave). El 2026-10-14, CMA-CGM pulsó la primera con la nave, con otro viaje. Desde el
+        # encargo 67, el viaje del primer tramo (test_js_rutas_solo_el_primer_tramo).
+        guion = self.DOM_CMA + "const f = " + self.js_rutas() + r""";
 const correr = (rutas, toks, viaje) => {
-  const body = nodo('body', '', [nodo('div', '', rutas.map(ruta))]);
-  global.document = {querySelectorAll: (s) => body.querySelectorAll(s)};
+  const body = pagina(rutas.map(([nave, v]) => ruta([nave, v, 'BUQUE DOS', '0ZZ8ZZ8ZZ'])));
   const r = f(viaje === undefined ? {toks} : {toks, viaje});
   return [!!r.ok, r.deLaNave === undefined ? null : r.deLaNave, body.querySelectorAll('button').map(b => b.clics)];
 };
@@ -2722,6 +2862,61 @@ console.log(JSON.stringify([correr(tres, T, ['0ZZ2ZZ2ZZ']), correr(tres, T, []),
             [False, 2, [0, 0, 0]],          # como parte de otra palabra no es el viaje
             [False, 0, [0]],                # ni la nave
         ])
+
+    def test_js_rutas_solo_el_primer_tramo(self):
+        # Desde el encargo 67, la nave y el viaje se comparan solo con el primer tramo de la ruta, el que sale del POL:
+        # la nave que sale de Chile (decisión de Marcelo, CICLO-revisiones-msc-y-cma.md). Hasta ahí, con el texto de
+        # toda la tarjeta, que trae también la nave y el viaje del segundo tramo, después del transbordo. Una ruta sin
+        # ese tramo legible no calza, y se cuenta (ilegibles).
+        guion = self.DOM_CMA + "const f = " + self.js_rutas() + r""";
+const correr = (rutas, toks, viaje) => {
+  const body = pagina(rutas);
+  const r = f({toks, viaje});
+  return [!!r.ok, r.ok ? [r.vessel, r.voyage] : [r.deLaNave, r.ilegibles],
+          body.querySelectorAll('button').map(b => b.clics)];
+};
+const T = ['NAVE', 'PRUEBA'];
+console.log(JSON.stringify([
+  correr([ruta(['BUQUE UNO', 'ZZ001A', 'NAVE PRUEBA', 'ZZ002A']), ruta(['NAVE PRUEBA', 'ZZ003A', 'BUQUE DOS', 'ZZ004A'])],
+         T, []),
+  correr([ruta(['NAVE PRUEBA', 'ZZ003A', 'BUQUE DOS', 'ZZ002A'])], T, ['ZZ002A']),
+  correr([ruta(['BUQUE UNO', 'ZZ001A', 'BUQUE DOS', 'ZZ004A'], ['NAVE PRUEBA', 'ZZ003A'])], T, []),
+  correr([ruta(['NAVE PRUEBA', 'ZZ003A', 'BUQUE DOS', 'ZZ004A'], ['BUQUE UNO', 'ZZ001A'])], T, ['ZZ003A']),
+  correr([ruta(['NAVE PRUEBA', 'ZZ003A', 'BUQUE DOS', 'ZZ004A'], null, ['tramos']),
+          ruta(['NAVE PRUEBA', 'ZZ003A', 'BUQUE DOS', 'ZZ004A'], null, ['pol']),
+          ruta(['BUQUE UNO', 'ZZ003A', 'BUQUE DOS', 'ZZ004A'], ['NAVE PRUEBA', 'ZZ003A'], ['dos-buques'])], T, []),
+]));
+"""
+        self.assertEqual(correr_node(self, guion), [
+            # La nave de la fila, solo en el segundo tramo de la 1.ª: esa no; la 2.ª, que la trae en el primero.
+            [True, ["NAVE PRUEBA", "ZZ003A"], [0, 1]],
+            # El viaje de la fila, solo en el segundo tramo: ninguna, y una trae la nave.
+            [False, [1, 0], [0]],
+            # El resumen con la nave y el primer tramo con otra: no (en las 38 medidas, los dos dicen lo mismo).
+            [False, [0, 0], [0]],
+            # El resumen con otra nave y el primer tramo con la de la fila: sí.
+            [True, ["NAVE PRUEBA", "ZZ003A"], [1]],
+            # Sin los tramos, sin el POL en ellos, o con dos «Buque» en el primero: ilegibles, y ninguna calza.
+            [False, [0, 3], [0, 0, 0]],
+        ])
+
+    def test_itinerario_dice_las_rutas_que_no_pudo_leer(self):
+        # Si alguna ruta no traía su primer tramo legible, el motivo de la nave que no está lo dice, porque entonces «no
+        # disponible» puede no ser cierto (encargo 67).
+        botones = ("button:has-text('Seleccionar'), button:has-text('Select'), button:has-text('Deseleccionar'), "
+                   "button:has-text('Deselect')")
+        reg, _, _ = self.corrida()
+        donde = self.mod._hasta_donde_busque([], self.mod.CMA_SIN_ENLACE)
+        for ilegibles, cola in ((2, "; no pude leer el primer tramo (la nave que sale de Chile) de 2 de las 3 rutas"),
+                                (0, "")):
+            with self.subTest(ilegibles=ilegibles):
+                pagina = PaginaCma(visibles={botones}, js={"getCard": {"ok": False, "ofrecidas": ["Sin nombre"],
+                                                                       "deLaNave": 0, "ilegibles": ilegibles,
+                                                                       "cardsCount": 3}})
+                self.assertEqual(self.mod._cma_seleccionar_itinerario(pagina, {"fila": 7, "nave": "NAVE PRUEBA",
+                                                                               "viaje": ""}, reg),
+                                 (False, f"CMA: nave 'NAVE PRUEBA' no disponible en el portal: {donde}{cola} (rutas "
+                                         "ofrecidas: Sin nombre). No se seleccionó nave errónea."))
 
     def test_itinerario_sin_el_viaje_de_la_fila(self):
         # La nave está y, cargadas todas las rutas, ninguna trae el viaje de la fila: (None, motivo), y reservar_cma la
