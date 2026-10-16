@@ -50,10 +50,22 @@ LO QUE PASA, declarado, y cada cosa con su contador al lado del resultado:
   caracteres hexadecimales o más, con una letra): se apartan antes de buscar. Un hash de git da un número con forma de
   pedido de vez en cuando (NEPPEX lo midió), y el base64 forma palabras al azar.
 
-LO QUE NO VE (LÍMITES): un nombre de cliente sin forma jurídica (lo ve solo quien lo lee); una nave, un viaje, un
-contrato o una dirección postal; un número de reserva de CMA-CGM o de COSCO, que no tienen forma medida; uno de MAERSK
-que no empieza con 27 y va sin su etiqueta; un dato partido en dos líneas, o armado en el código (`"40" + str(…)`); un
-archivo binario, que solo se lee por las letras que trae sueltas.
+Antes de buscar, el texto pasa a su forma NFC (en NEPPEX, la expresión admite las marcas combinantes, una clase que el
+`re` de Python no tiene): así un nombre escrito con sus tildes aparte se ve igual. Y un archivo que no es UTF-8 se lee
+como Windows-1252.
+
+LO QUE NO VE (LÍMITES), como en NEPPEX y por lo que midieron las revisiones del encargo 72:
+- un nombre de cliente sin forma jurídica (lo ve solo quien lo lee), y uno que empieza con minúscula, o con la forma de
+  dos letras en minúscula;
+- el nombre y la forma en campos separados (un JSON), o unidos por un punto o un guion a otra palabra en minúscula;
+- una forma que no está en las listas;
+- una nave, un viaje, un contrato o una dirección postal; un número de reserva de CMA-CGM o de COSCO, que no tienen
+  forma medida; uno de MAERSK que no empieza con 27 y va sin su etiqueta; un teléfono de 9 cifras pegadas; una IPv6;
+- un nombre y apellido en mayúsculas, o con el apellido primero;
+- un dato pegado a otra palabra o a una tira de 200 caracteres o más, partido en dos líneas, o armado en el código
+  (`"40" + str(…)`);
+- un archivo en UTF-16 sin BOM.
+Una versión de cuatro partes, de una a tres cifras cada una, se lee como una IP: si es pública, frena, y se reescribe.
 
 DÓNDE CORRE:
 - En la suite (tests/test_guarda_datos.py), sobre lo que git versionaría: lo seguido y lo nuevo que .gitignore no
@@ -69,6 +81,7 @@ sobre un repo inventado con un caso de cada forma de entrar; y la lectura del í
 Los valores de los controles son inventados, y van armados por partes: escritos enteros, esta guarda los encontraría en
 este archivo.
 """
+import bisect
 import codecs
 import collections
 import contextlib
@@ -111,12 +124,18 @@ def clave(s):
 
 
 def permitido(tipo, texto, desde=None):
-    """¿Es `texto` un valor permitido de `tipo`? Con `desde`: ¿empieza ahí, en `texto`, uno permitido, entero?"""
+    """¿Es `texto` un valor permitido de `tipo`? Con `desde`: ¿empieza ahí, en `texto`, uno permitido, entero, y no
+    sigue una letra o una cifra pegada? Un correo se compara tal cual, sin caja: sin su puntuación sería otro correo."""
     for t, valor, _ in PERMITIDOS:
         if t != tipo:
             continue
+        if tipo == "correo":
+            if texto.lower() == valor.lower():
+                return True
+            continue
         trozo = texto if desde is None else texto[desde:desde + len(valor)]
-        if clave(trozo) == clave(valor):
+        pegado = desde is not None and texto[desde + len(valor):desde + len(valor) + 1].isalnum()
+        if clave(trozo) == clave(valor) and not pegado:
             return True
     return False
 
@@ -176,6 +195,10 @@ SEPARADORES = (
     (re.compile(r"[\"«»“”„()\[\]{}*_|;:=`]"), " "),
 )
 FAMILIA_PT = re.compile(r"^(?:SANS|SERIF|MONO)$")
+# Un ejemplo escrito de cada una de OTRAS, en su orden, para la prueba de cada forma (test_guarda_datos): escritos fuera
+# de estas marcas, serían su propio hallazgo.
+EJEMPLOS_DE_OTRAS = ("Sociedad Anónima", "SOCIEDAD ANÓNIMA", "Sociedad por Acciones", "S. de R.L. de C.V.", "Sdn Bhd",
+                     "Sp. z o.o.", "d.o.o.", "s.r.o.", "S.p.A.", "S.r.l.", "A/S", "S/A", "Co.", "Cía.", "Ltée", "Oy")
 # --- las formas que busca la razón social: hasta acá ---
 
 # --- los datos con forma de dato real ---------------------------------------------------------------------------------
@@ -185,10 +208,12 @@ DOMINIOS_RESERVADOS = re.compile(r"(?:^|\.)(?:example\.(?:com|net|org)|[\w-]+\.(
                                  r"^(?:example|test|invalid|localhost)$", re.I)
 CONTENEDOR = re.compile(r"(?<![A-Za-z0-9])([A-Z]{4})\s?(\d{6})\s?(\d)(?![A-Za-z0-9])")
 TELEFONO = re.compile(r"(?<!\d)\+?56[ .-]?\(?(?:9|2|[3-7]\d)\)?[ .-]?\d{3,4}[ .-]?\d{4}(?!\d)"
-                      r"|(?<!\d)(?<!\d[.,])\(?(?:9|2|[3-7]\d)\)?[ .-]\d{4}[ .-]\d{4}(?!\d)(?![.,]\d)")
+                      r"|(?<!\d)(?<!\d[.,])\(?0?(?:9|2|[3-7]\d)\)?[ .-]\d{4}[ .-]\d{4}(?!\d)(?![.,]\d)")
 RESERVA = re.compile(r"(?<![A-Za-z0-9])(?:SCLG|EBKG|SCLA)\s?(\d{8})(?!\d)")
 RESERVA_MAERSK = re.compile(r"(?<!\d)27(\d{7})(?!\d)")
-RESERVA_CON_ETIQUETA = re.compile(r"(?i:booking\s+(?:number|no\.?|n[°º]))\s*:?\s*(\d{9})(?!\d)")
+# Los espacios, con tope: con `\s*:?\s*`, una tira larga de espacios detrás de la etiqueta retrocedía sin fin (64.000,
+# 46 s; lo midió la revisión de seguridad del encargo 72).
+RESERVA_CON_ETIQUETA = re.compile(r"(?i:booking\s{1,20}(?:number|no\.?|n[°º]))(?:\s{0,20}:)?\s{0,20}(\d{9})(?!\d)")
 BL = re.compile(r"(?<![A-Za-z0-9])(?:MAEU|MEDU|MSCU|HLCU|CMDU|ONEY|COSU|EGLV|EVRG|YMLU|ZIMU|HDMU|SUDU|OOLU|APLU|WHLC|"
                 r"PCIU|SMLM|HAMU)([A-Z0-9]{6,12})(?![A-Za-z0-9])")
 PEDIDO = re.compile(r"(?<!\d)40(\d{6})(?!\d)")
@@ -201,6 +226,11 @@ PERSONA = re.compile(r"\b(?:Juan|José|Jose|Luis|Carlos|Jorge|Pedro|Diego|Franci
                      r"Gabriela|Lorena|Verónica|Veronica|Carmen|Rosa|Isabel|Sofía|Sofia|John|Michael|David|Robert|"
                      r"James|Mary|Jennifer|Linda|Kenji|Takashi|Hiroshi)\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}\b")
 BASE64 = re.compile(r"[A-Za-z0-9+/]{200,}={0,2}")
+# Los caracteres invisibles (los de ancho cero, las marcas de dirección, el guion suave y el BOM) pasan a un espacio,
+# del mismo largo: escondían un dato dentro de una palabra («S·.A.» con uno de ancho cero entre medio).
+INVISIBLES = {c: " " for c in (0x00AD, 0x200B, 0x200C, 0x200D, 0x200E, 0x200F, 0x2060, 0xFEFF)}
+# Lo que separa un correo de lo que va antes en el mismo «token»: para saber si es el usuario de una dirección.
+CORTES = " \t\n\"'<>()[],;"
 HASH = re.compile(r"(?<![0-9A-Za-z])[0-9A-Fa-f]{16,}(?![0-9A-Za-z])")
 LETRA_HEX = re.compile(r"[A-Fa-f]")
 BOMS = ((codecs.BOM_UTF32_LE, "utf-32"), (codecs.BOM_UTF32_BE, "utf-32"),   # antes que UTF-16: su BOM empieza igual
@@ -292,12 +322,23 @@ def _preparar(t):
     return t
 
 
-def _linea(t, i):
-    return t.count("\n", 0, i) + 1
+class _Lineas:
+    """La línea (1..n) de una posición de un texto. Los saltos de línea se cuentan una vez, con el primer hallazgo:
+    contar desde el principio en cada uno hacía la revisión cuadrática (60.000 hallazgos en 1,4 MB, 46 s; lo midió la
+    revisión de seguridad del encargo 72)."""
+
+    def __init__(self, t):
+        self.t, self.saltos = t, None
+
+    def __call__(self, i):
+        if self.saltos is None:
+            self.saltos = [m.start() for m in re.finditer("\n", self.t)]
+        return bisect.bisect_left(self.saltos, i) + 1
 
 
 def _razones(t, archivo, cuenta):
     p = _preparar(t)
+    linea = _Lineas(p)
 
     def una(m, nombre, forma, delante):
         palabras = nombre.split()
@@ -306,7 +347,9 @@ def _razones(t, archivo, cuenta):
             cuenta.saltos["tipografía PT"] += 1
         elif len(nombre) == 1 and nombre.isalpha():
             cuenta.saltos["plantilla de una letra"] += 1
-        elif all(len(w) == 1 for w in clave(m.group(0)).split()):
+        elif all(len(w) == 1 for w in clave(m.group(0)).split()) and re.match(r"\s[^\W\d_](?![^\W_])", p[m.end():]):
+            # Una palabra escrita con sus letras separadas, que sigue después de la «forma»: el logo del panel. Unas
+            # iniciales que terminan en la forma («J&J», o tres iniciales y la forma) sí cuentan.
             cuenta.saltos["letras sueltas"] += 1
         elif not delante and re.search(r"[,/]", p[m.end(1):m.start(2)]) and all(
                 FORMA_SOLA.fullmatch(w) for w in palabras):
@@ -314,7 +357,7 @@ def _razones(t, archivo, cuenta):
         elif permitido("razón social", m.group(0)):
             cuenta.permitidos["razón social"] += 1
         else:
-            cuenta.hallazgos.append(("razón social", archivo, _linea(p, m.start()), " ".join(forma.split())))
+            cuenta.hallazgos.append(("razón social", archivo, linea(m.start()), " ".join(forma.split())))
     for m in RAZON_DETRAS.finditer(p):
         una(m, m.group(1), m.group(2), False)
     for m in RAZON_DELANTE.finditer(p):
@@ -322,8 +365,10 @@ def _razones(t, archivo, cuenta):
 
 
 def _datos(t, archivo, cuenta):
+    linea = _Lineas(t)
+
     def hallazgo(tipo, m):
-        cuenta.hallazgos.append((tipo, archivo, _linea(t, m.start()), ""))
+        cuenta.hallazgos.append((tipo, archivo, linea(m.start()), ""))
 
     def numero(tipo, m, cifras):
         if evidente(cifras):
@@ -336,8 +381,11 @@ def _datos(t, archivo, cuenta):
         if cuerpo and dv_rut(cuerpo) == m.group(4).upper():
             numero("RUT", m, cuerpo)
     for m in CORREO.finditer(t):
-        antes = t[max(0, m.start() - 7):m.start()]
-        if antes.endswith(":") and not antes.lower().endswith("mailto:"):
+        # El usuario y la clave de una dirección («https://usuario:clave@…»), solo si lo que va antes, en el mismo
+        # token, trae «://». Hasta la revisión de seguridad del encargo 72 bastaba un «:» delante, y un correo escrito
+        # como «contacto:alguien@…» pasaba.
+        inicio = max(t.rfind(c, 0, m.start()) for c in CORTES) + 1
+        if "://" in t[inicio:m.start()]:
             cuenta.saltos["usuario y clave de una dirección"] += 1
         elif DOMINIOS_RESERVADOS.search(m.group(2)):
             cuenta.saltos["correo de un dominio reservado"] += 1
@@ -381,7 +429,7 @@ def _datos(t, archivo, cuenta):
 
 def revisar_texto(texto, archivo, cuenta):
     """Busca en `texto` y anota en `cuenta`. Es lo único que mira el contenido: la suite y el hook pasan por acá."""
-    t = unicodedata.normalize("NFC", texto)
+    t = unicodedata.normalize("NFC", texto).translate(INVISIBLES)
     t, n = BASE64.subn(_blanco, t)
     if n:
         cuenta.saltos["tira en base64"] += n
@@ -398,11 +446,18 @@ def revisar_texto(texto, archivo, cuenta):
 
 
 def _leer(datos, archivo, cuenta, nombre=None):
-    """Los bytes de un archivo: texto (UTF-8, o UTF-16 o UTF-32 con BOM) o, si trae NUL, binario descartado, del que
-    igual se leen las letras que trae sueltas. `nombre` es como se informa (la ruta, o la ruta y «(índice)»)."""
+    """Los bytes de un archivo: texto (UTF-8, o Windows-1252 si no es UTF-8, o UTF-16 o UTF-32 con BOM) o, si trae NUL,
+    binario, que se lee por las letras que trae sueltas y frena el commit. `nombre` es como se informa (la ruta, o la
+    ruta y «(índice)»)."""
     nombre = nombre or archivo
     if b"\0" not in datos:
-        texto = datos.decode("utf-8", "replace")
+        try:
+            texto = datos.decode("utf-8")
+        except UnicodeDecodeError:
+            # Leído como UTF-8 con reemplazos, una «ñ» de Windows-1252 partía la palabra, y la razón social no se veía
+            # (lo midió la revisión de seguridad del encargo 72).
+            texto = datos.decode("cp1252", "replace")
+            cuenta.saltos["leído como Windows-1252"] += 1
     else:
         texto = None
         for bom, codificacion in BOMS:
@@ -421,6 +476,25 @@ def _leer(datos, archivo, cuenta, nombre=None):
         cuenta.hallazgos[antes:] = [(t, nombre, n, d) for t, _, n, d in cuenta.hallazgos[antes:]]
 
 
+def _matar_arbol(p):
+    """Al vencer el plazo, git y todo lo que lanzó. Desde PowerShell o cmd, `git` es un lanzador que corre el git real
+    como hijo, y Popen.kill() mata solo al lanzador; y un hijo de git con las tuberías abiertas dejaba esperando a
+    communicate() sin plazo (300 s con un plazo de 4: lo midió la revisión de seguridad del encargo 72). Por eso, el
+    taskkill de System32 con su árbol, y la última lectura también con plazo (ya no espera a un hijo que quedó vivo)."""
+    if os.name == "nt":
+        taskkill = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe")
+        try:
+            POPEN([taskkill, "/T", "/F", "/PID", str(p.pid)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL).wait(timeout=30)
+        except (OSError, subprocess.TimeoutExpired):
+            pass                                   # queda el kill de abajo
+    p.kill()
+    try:
+        p.communicate(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass                                       # el error que sigue lo dice; no se espera más
+
+
 # --- lo que versiona git ----------------------------------------------------------------------------------------------
 def _git(raiz, *argumentos, entrada=None, indice=None):
     # Sin las GIT_* heredadas: con un GIT_DIR (un hook de git lo pone), git leería ese repo y no el de `raiz`. El índice
@@ -434,8 +508,7 @@ def _git(raiz, *argumentos, entrada=None, indice=None):
     try:
         salida, error = p.communicate(entrada, timeout=PLAZO_GIT)
     except subprocess.TimeoutExpired:
-        p.kill()
-        p.communicate()
+        _matar_arbol(p)
         raise RuntimeError(f"git {argumentos[0]}: no terminó en {PLAZO_GIT} s")
     if p.returncode:
         raise RuntimeError(f"git {argumentos[0]}: {error.decode('utf-8', 'replace').strip()}")
@@ -548,8 +621,22 @@ def por_tipo(cuenta):
 
 
 def mostrar(nombre):
-    """Un nombre de archivo para mostrar: sin sus tiras de 5 cifras o más, que podrían ser el dato."""
-    return re.sub(r"\d{5,}", "<cifras>", nombre)
+    """Un nombre de archivo para mostrar, sin el dato que pueda traer. Si la guarda ve un dato en la ruta, queda su
+    carpeta y «‹un nombre con un dato›» (o, si el dato está en la carpeta, «‹una ruta con un dato›»); si no, la ruta,
+    sin sus tiras de 5 cifras o más. Lo de «(nombre)» y «(índice)» se conserva. Hasta la revisión de seguridad del
+    encargo 72, un nombre con una razón social o un correo salía entero en el informe, en el hook y en la suite."""
+    m = re.fullmatch(r"(.*?)((?: \((?:nombre|índice)\))*)", nombre, re.S)
+    ruta, sufijo = m.group(1), m.group(2)
+
+    def con_dato(texto):
+        c = Cuenta()
+        revisar_texto(texto, "nombre", c)
+        return bool(c.hallazgos)
+    if con_dato(ruta):
+        carpeta = ruta.rsplit("/", 1)[0] if "/" in ruta else ""
+        ruta = "‹una ruta con un dato›" if carpeta and con_dato(carpeta) else \
+            (carpeta + "/" if carpeta else "") + "‹un nombre con un dato›"
+    return re.sub(r"\d{5,}", "<cifras>", ruta) + sufijo
 
 
 def informe(hallazgos, tope=30):
@@ -579,31 +666,39 @@ def muestras():
         ("font-family: 'PT Sans', sans-serif; /* PT Sans trae dos pesos */", "tipografía PT"),
         ("X " + sa, "plantilla de una letra"),
         ('text="A Q U A S H I E L D"', "letras sueltas"),
+        ("A B C " + sa, "razón social"),                          # unas iniciales que terminan en la forma: cuentan
+        ("Pesquera Inventada" + chr(0x200B) + sa, "razón social"),  # un invisible entre el nombre y la forma
         ("formas (" + "SpA, Ltda., Inc." + ")", "lista de formas jurídicas"),
         ('NOMBRE = "' + propia + '"', "permitido"),
         ("su cliente " + propia + " va en el formulario", "permitido"),
         ("return a.s+n.v", "nada"),
         ("rut " + rut, "RUT"),
         ("alguien" + "@" + "dominio-real.cl", "correo"),
+        ("contacto:" + "alguien" + "@" + "dominio-real.cl", "correo"),     # «:» delante, sin «://»: es un correo
+        (PERMITIDOS[3][1].replace("+", "."), "correo"),                   # el del dueño, con otra puntuación
         ("alguien" + "@" + "dominio.example.com", "correo de un dominio reservado"),
         ("https://" + "usuario:clave" + "@portal.cl/x", "usuario y clave de una dirección"),
         (PERMITIDOS[3][1], "permitido"),
         ("CSQU" + "305438" + "3", "contenedor"),                   # el ejemplo de la norma ISO 6346
         ("+56 9 " + "8765" + " 4312", "teléfono"),
         ("(2) " + "2654" + " 3210", "teléfono"),
+        ("(02) " + "2654" + " 3210", "teléfono"),
         ("SCLG" + "2794" + "6031", "número de reserva"),
         ("bkg " + "27" + "3958164", "número de reserva"),
         ("Booking number: " + "6213" + "48957", "número de reserva"),
         ("EBKG" + "1234" + "5678", "número inventado a la vista"),
+        ("EBKG" + "7777" + "7777", "número inventado a la vista"),
         ("bkg " + "27" + "7654321", "número inventado a la vista"),
         ("MAEU" + "246810" + "357", "BL"),
         ("pedido " + "40" + "871236", "pedido"),
         ("desde " + "200." + "45.17.9", "IP pública"),
         ("desde " + "192.0." + "2.17", "IP privada, local o de documentación"),
         ("Chrome " + "145.0." + "7632.6", "nada"),
+        ("desde " + "300.1." + "2.3", "nada"),                     # parece una IP, pero 300 no es un octeto
         ("Juan" + " Inventado", "nombre y apellido"),
         ("Marcelo" + " Inventado", "nombre y apellido"),           # el nombre de pila del dueño, con otro apellido
         (PERMITIDOS[1][1] + " <correo>", "permitido"),
+        (PERMITIDOS[1][1] + "zz", "nombre y apellido"),           # el del dueño, con otra palabra pegada
         ("© " + PERMITIDOS[2][1], "permitido"),
         ("commit " + "9f3a" + "c0e4d1b2a3f4e5d6", "hash"),
         ("x = '" + "QUJD" * 60 + "'", "tira en base64"),
@@ -678,6 +773,7 @@ def control(tmp):
         "numero.txt": b"reserva " + numero.encode(),
         "limpio.md": b"Nada que ver aqui.",
         "utf16.txt": codecs.BOM_UTF16_LE + ("dato " + d.decode()).encode("utf-16-le"),
+        "latin.txt": ("Lo pidió Pesquera Ñandú " + "S" + chr(46) + "A" + chr(46)).encode("cp1252"),
         "fuente.bin": b"\0\1" + d,
         "nombre " + numero + ".md": b"",
         "indice.md": d,
@@ -715,7 +811,8 @@ def control(tmp):
     }
     esperado = {
         "hallazgos": sorted([("texto.md", "razón social"), ("numero.txt", "número de reserva"),
-                             ("utf16.txt", "razón social"), ("fuente.bin", "razón social"),
+                             ("utf16.txt", "razón social"), ("latin.txt", "razón social"),
+                             ("fuente.bin", "razón social"),
                              (mostrar("nombre " + numero + ".md (nombre)"), "número de reserva"),
                              ("indice.md (índice)", "razón social"), ("borrado.md (índice)", "razón social"),
                              ("nuevo.md", "razón social")]),
@@ -757,13 +854,15 @@ def control_indice(tmp):
         raise RuntimeError("control positivo del índice: no lee lo que se va a commitear y no audita. Se esperaba "
                            f"{esperado} y salió {obtenido}")
     if not veredicto(vistas["normal"])[0] or not veredicto(Cuenta(descartados=[("roto.md", SIN_OBJETO)]))[0] \
-            or veredicto(Cuenta())[0]:
+            or not veredicto(Cuenta(descartados=[("planilla.xlsx", "binario")]))[0] or veredicto(Cuenta())[0]:
         raise RuntimeError("control positivo del índice: el veredicto del hook no frena lo que tiene que frenar")
     return "índice: el propio, uno aparte y el veredicto"
 
 
 def veredicto(cuenta):
-    """(frena, motivo) del hook: frena un hallazgo y una entrada que no pudo leer."""
+    """(frena, motivo) del hook: frena un hallazgo, una entrada que no pudo leer y un binario. Un binario (una planilla
+    comprimida, un PDF, una imagen) puede traer un dato que la guarda no lee: no entra al repo público. Hasta la
+    revisión de seguridad del encargo 72, solo se contaba."""
     if cuenta.hallazgos:
         return True, ("Lo que vas a commitear trae datos con forma de dato real, y el repo es público. Tipo, archivo y "
                       "línea, nunca el valor: " + informe(cuenta.hallazgos)
@@ -772,6 +871,10 @@ def veredicto(cuenta):
     if ilegibles:
         return True, (f"No pude leer {len(ilegibles)} entrada(s) de lo que vas a commitear "
                       f"({', '.join(mostrar(n) for n in ilegibles)}), y lo que no se lee no se da por limpio")
+    binarios = [n for n, m in cuenta.descartados if m == "binario"]
+    if binarios:
+        return True, (f"Lo que vas a commitear trae {len(binarios)} archivo(s) binario(s) "
+                      f"({', '.join(mostrar(n) for n in binarios)}): la guarda no los puede leer, y el repo es público")
     return False, ""
 
 

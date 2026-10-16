@@ -91,7 +91,9 @@ HS. El nombre de Marcelo queda en «decisión de Marcelo» y, completo, en el pi
 - **Qué busca:** una razón social (un nombre con una forma jurídica); un RUT o un contenedor con su dígito bien
   calculado; un correo; un teléfono chileno; un número de reserva con la forma con que el programa lo lee (SCLG, EBKG o
   SCLA y 8 cifras, o 9 cifras que empiezan con 27 o que van detrás de «Booking number»); un BL; un pedido de AquaChile;
-  una IP pública; y un nombre con su apellido. Dice el tipo, el archivo y la línea, nunca el valor.
+  una IP pública; y un nombre con su apellido. Dice el tipo, el archivo y la línea, nunca el valor: un archivo cuyo
+  nombre trae un dato sale como «‹un nombre con un dato›». Frena también un archivo binario (una planilla comprimida,
+  un PDF, una imagen), que no puede leer.
 - **Lo que pasa, por valor exacto y declarado en la guarda (`PERMITIDOS`; la suite fija la lista):** «AQUACHILE S.A.»,
   como el programa la escribe en los formularios, y el nombre del dueño (como autor de los commits, y completo, como en
   el pie del panel) y su correo noreply. Un nombre ajeno escrito delante del propio frena, y se reescribe el texto. Un
@@ -103,8 +105,12 @@ HS. El nombre de Marcelo queda en «decisión de Marcelo» y, completo, en el pi
   el de un merge). **El hook no viaja en el clon:** se activa una vez por clon, con
   `git -C "C:\dev\Agendamiento Reservas" config core.hooksPath .githooks` (en este equipo, desde el encargo 72).
   Saltearlo a propósito: `git commit --no-verify`. A mano: `python tests/guarda_datos.py`.
-- **Lo que no ve:** un nombre de cliente sin forma jurídica, una nave, un viaje, un contrato, una dirección postal, y un
-  dato partido en dos líneas o armado en el código. Eso sigue siendo de quien escribe.
+  - `core.hooksPath` es relativo al árbol abierto: en una rama o un worktree sin `.githooks/` (como `historial-local`),
+    el hook no corre, y git no avisa. Y la guarda que corre es la del árbol abierto.
+  - La prueba de lo versionado necesita un repo de git de verdad: en una copia sacada con `git archive`, cae.
+- **Lo que no ve:** un nombre de cliente sin forma jurídica o en minúscula, una nave, un viaje, un contrato, una
+  dirección postal, y un dato partido en dos líneas, pegado a otra palabra o armado en el código (la lista entera, en el
+  docstring de la guarda). Eso sigue siendo de quien escribe.
 - Hasta el encargo 72 nada lo vigilaba: la auditoría del 2026-10-16 encontró dos razones sociales en las pruebas del
   buscador de MAERSK (`test_clics`), publicadas desde el 01-10, y pasaron a «PARTE UNO» y «PARTE DOS». **La historia
   publicada todavía las trae:** sacarlas es reescribir la historia del repo público, y eso lo decide Marcelo.
@@ -835,7 +841,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 845 pruebas al 2026-10-16 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 853 pruebas al 2026-10-16 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 

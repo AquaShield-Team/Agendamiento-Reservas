@@ -17,6 +17,10 @@
 #
 # Para saltearlo a proposito: `git commit --no-verify`.
 #
+# LIMITE, declarado (medido en NEPPEX y por la revision de codigo del encargo 72): core.hooksPath es relativo al ARBOL
+# ABIERTO. En una rama o un worktree sin .githooks/ (historial-local, por ejemplo), el hook no existe ahi y git NO
+# AVISA: el commit sale sin revisar. Y la guarda que corre es la del arbol abierto.
+#
 # Lo vigila tests/test_guarda_datos.py (TestElHook), con un commit de verdad en un repo inventado.
 #
 # ASCII a proposito: este archivo lo lee /bin/sh de Git Bash.
@@ -29,7 +33,8 @@ if [ ! -f "$guarda" ]; then
     exit 1
 fi
 if ! command -v python >/dev/null 2>&1; then
-    echo "pre-commit: no hay 'python' en el PATH: no puedo revisar este commit. Si es a proposito: git commit --no-verify" >&2
+    echo "pre-commit: no hay 'python' en el PATH: no puedo revisar este commit." >&2
+    echo "pre-commit: si es a proposito: git commit --no-verify" >&2
     exit 1
 fi
-exec python "$guarda" --pre-commit
+exec python -I "$guarda" --pre-commit

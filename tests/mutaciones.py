@@ -8571,14 +8571,16 @@ MUTACIONES += [
     dict(id="e72-sin-razones-detras", archivo=GUARDA, pruebas=[GD_MUESTRAS, GD_VALOR],
          viejo="    for m in RAZON_DETRAS.finditer(p):\n", nuevo='    for m in RAZON_DETRAS.finditer(""):\n'),
     dict(id="e72-permitido-por-sufijo", archivo=GUARDA, pruebas=[GD_MUESTRAS],
-         viejo="        if clave(trozo) == clave(valor):\n", nuevo="        if clave(trozo).endswith(clave(valor)):\n"),
+         viejo="        if clave(trozo) == clave(valor) and not pegado:\n",
+         nuevo="        if clave(trozo).endswith(clave(valor)) and not pegado:\n"),
     dict(id="e72-propia-tras-un-espacio", archivo=GUARDA, pruebas=[GD_MUESTRAS],
          viejo="rx = re.compile(r\"(?<![\\w\\s.&'’-])\" + re.escape(valor)",
          nuevo="rx = re.compile(r\"(?<![\\w.&'’-])\" + re.escape(valor)"),
     dict(id="e72-todo-numero-inventado", archivo=GUARDA, pruebas=[GD_MUESTRAS, GD_VALOR],
          viejo="        if evidente(cifras):\n", nuevo="        if True:\n"),
     dict(id="e72-sin-letras-sueltas", archivo=GUARDA, pruebas=[GD_MUESTRAS, GD_VERSIONADO],
-         viejo="        elif all(len(w) == 1 for w in clave(m.group(0)).split()):\n", nuevo="        elif False:\n"),
+         viejo="        elif all(len(w) == 1 for w in clave(m.group(0)).split()) and re.match(",
+         nuevo="        elif False and re.match("),
     dict(id="e72-lista-sin-coma", archivo=GUARDA, pruebas=[GD_MUESTRAS],
          viejo='        elif not delante and re.search(r"[,/]", p[m.end(1):m.start(2)]) and all(\n',
          nuevo="        elif not delante and all(\n"),
@@ -8588,7 +8590,8 @@ MUTACIONES += [
          viejo="len(palabras) > 1 and palabras[1][:1].isupper()):",
          nuevo="any(w[:1].isupper() for w in palabras[1:])):"),
     dict(id="e72-sin-apartar-sus-formas", archivo=GUARDA, pruebas=[GD_VERSIONADO],
-         viejo="    if archivo != PROPIO:\n        return t\n    lineas = t.split", nuevo="    return t\n    lineas = t.split"),
+         viejo="    if archivo != PROPIO:\n        return t\n    lineas = t.split",
+         nuevo="    return t\n    lineas = t.split"),
     # Una razón social inventada en el programa: la suite la ve en la copia del censo.
     dict(id="e72-razon-social-en-el-programa", pruebas=[GD_VERSIONADO],
          viejo="def _mk_paso_actual(page):\n",
@@ -8598,8 +8601,9 @@ MUTACIONES += [
          viejo="PERMITIDOS = (\n", nuevo='PERMITIDOS = (\n    ("correo", "alguien" + "@" + "otro.cl", "x"),\n'),
     # El nombre de un archivo, con sus cifras.
     dict(id="e72-muestra-las-cifras", archivo=GUARDA, pruebas=[GD_VALOR],
-         viejo='    return re.sub(r"\\d{5,}", "<cifras>", nombre)\n', nuevo="    return nombre\n"),
-    # La lectura: sin lo que el índice guarda distinto del árbol, sin los nombres, siguiendo una unión que sale del repo.
+         viejo='    return re.sub(r"\\d{5,}", "<cifras>", ruta) + sufijo\n', nuevo="    return ruta + sufijo\n"),
+    # La lectura: sin lo que el índice guarda distinto del árbol, sin los nombres, siguiendo una unión que sale del
+    # repo.
     dict(id="e72-sin-el-indice-distinto", archivo=GUARDA, pruebas=[GD_REPO],
          viejo="    for rel, datos in _del_indice(raiz).items():\n", nuevo="    for rel, datos in {}.items():\n"),
     dict(id="e72-sin-los-nombres", archivo=GUARDA, pruebas=[GD_REPO],
@@ -8613,15 +8617,90 @@ MUTACIONES += [
          nuevo='    for e in _git(raiz, "ls-files", "-s", "-z").split(b"\\0"):\n'),
     dict(id="e72-ilegible-por-limpio", archivo=GUARDA, pruebas=[GD_INDICE],
          viejo="    if ilegibles:\n        return True, (", nuevo="    if False:\n        return True, ("),
-    # El hook: no corre la guarda (deja pasar, o frena todo), no lee el índice que git le pasa, el merge sin guarda, y un
-    # CR que /bin/sh no lee.
+    # El hook: no corre la guarda (deja pasar, o frena todo), no lee el índice que git le pasa, el merge sin guarda, y
+    # un CR que /bin/sh no lee.
     dict(id="e72-hook-deja-pasar", archivo=HOOK, pruebas=[GD_FRENA, GD_LEE_INDICE, GD_MERGE],
-         viejo='exec python "$guarda" --pre-commit\n', nuevo="exit 0\n"),
+         viejo='exec python -I "$guarda" --pre-commit\n', nuevo="exit 0\n"),
     dict(id="e72-hook-frena-todo", archivo=HOOK, pruebas=[GD_LIMPIO, GD_LEE_INDICE],
-         viejo='exec python "$guarda" --pre-commit\n', nuevo="exit 1\n"),
+         viejo='exec python -I "$guarda" --pre-commit\n', nuevo="exit 1\n"),
     dict(id="e72-hook-sin-el-indice-de-git", archivo=GUARDA, pruebas=[GD_LEE_INDICE],
          viejo='    puesto = os.environ.get("GIT_INDEX_FILE")\n', nuevo="    puesto = None\n"),
     dict(id="e72-merge-sin-guarda", archivo=HOOK_MERGE, pruebas=[GD_MERGE],
          viejo='exec sh "$(dirname "$0")/pre-commit"\n', nuevo="exit 0\n"),
     dict(id="e72-hook-con-cr", archivo=HOOK, pruebas=[GD_LF], viejo="#!/bin/sh\n", nuevo="#!/bin/sh\r\n"),
+]
+
+# Lo de la revisión de seguridad del encargo 72: el nombre de un archivo con un dato, los binarios, el correo detrás de
+# «:», el plazo de git, la expresión que retrocedía, los invisibles, Windows-1252, las iniciales y los permitidos
+# exactos.
+GD_PLAZO = GD + "TestLimites.test_el_plazo_de_git_se_cumple"
+GD_TIRA = GD + "TestLimites.test_un_archivo_hecho_para_colgarla_no_la_cuelga"
+
+MUTACIONES += [
+    dict(id="e72-nombre-con-dato-a-la-vista", archivo=GUARDA, pruebas=[GD_VALOR],
+         viejo="    if con_dato(ruta):\n", nuevo="    if False:\n"),
+    dict(id="e72-binario-pasa", archivo=GUARDA, pruebas=[GD_INDICE],
+         viejo="    if binarios:\n        return True, (", nuevo="    if False:\n        return True, ("),
+    dict(id="e72-correo-tras-dos-puntos", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo='        if "://" in t[inicio:m.start()]:\n', nuevo='        if t[:m.start()].endswith(":"):\n'),
+    dict(id="e72-git-sin-matar-el-arbol", archivo=GUARDA, pruebas=[GD_PLAZO],
+         viejo='    if os.name == "nt":\n        taskkill = ', nuevo='    if False:\n        taskkill = '),
+    dict(id="e72-git-espera-sin-plazo", archivo=GUARDA, pruebas=[GD_PLAZO],
+         viejo="        p.communicate(timeout=10)\n", nuevo="        p.communicate()\n"),
+    dict(id="e72-etiqueta-sin-tope", archivo=GUARDA, pruebas=[GD_TIRA],
+         viejo='r"(?i:booking\\s{1,20}(?:number|no\\.?|n[°º]))(?:\\s{0,20}:)?\\s{0,20}(\\d{9})(?!\\d)"',
+         nuevo='r"(?i:booking\\s+(?:number|no\\.?|n[°º]))\\s*:?\\s*(\\d{9})(?!\\d)"'),
+    dict(id="e72-sin-quitar-invisibles", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo='unicodedata.normalize("NFC", texto).translate(INVISIBLES)',
+         nuevo='unicodedata.normalize("NFC", texto)'),
+    dict(id="e72-latin-con-reemplazos", archivo=GUARDA, pruebas=[GD_REPO],
+         viejo='            texto = datos.decode("cp1252", "replace")\n',
+         nuevo='            texto = datos.decode("utf-8", "replace")\n'),
+    dict(id="e72-iniciales-como-letras-sueltas", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo=' and re.match(r"\\s[^\\W\\d_](?![^\\W_])", p[m.end():]):\n', nuevo=":\n"),
+    dict(id="e72-permitido-con-algo-pegado", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo="        if clave(trozo) == clave(valor) and not pegado:\n",
+         nuevo="        if clave(trozo) == clave(valor):\n"),
+    dict(id="e72-correo-sin-su-puntuacion", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo="            if texto.lower() == valor.lower():\n",
+         nuevo="            if clave(texto) == clave(valor):\n"),
+]
+
+# Lo de la revisión de código del encargo 72: los dígitos verificadores contra un cálculo aparte, cada forma y cada
+# separador, la huella del bloque de las formas, la falla cerrada del hook y de la guarda, y el .gitignore.
+GD_DV = GD + "TestDetector.test_los_digitos_verificadores"
+GD_FORMAS = GD + "TestDetector.test_cada_forma_y_cada_separador"
+GD_HUELLA = GD + "TestDetector.test_las_formas_de_la_guarda_estan_fijas"
+GD_SIN_GUARDA = GD + "TestElHook.test_sin_la_guarda_o_sin_python_frena"
+GD_SIN_INDICE = GD + "TestElHook.test_sin_indice_o_con_el_detector_roto_frena"
+GD_GITIGNORE = GD + "TestElHook.test_gitignore_versiona_los_hooks"
+
+MUTACIONES += [
+    dict(id="e72-rut-con-otros-pesos", archivo=GUARDA, pruebas=[GD_DV],
+         viejo="        m = 2 if m == 7 else m + 1\n", nuevo="        m = 2 if m == 8 else m + 1\n"),
+    dict(id="e72-iso-sin-saltar-los-once", archivo=GUARDA, pruebas=[GD_DV],
+         viejo="        if n % 11 == 0:\n", nuevo="        if n % 10 == 0:\n"),
+    dict(id="e72-abreviatura-solo-en-mayusculas", archivo=GUARDA, pruebas=[GD_FORMAS],
+         viejo='    return "(?:" + r"\\.?\\s?".join(letras) + "|" + _libre(letras) + r")\\.?"\n',
+         nuevo='    return "(?:" + r"\\.?\\s?".join(letras) + r")\\.?"\n'),
+    dict(id="e72-sin-el-separador-de-porcentaje", archivo=GUARDA, pruebas=[GD_FORMAS],
+         viejo='    (re.compile(r"%[0-9A-Fa-f]{2}"), " "),\n', nuevo=""),
+    dict(id="e72-delante-solo-la-primera", archivo=GUARDA, pruebas=[GD_FORMAS],
+         viejo='"|".join(FORMAS_DELANTE) + r")\\s{1,8}(" + NOMBRE + ")")',
+         nuevo='"|".join(FORMAS_DELANTE[:1]) + r")\\s{1,8}(" + NOMBRE + ")")'),
+    dict(id="e72-otra-cosa-en-las-formas", archivo=GUARDA, pruebas=[GD_HUELLA],
+         viejo="RESTO = r\"[\\w&'’]{0,59}\\.?\"", nuevo="RESTO = r\"[\\w&'’]{0,58}\\.?\""),
+    dict(id="e72-marcas-sin-falla-cerrada", archivo=GUARDA, pruebas=[GD_HUELLA],
+         viejo="    if len(desde) != 1 or len(hasta) != 1 or desde[0] > hasta[0]:\n", nuevo="    if not desde:\n"),
+    dict(id="e72-hook-sin-mirar-python", archivo=HOOK, pruebas=[GD_SIN_GUARDA],
+         viejo="if ! command -v python >/dev/null 2>&1; then\n", nuevo="if false; then\n"),
+    dict(id="e72-hook-sin-mirar-la-guarda", archivo=HOOK, pruebas=[GD_SIN_GUARDA],
+         viejo='if [ ! -f "$guarda" ]; then\n', nuevo="if false; then\n"),
+    dict(id="e72-indice-que-no-existe", archivo=GUARDA, pruebas=[GD_SIN_INDICE],
+         viejo="    if not indice.is_file():\n", nuevo="    if False:\n"),
+    dict(id="e72-detector-roto-pasa", archivo=GUARDA, pruebas=[GD_SIN_INDICE],
+         viejo='    if rotas:\n        print(f"pre-commit: FRENADO.',
+         nuevo='    if False:\n        print(f"pre-commit: FRENADO.'),
+    dict(id="e72-gitignore-sin-los-hooks", archivo=".gitignore", pruebas=[GD_GITIGNORE],
+         viejo="!/.githooks/\n", nuevo=""),
 ]
