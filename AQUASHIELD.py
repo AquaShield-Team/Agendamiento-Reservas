@@ -8972,7 +8972,7 @@ def _mk_genset(page, reg, det, valor="No"):
 
 def _mk_paso_actual(page):
     """Nombre del paso vigente según el indicador del asistente. Es el único
-    marcador fiable: la URL no cambia (es una SPA) y los nombres de TODOS los
+    marcador fiable: la URL no cambia (es una aplicación de una sola página) y los nombres de TODOS los
     pasos están siempre en pantalla, así que buscarlos por texto da falsos
     positivos."""
     try:

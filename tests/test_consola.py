@@ -155,7 +155,7 @@ class TestEjecutarReservas(ConPlanilla):
         estados = {5: ("NO ENVIADA", "ONE: no se pulsó «Submit» porque no estaba en la pantalla. La reserva no se envió."),
                    6: ("ENVIADA – REVISAR EN PORTAL", "ONE: se pulsó «Submit», pero la pantalla no mostró la "
                                                       "confirmación con el número de reserva."),
-                   7: ("EMITIDA", "ONE emitida con éxito (Booking: SCLG10000004)"),
+                   7: ("EMITIDA", "ONE emitida con éxito (Booking: SCLG45678901)"),
                    10: ("OK-EJEMPLO", "armada falsa")}
         self.poner_nave("ONE", 10, "NAVE PRUEBA TRECE")      # «NAVE POR COMPLETAR» ya no va al portal (CICLO-solo-la-nave-pedida.md)
         self.poner_nave("ONE", 7, "NAVE PRUEBA CATORCE")     # la columna F ya no es la nave (CICLO-cola-seis-items.md)

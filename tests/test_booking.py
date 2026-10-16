@@ -21,20 +21,20 @@ class Marco(P):
 class TestNumeroTrasEnvio(soporte.CasoAQ):
     """numero_tras_envio: la forma medida en las capturas, leída en la página, sus
     marcos y sus raíces shadow, con reintentos. Números inventados con la forma medida."""
-    CONFIRMA_ONE = "Your booking has been successfully submitted!\nBooking Reference No.\nSCLG10000002\n"
+    CONFIRMA_ONE = "Your booking has been successfully submitted!\nBooking Reference No.\nSCLG23456789\n"
 
     def num(self, pagina, nav="one"):
         return self.mod.numero_tras_envio(pagina, nav)
 
     def test_forma_medida_de_one(self):
-        casos = {self.CONFIRMA_ONE: "SCLG10000002",
-                 "Booking Reference No.: SCLG10000003": "SCLG10000003",
-                 "booking reference no SCLG10000004": "SCLG10000004",       # la etiqueta, en cualquier caja
+        casos = {self.CONFIRMA_ONE: "SCLG23456789",
+                 "Booking Reference No.: SCLG34567890": "SCLG34567890",
+                 "booking reference no SCLG45678901": "SCLG45678901",       # la etiqueta, en cualquier caja
                  "Booking Reference No.\nSCLG1000005": "",                  # 7 dígitos
                  "Booking Reference No.\nSCLG100000066": "",                # 9 dígitos
                  "Booking Reference No.\nABCD10000007": "",                 # otro prefijo
-                 "Booking Reference No.\nsclg10000008": "",                 # el número distingue mayúsculas
-                 "SCLG10000009 · Your booking is confirmed": "",            # sin la etiqueta
+                 "Booking Reference No.\nsclg12345678": "",                 # el número distingue mayúsculas
+                 "SCLG56789012 · Your booking is confirmed": "",            # sin la etiqueta
                  "Booking Parties · Review Booking · New Booking": ""}
         for texto, esperado in casos.items():
             with self.subTest(texto=texto[:40]):
@@ -42,53 +42,53 @@ class TestNumeroTrasEnvio(soporte.CasoAQ):
 
     def test_forma_medida_de_msc(self):
         casos = {"Your eBooking request has been successfully created and submitted for agency confirmation.\n"
-                 "Your eBooking number is :\n\nEBKG20000002\n": "EBKG20000002",
-                 "your ebooking number is EBKG20000003": "EBKG20000003",   # la etiqueta, en cualquier caja
+                 "Your eBooking number is :\n\nEBKG67890123\n": "EBKG67890123",
+                 "your ebooking number is EBKG78901234": "EBKG78901234",   # la etiqueta, en cualquier caja
                  "Your eBooking number is :\nEBKG2000004": "",              # 7 dígitos
                  "Your eBooking number is :\nEBKG200000055": "",            # 9 dígitos
                  "Your eBooking number is :\nMSCX20000006": "",             # otro prefijo
                  "Your eBooking number is :\nebkg20000007": "",             # el número distingue mayúsculas
-                 "Booking reference: EBKG20000008": "",                     # otra etiqueta
-                 "Service Contract Number RS00000009 · EBKG20000010": ""}   # sin la etiqueta
+                 "Booking reference: EBKG89012345": "",                     # otra etiqueta
+                 "Service Contract Number RS00000009 · EBKG90123456": ""}   # sin la etiqueta
         for texto, esperado in casos.items():
             with self.subTest(texto=texto[:40]):
                 self.assertEqual(self.num(P(texto), "msc"), esperado)
 
     def test_forma_medida_de_hyundai(self):
-        casos = {"A Tentative Booking has been created.\n- Created tentative booking number: SCLA10000002\n"
-                 "The created tentative booking will be reviewed by HMM staff": "SCLA10000002",
-                 "created tentative booking number SCLA10000003": "SCLA10000003",   # la etiqueta, en cualquier caja
+        casos = {"A Tentative Booking has been created.\n- Created tentative booking number: SCLA23456789\n"
+                 "The created tentative booking will be reviewed by HMM staff": "SCLA23456789",
+                 "created tentative booking number SCLA34567890": "SCLA34567890",   # la etiqueta, en cualquier caja
                  "Created tentative booking number: SCLA1000004": "",               # 7 dígitos
                  "Created tentative booking number: SCLA100000055": "",             # 9 dígitos
-                 "Created tentative booking number: SCLG10000006": "",              # otro prefijo
+                 "Created tentative booking number: SCLG01234567": "",              # otro prefijo
                  "Created tentative booking number: scla10000007": "",              # el número distingue mayúsculas
-                 "Booking No: SCLA10000008": "",                                    # otra etiqueta
-                 "Service Contract CCL0000009 · SCLA10000010": ""}                  # sin la etiqueta
+                 "Booking No: SCLA12345678": "",                                    # otra etiqueta
+                 "Service Contract CCL0000009 · SCLA98765432": ""}                  # sin la etiqueta
         for texto, esperado in casos.items():
             with self.subTest(texto=texto[:40]):
                 self.assertEqual(self.num(P(texto), "hyundai"), esperado)
 
     def test_forma_medida_de_maersk(self):
-        casos = {"Booking confirmed\nBooking number: 270000002\nThank you, for booking with us": "270000002",
-                 "booking number 270000003": "270000003",                  # la etiqueta, en cualquier caja
+        casos = {"Booking confirmed\nBooking number: 272345678\nThank you, for booking with us": "272345678",
+                 "booking number 273456789": "273456789",                  # la etiqueta, en cualquier caja
                  "Booking number: 27000004": "",                           # 8 dígitos
                  "Booking number: 2700000055": "",                         # 10 dígitos
-                 "Booking number: SCLA10000006": "",                       # letras
-                 "Your booking 270000007 was created": "",                 # otra etiqueta
-                 "VESSEL/VOYAGE · 638E · 270000008 · 49 days": ""}         # sin la etiqueta
+                 "Booking number: SCLA01234567": "",                       # letras
+                 "Your booking 274567890 was created": "",                 # otra etiqueta
+                 "VESSEL/VOYAGE · 638E · 275678901 · 49 days": ""}         # sin la etiqueta
         for texto, esperado in casos.items():
             with self.subTest(texto=texto[:40]):
                 self.assertEqual(self.num(P(texto), "maersk"), esperado)
 
     def test_lee_los_marcos(self):
         pagina = P("Booking Parties", frames=[Marco("nada"), Marco(self.CONFIRMA_ONE)])
-        self.assertEqual(self.num(pagina), "SCLG10000002")
+        self.assertEqual(self.num(pagina), "SCLG23456789")
 
     def test_un_marco_que_falla_no_tapa_a_los_demas(self):
         class Rompe(P):
             def evaluate(self, js, *a):
                 raise RuntimeError("marco cerrado")
-        self.assertEqual(self.num(Rompe("", frames=[Rompe(""), Marco(self.CONFIRMA_ONE)])), "SCLG10000002")
+        self.assertEqual(self.num(Rompe("", frames=[Rompe(""), Marco(self.CONFIRMA_ONE)])), "SCLG23456789")
         self.assertEqual(self.num(Rompe("", frames=[Rompe("")])), "")
 
     def test_reintenta_hasta_que_aparece(self):
@@ -98,7 +98,7 @@ class TestNumeroTrasEnvio(soporte.CasoAQ):
             lecturas.append(js)
             return self.CONFIRMA_ONE if len(lecturas) >= 4 else "cargando"
         pagina = P(texto)
-        self.assertEqual(self.num(pagina), "SCLG10000002")
+        self.assertEqual(self.num(pagina), "SCLG23456789")
         self.assertEqual((len(lecturas), pagina.esperas), (4, 3))
         # Lee también las raíces shadow. El JavaScript no corre offline: se fija su forma.
         self.assertIn("if (e.shadowRoot) {", lecturas[0])
@@ -125,13 +125,13 @@ class TestNumeroLimpio(soporte.CasoAQ):
         return self.limpio({"estado": "EMITIDA", **r})
 
     def test_campo_booking_manda(self):
-        self.assertEqual(self.emitida(booking="ABC123456", detalle="SCLG00000001"), "ABC123456")
-        self.assertEqual(self.emitida(booking="en proceso", detalle="ok SCLG00000001 ok"), "SCLG00000001")
+        self.assertEqual(self.emitida(booking="ABC123456", detalle="SCLG87654321"), "ABC123456")
+        self.assertEqual(self.emitida(booking="en proceso", detalle="ok SCLG87654321 ok"), "SCLG87654321")
 
     def test_patrones_por_naviera(self):
-        self.assertEqual(self.emitida(detalle="HYUNDAI SCLA00000002"), "SCLA00000002")
-        self.assertEqual(self.emitida(detalle="MAERSK Bkg: 270000001"), "270000001")
-        self.assertEqual(self.emitida(detalle="MAERSK 270000002 listo"), "270000002")   # solo «27…»
+        self.assertEqual(self.emitida(detalle="HYUNDAI SCLA76543210"), "SCLA76543210")
+        self.assertEqual(self.emitida(detalle="MAERSK Bkg: 276789012"), "276789012")
+        self.assertEqual(self.emitida(detalle="MAERSK 272345678 listo"), "272345678")   # solo «27…»
         self.assertEqual(self.emitida(detalle="x EBKG0000003 y"), "EBKG0000003")
         self.assertEqual(self.emitida(detalle="Reference No: REFFALSO55"), "REFFALSO55")
 

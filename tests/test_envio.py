@@ -22,7 +22,7 @@ import soporte
 
 P = soporte.PaginaFalsa
 N = itertools.count()
-CONFIRMA_ONE = "Your booking has been successfully submitted!\nBooking Reference No.\nSCLG10000002\n"
+CONFIRMA_ONE = "Your booking has been successfully submitted!\nBooking Reference No.\nSCLG23456789\n"
 REVISA = "Revisa en el portal si la reserva quedó creada y, si está, anota su número en la planilla."
 
 
@@ -69,8 +69,8 @@ class TestResultadoEnvio(ConRegistro):
 
     def test_emitida_solo_con_la_forma_medida(self):
         r, carpeta, log = self.envio(Pantalla(CONFIRMA_ONE))
-        self.assertEqual(r, ("EMITIDA", "ONE emitida con éxito (Booking: SCLG10000002)"))
-        self.assertIn("· 🎉 ONE: Reserva EMITIDA con éxito. Booking: SCLG10000002", log)
+        self.assertEqual(r, ("EMITIDA", "ONE emitida con éxito (Booking: SCLG23456789)"))
+        self.assertIn("· 🎉 ONE: Reserva EMITIDA con éxito. Booking: SCLG23456789", log)
         self.assertEqual(self.evidencia(carpeta), ["nav_f5_9_confirmado.html", "nav_f5_9_confirmado.png"])
 
     def test_pulsado_sin_confirmacion_es_enviada(self):
@@ -144,7 +144,7 @@ class TestResultadoEnvio(ConRegistro):
         for pulsado in (True, None):
             with self.subTest(pulsado=pulsado):
                 r, _, _ = self.envio(Pantalla(CONFIRMA_ONE), pulsado=pulsado, error=RuntimeError("x"))
-                self.assertEqual(r, ("EMITIDA", "ONE emitida con éxito (Booking: SCLG10000002)"))
+                self.assertEqual(r, ("EMITIDA", "ONE emitida con éxito (Booking: SCLG23456789)"))
 
     def test_evidencia_despues_de_leer(self):
         # La evidencia muestra la pantalla sobre la que se decidió: la de después de esperar el número.
@@ -720,11 +720,11 @@ class TestLecturaDelPanel(soporte.CasoAQ):
                                                     "1 de 5 emitidas · 2 de 5 listas para emitir"])
         # El texto de la columna, de una sola fuente, el mismo de la planilla.
         t = self.mod._texto_n_reserva
-        self.assertEqual([t({"estado": "EMITIDA", "detalle": "MSC emitida con éxito (Booking: EBKG20000001)"}),
+        self.assertEqual([t({"estado": "EMITIDA", "detalle": "MSC emitida con éxito (Booking: EBKG65432109)"}),
                           t({"estado": "EMITIDA", "booking": "BKGFALSO12"}), t({"estado": "OK-EJEMPLO"}),
                           t({"estado": "EMITIDA"}), t({"estado": "NO ENVIADA"}), t({"estado": "OK-EJEMPLO", "booking": "X9"}),
                           t(None)],
-                         ["EBKG20000001", "BKGFALSO12", "lista para emitir", "", "", "lista para emitir", ""])
+                         ["EBKG65432109", "BKGFALSO12", "lista para emitir", "", "", "lista para emitir", ""])
 
     def aviso_de_modo(self, pagina, panel):
         """El aviso de la página que no arma las reservas: 'pagina', el modo que muestra (o None si no lo pudo leer);

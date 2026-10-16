@@ -2,7 +2,7 @@
 # credenciales, sesiones de los portales, planillas y capturas de reservas reales.
 # Por eso el .gitignore es una LISTA BLANCA: todo lo de la raiz queda fuera
 # salvo lo que se nombra al final con "!". Para versionar un archivo nuevo,
-# agregalo abajo como "!/nombre".
+# agrega abajo una linea "!/nombre".
 /*
 
 # --- Fuera siempre, aunque alguien quite la linea "/*" de arriba ---
@@ -48,6 +48,9 @@ _para_borrar/
 # Red de verificacion offline: solo codigo y casos sinteticos (las planillas de
 # prueba se generan al correr; la capa explicita de arriba sigue aplicando adentro)
 !/tests/
+# Los hooks de git: la guarda de datos reales antes de cada commit (encargo 72).
+# Se activan una vez por clon: git config core.hooksPath .githooks
+!/.githooks/
 # Los generadores de material (crear_*.py, generar_manuales.py) y el logo de la empresa quedan fuera desde el
 # encargo 44: traen datos de la empresa y de las personas. Siguen en el equipo, sin versionar
 # (CICLO-publicar-el-repo.md).

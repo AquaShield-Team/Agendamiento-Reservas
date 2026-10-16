@@ -2309,7 +2309,7 @@ MUTACIONES += [
 # --- Encargo 25: la próxima salida, decidida por Marcelo (CICLO-proxima-salida.md) ---
 PSAL = AY + "TestProximaSalida."
 TCOS = AY + "TestCOSCO."
-JSC = K1 + "test_js_lista_lee_la_salida_y_la_llegada_de_la_tarjeta"
+JS_LISTA_COSCO = K1 + "test_js_lista_lee_la_salida_y_la_llegada_de_la_tarjeta"
 
 MUTACIONES += [
     dict(id="proxima-la-primera-de-la-lista", pruebas=[PSAL + "test_la_proxima_desde_la_fecha"],
@@ -2352,12 +2352,12 @@ MUTACIONES += [
     dict(id="cosco-salida-toca-la-lista", pruebas=[TCOS + "test_cada_itinerario_con_su_salida"],
          viejo='        out.append(dict(x, etd=d.isoformat() if d else ""))\n',
          nuevo='        x["etd"] = d.isoformat() if d else ""\n        out.append(x)\n'),
-    dict(id="cosco-js-fechas-del-boton", pruebas=[JSC],
+    dict(id="cosco-js-fechas-del-boton", pruebas=[JS_LISTA_COSCO],
          viejo="const fechas=[...tarjeta(b).querySelectorAll('*')]", nuevo="const fechas=[...b.querySelectorAll('*')]"),
-    dict(id="cosco-js-tarjeta-toda-la-lista", pruebas=[JSC],
+    dict(id="cosco-js-tarjeta-toda-la-lista", pruebas=[JS_LISTA_COSCO],
          viejo="btns.filter(x=>c.parentElement.contains(x)).length===1) c=c.parentElement;",
          nuevo="btns.filter(x=>c.parentElement.contains(x)).length>=1) c=c.parentElement;"),
-    dict(id="cosco-js-corte-como-salida", pruebas=[JSC],
+    dict(id="cosco-js-corte-como-salida", pruebas=[JS_LISTA_COSCO],
          viejo="corte: m?m[1]:'', salida: fechas[0]||''", nuevo="corte: m?m[1]:'', salida: m?m[1]:''"),
 ]
 
@@ -8544,4 +8544,84 @@ MUTACIONES += [
     dict(id="e71-login-a-la-portada", pruebas=[HMM_LOGIN_VA],
          viejo='HMM_LOGIN = "https://www.hmm21.com/e-service/auth/login.do"\n',
          nuevo='HMM_LOGIN = "https://www.hmm21.com/"\n'),
+]
+
+# --- Encargo 72 (CICLO-guarda-de-datos.md): la guarda de datos reales. Lo que entra al repo, que es público, no trae
+# razones sociales ni datos con la forma de un dato real; la suite lo revisa y el hook pre-commit lo frena. Los valores
+# inventados van armados por partes: escritos enteros, la guarda los encontraría en este archivo. ---
+GD = "test_guarda_datos."
+GD_MUESTRAS = GD + "TestDetector.test_cada_muestra_da_lo_suyo"
+GD_PERMITIDOS = GD + "TestDetector.test_la_lista_de_permitidos_esta_fija"
+GD_VALOR = GD + "TestDetector.test_nunca_muestra_el_valor"
+GD_REPO = GD + "TestLectura.test_control_del_repo_inventado"
+GD_INDICE = GD + "TestLectura.test_control_del_indice"
+GD_VERSIONADO = GD + "TestLoVersionado.test_lo_versionado_no_trae_datos_reales"
+GD_FRENA = GD + "TestElHook.test_frena_un_commit_con_una_razon_social"
+GD_LIMPIO = GD + "TestElHook.test_deja_pasar_un_commit_limpio"
+GD_LEE_INDICE = GD + "TestElHook.test_lee_el_indice_que_se_commitea"
+GD_MERGE = GD + "TestElHook.test_frena_el_commit_de_un_merge"
+GD_LF = GD + "TestElHook.test_los_hooks_van_en_lf_y_ascii"
+GUARDA = "tests/guarda_datos.py"
+HOOK = ".githooks/pre-commit"
+HOOK_MERGE = ".githooks/pre-merge-commit"
+
+MUTACIONES += [
+    # El detector: sin las razones sociales con la forma detrás; la propia empresa por «termina en», o apartada también
+    # detrás de un espacio; cualquier número como inventado; sin las letras sueltas; la lista de formas sin su coma.
+    dict(id="e72-sin-razones-detras", archivo=GUARDA, pruebas=[GD_MUESTRAS, GD_VALOR],
+         viejo="    for m in RAZON_DETRAS.finditer(p):\n", nuevo='    for m in RAZON_DETRAS.finditer(""):\n'),
+    dict(id="e72-permitido-por-sufijo", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo="        if clave(trozo) == clave(valor):\n", nuevo="        if clave(trozo).endswith(clave(valor)):\n"),
+    dict(id="e72-propia-tras-un-espacio", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo="rx = re.compile(r\"(?<![\\w\\s.&'’-])\" + re.escape(valor)",
+         nuevo="rx = re.compile(r\"(?<![\\w.&'’-])\" + re.escape(valor)"),
+    dict(id="e72-todo-numero-inventado", archivo=GUARDA, pruebas=[GD_MUESTRAS, GD_VALOR],
+         viejo="        if evidente(cifras):\n", nuevo="        if True:\n"),
+    dict(id="e72-sin-letras-sueltas", archivo=GUARDA, pruebas=[GD_MUESTRAS, GD_VERSIONADO],
+         viejo="        elif all(len(w) == 1 for w in clave(m.group(0)).split()):\n", nuevo="        elif False:\n"),
+    dict(id="e72-lista-sin-coma", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo='        elif not delante and re.search(r"[,/]", p[m.end(1):m.start(2)]) and all(\n',
+         nuevo="        elif not delante and all(\n"),
+    # La tipografía como en NEPPEX (las cinco palabras que siguen): un comentario del CSS del panel sigue abajo. Y sin
+    # apartar las formas de la guarda en su propio archivo.
+    dict(id="e72-tipografia-como-neppex", archivo=GUARDA, pruebas=[GD_VERSIONADO],
+         viejo="len(palabras) > 1 and palabras[1][:1].isupper()):",
+         nuevo="any(w[:1].isupper() for w in palabras[1:])):"),
+    dict(id="e72-sin-apartar-sus-formas", archivo=GUARDA, pruebas=[GD_VERSIONADO],
+         viejo="    if archivo != PROPIO:\n        return t\n    lineas = t.split", nuevo="    return t\n    lineas = t.split"),
+    # Una razón social inventada en el programa: la suite la ve en la copia del censo.
+    dict(id="e72-razon-social-en-el-programa", pruebas=[GD_VERSIONADO],
+         viejo="def _mk_paso_actual(page):\n",
+         nuevo="def _mk_paso_actual(page):\n    # Pesquera Inventada " + chr(83) + ".A.\n"),
+    # La lista fija: un permitido de más.
+    dict(id="e72-un-permitido-de-mas", archivo=GUARDA, pruebas=[GD_PERMITIDOS],
+         viejo="PERMITIDOS = (\n", nuevo='PERMITIDOS = (\n    ("correo", "alguien" + "@" + "otro.cl", "x"),\n'),
+    # El nombre de un archivo, con sus cifras.
+    dict(id="e72-muestra-las-cifras", archivo=GUARDA, pruebas=[GD_VALOR],
+         viejo='    return re.sub(r"\\d{5,}", "<cifras>", nombre)\n', nuevo="    return nombre\n"),
+    # La lectura: sin lo que el índice guarda distinto del árbol, sin los nombres, siguiendo una unión que sale del repo.
+    dict(id="e72-sin-el-indice-distinto", archivo=GUARDA, pruebas=[GD_REPO],
+         viejo="    for rel, datos in _del_indice(raiz).items():\n", nuevo="    for rel, datos in {}.items():\n"),
+    dict(id="e72-sin-los-nombres", archivo=GUARDA, pruebas=[GD_REPO],
+         viejo='        revisar_texto(rel, rel + " (nombre)", cuenta)   # el nombre también entra al repo\n', nuevo=""),
+    dict(id="e72-sigue-la-union", archivo=GUARDA, pruebas=[GD_REPO],
+         viejo="            elif ruta == pathlib.Path(raiz) / rel and not ruta.resolve().is_relative_to(adentro):\n",
+         nuevo="            elif False:\n"),
+    # El índice: el de siempre y no el que se le pasa; un objeto que no se lee, por limpio.
+    dict(id="e72-el-indice-de-siempre", archivo=GUARDA, pruebas=[GD_INDICE],
+         viejo='    for e in _git(raiz, "ls-files", "-s", "-z", indice=indice).split(b"\\0"):\n',
+         nuevo='    for e in _git(raiz, "ls-files", "-s", "-z").split(b"\\0"):\n'),
+    dict(id="e72-ilegible-por-limpio", archivo=GUARDA, pruebas=[GD_INDICE],
+         viejo="    if ilegibles:\n        return True, (", nuevo="    if False:\n        return True, ("),
+    # El hook: no corre la guarda (deja pasar, o frena todo), no lee el índice que git le pasa, el merge sin guarda, y un
+    # CR que /bin/sh no lee.
+    dict(id="e72-hook-deja-pasar", archivo=HOOK, pruebas=[GD_FRENA, GD_LEE_INDICE, GD_MERGE],
+         viejo='exec python "$guarda" --pre-commit\n', nuevo="exit 0\n"),
+    dict(id="e72-hook-frena-todo", archivo=HOOK, pruebas=[GD_LIMPIO, GD_LEE_INDICE],
+         viejo='exec python "$guarda" --pre-commit\n', nuevo="exit 1\n"),
+    dict(id="e72-hook-sin-el-indice-de-git", archivo=GUARDA, pruebas=[GD_LEE_INDICE],
+         viejo='    puesto = os.environ.get("GIT_INDEX_FILE")\n', nuevo="    puesto = None\n"),
+    dict(id="e72-merge-sin-guarda", archivo=HOOK_MERGE, pruebas=[GD_MERGE],
+         viejo='exec sh "$(dirname "$0")/pre-commit"\n', nuevo="exit 0\n"),
+    dict(id="e72-hook-con-cr", archivo=HOOK, pruebas=[GD_LF], viejo="#!/bin/sh\n", nuevo="#!/bin/sh\r\n"),
 ]

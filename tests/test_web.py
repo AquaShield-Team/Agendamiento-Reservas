@@ -645,18 +645,18 @@ class TestPanelCorridas(PanelBase):
         # lo pone el panel sin ir al portal. Hasta a198645, la 5 volvía NO ENVIADA del reservador y la 7, EMITIDA
         # (CICLO-solo-la-nave-pedida.md).
         respuestas = {
-            5: ("EMITIDA", "ONE emitida con éxito (Booking: SCLG10000003)"),
+            5: ("EMITIDA", "ONE emitida con éxito (Booking: SCLG34567890)"),
             6: ("ENVIADA – REVISAR EN PORTAL", "ONE: se pulsó «Submit» y el portal mostró un error: «Booking: "
                                                "COSFALSO9876 ya existe». Revisa en el portal.")}
         with Navieras(self.mod, respuesta=lambda nav, rsv, on_pausa: respuestas[rsv["fila"]]):
             e = self.correr("ONE", [5, 6, 7])
         self.assertEqual({k: (v["estado"], v["booking"]) for k, v in e["resultados"].items()},
-                         {"5": ("EMITIDA", "SCLG10000003"), "6": ("ENVIADA – REVISAR EN PORTAL", ""), "7": ("NO ENVIADA", "")})
+                         {"5": ("EMITIDA", "SCLG34567890"), "6": ("ENVIADA – REVISAR EN PORTAL", ""), "7": ("NO ENVIADA", "")})
         st, _, cuerpo = self.srv.completo("/api/descargar")
         self.assertEqual(st, 200)
         ws = openpyxl.load_workbook(BytesIO(cuerpo))["ONE"]
         self.assertEqual([(ws[f"H{f}"].value, ws[f"I{f}"].value) for f in (5, 6, 7)],
-                         [("EMITIDA", "SCLG10000003"),
+                         [("EMITIDA", "SCLG34567890"),
                           (f"ENVIADA – REVISAR EN PORTAL · {respuestas[6][1]}", None),
                           ("NO ENVIADA · la fila no trae una nave para reservar", None)])
 

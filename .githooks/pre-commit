@@ -1,0 +1,35 @@
+#!/bin/sh
+# Hook pre-commit: la guarda de datos reales (tests/guarda_datos.py, CLAUDE.md, "Git y GitHub") sobre lo que se va a
+# commitear. El repo es PUBLICO: frena el commit si lo que lleva trae una razon social o un dato con la forma de uno
+# real (un correo, un RUT, un numero de reserva...), y dice el tipo, el archivo y la linea, nunca el valor.
+#
+# Lee el INDICE que git le pasa al hook (GIT_INDEX_FILE): con `git commit -a` o con rutas, git arma un indice aparte, y
+# ese es el que se commitea. No lee el arbol de trabajo ni lo nuevo sin agregar: eso no entra en este commit (la suite,
+# `python tests/correr.py`, si lo lee). Antes de mirar, la guarda se prueba sobre sus muestras y sobre dos repos
+# inventados en la carpeta temporal; si no ve sus casos conocidos, frena el commit en vez de dejarlo pasar con un cero.
+#
+# Es el hook de Carga NEPPEX (0b47898), con esta guarda en lugar de su regla de las series de pedido (encargo 72,
+# CICLO-guarda-de-datos.md).
+#
+# EL HOOK NO VIAJA EN EL CLON. Para activarlo, UNA VEZ por clon (activa tambien el pre-merge-commit):
+#
+#     git config core.hooksPath .githooks
+#
+# Para saltearlo a proposito: `git commit --no-verify`.
+#
+# Lo vigila tests/test_guarda_datos.py (TestElHook), con un commit de verdad en un repo inventado.
+#
+# ASCII a proposito: este archivo lo lee /bin/sh de Git Bash.
+
+raiz=$(git rev-parse --show-toplevel) || exit 1
+guarda="$raiz/tests/guarda_datos.py"
+if [ ! -f "$guarda" ]; then
+    echo "pre-commit: no encuentro tests/guarda_datos.py en el arbol abierto: no puedo revisar este commit." >&2
+    echo "pre-commit: si es a proposito: git commit --no-verify" >&2
+    exit 1
+fi
+if ! command -v python >/dev/null 2>&1; then
+    echo "pre-commit: no hay 'python' en el PATH: no puedo revisar este commit. Si es a proposito: git commit --no-verify" >&2
+    exit 1
+fi
+exec python "$guarda" --pre-commit

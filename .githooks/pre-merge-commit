@@ -1,0 +1,11 @@
+#!/bin/sh
+# Hook pre-merge-commit: el mismo pre-commit (la guarda de datos reales sobre lo que se va a commitear), sobre el commit
+# de un merge. `git merge` no corre el pre-commit, y un dato que entro en otra rama (commiteado con --no-verify, o en un
+# clon sin los hooks) llegaria a main por un merge sin pasar por la guarda: lo midio la revision de seguridad de Carga
+# NEPPEX el 2026-10-14. Cherry-pick, rebase, revert y am no corren ninguno de los dos hooks: eso lo cubre la suite.
+#
+# Se activa con el otro, una vez por clon: git config core.hooksPath .githooks
+#
+# ASCII a proposito: este archivo lo lee /bin/sh de Git Bash.
+
+exec sh "$(dirname "$0")/pre-commit"

@@ -422,7 +422,7 @@ class TestEstadosNuevos(ConPlanilla):
     ESTADOS = [("ENVIADA – REVISAR EN PORTAL", "ONE: se pulsó «Submit», pero la pantalla no mostró la "
                 "confirmación con el número de reserva."),
                ("NO ENVIADA", "COSCO: el portal no aceptó el envío y marcó: «Gross Weight is required»."),
-               ("EMITIDA", "MSC emitida con éxito (Booking: EBKG20000001)")]
+               ("EMITIDA", "MSC emitida con éxito (Booking: EBKG65432109)")]
 
     def estado(self, i):
         return self.ESTADOS[i % len(self.ESTADOS)]

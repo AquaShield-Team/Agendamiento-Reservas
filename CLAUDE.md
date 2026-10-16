@@ -64,16 +64,18 @@ licencia: todos los derechos reservados** (decisiones de Marcelo, encargo 44, `C
 convive con `config.json`, `perfiles/`, `logs/`, planillas, manuales, videos y capturas de reservas reales, y con los
 generadores de material y el logo, que salieron del repo en el encargo 44 (ver «Archivos que no son código de la app»).
 Para versionar un archivo nuevo, agrégalo como `!/nombre` en `.gitignore`; nunca versiones planillas, capturas, volcados
-`*_dump.html` ni imágenes: la sonda de secretos bloquea los `.png`, `.jpg`, `.jpeg`, `.gif` y `.webm`, y los
-generadores. `.gitattributes` fija LF (`core.autocrlf=true` de esta máquina los devolvería con CRLF). El procedimiento
-inicial y sus sondas están en `CICLO-repo-inicial.md`.
+`*_dump.html` ni imágenes: la sonda de secretos, que se corre a mano antes de cada commit (el hook no la corre), da
+1 con los `.png`, `.jpg`, `.jpeg`, `.gif` y `.webm`, y con los generadores. `.gitattributes` fija LF
+(`core.autocrlf=true` de esta máquina los devolvería con CRLF). El procedimiento inicial y sus sondas están en
+`CICLO-repo-inicial.md`.
 
 La rama es `main`; hasta el 2026-09-25 se llamó `master`. **El nombre del operador no va en ningún archivo versionado**
 (`CICLO-cola-cuatro-items.md`):
 - en rutas de ejemplo e informes, usa `<operador>`: las carpetas de `logs/` lo llevan en su nombre;
 - en `CORRIDAS_DE_REFERENCIA` y en las generadoras, usa `*`;
 - donde el programa lo necesita, lo toma de `config.json`;
-- la sonda de secretos bloquea el commit que lo traiga (`CICLO-cola-siete-items.md`).
+- la sonda de secretos da 1 si lo que se va a commitear lo trae (`CICLO-cola-siete-items.md`); se corre a mano antes
+  de cada commit: el hook no la corre.
 
 **Tampoco van datos de la cuenta ni de las personas** (encargo 44): ni contratos ni el código de Shipper de HYUNDAI (van
 en `config.json` → opciones: `contratos_por_defecto` y `codigo_shipper_hyundai`), ni correos, teléfonos, naves, viajes o
@@ -82,6 +84,30 @@ formularios se publican tal como están** (decisión de Marcelo, encargo 44: sac
 la empresa (AQUACHILE, que MAERSK busca en el Shipper y HYUNDAI en su modal; «AQUACHILE S.A.», el Shipper de COSCO y el
 cliente de MAERSK), la dirección, la ciudad y el país de la planta para COSCO, la descripción de la carga y su código
 HS. El nombre de Marcelo queda en «decisión de Marcelo» y, completo, en el pie del panel (decisión suya, encargo 44).
+
+**Lo que entra al repo no trae razones sociales ni datos con la forma de un dato real, y una guarda lo vigila**
+(encargo 72, `CICLO-guarda-de-datos.md`): `tests/guarda_datos.py`, la guarda de razones sociales de Carga NEPPEX
+(`0b47898`) portada a Python, con los datos de este programa.
+- **Qué busca:** una razón social (un nombre con una forma jurídica); un RUT o un contenedor con su dígito bien
+  calculado; un correo; un teléfono chileno; un número de reserva con la forma con que el programa lo lee (SCLG, EBKG o
+  SCLA y 8 cifras, o 9 cifras que empiezan con 27 o que van detrás de «Booking number»); un BL; un pedido de AquaChile;
+  una IP pública; y un nombre con su apellido. Dice el tipo, el archivo y la línea, nunca el valor.
+- **Lo que pasa, por valor exacto y declarado en la guarda (`PERMITIDOS`; la suite fija la lista):** «AQUACHILE S.A.»,
+  como el programa la escribe en los formularios, y el nombre del dueño (como autor de los commits, y completo, como en
+  el pie del panel) y su correo noreply. Un nombre ajeno escrito delante del propio frena, y se reescribe el texto. Un
+  número inventado pasa solo con las cifras a la vista, todas iguales o seguidas (de MAERSK, las 7 que siguen al 27);
+  un correo, solo de un dominio reservado para ejemplos (`.invalid`, `.test`, `example.com`); una IP, solo si no es
+  pública.
+- **Dónde corre:** en la suite (`test_guarda_datos`, sobre lo que git versionaría, con lo que el índice guarda distinto
+  del árbol) y en el hook pre-commit (`.githooks/pre-commit`, sobre el índice que se commitea; `pre-merge-commit`, sobre
+  el de un merge). **El hook no viaja en el clon:** se activa una vez por clon, con
+  `git -C "C:\dev\Agendamiento Reservas" config core.hooksPath .githooks` (en este equipo, desde el encargo 72).
+  Saltearlo a propósito: `git commit --no-verify`. A mano: `python tests/guarda_datos.py`.
+- **Lo que no ve:** un nombre de cliente sin forma jurídica, una nave, un viaje, un contrato, una dirección postal, y un
+  dato partido en dos líneas o armado en el código. Eso sigue siendo de quien escribe.
+- Hasta el encargo 72 nada lo vigilaba: la auditoría del 2026-10-16 encontró dos razones sociales en las pruebas del
+  buscador de MAERSK (`test_clics`), publicadas desde el 01-10, y pasaron a «PARTE UNO» y «PARTE DOS». **La historia
+  publicada todavía las trae:** sacarlas es reescribir la historia del repo público, y eso lo decide Marcelo.
 
 ## ⚠ Candado de emisión: lo más importante
 
@@ -809,7 +835,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 834 pruebas al 2026-10-15 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 845 pruebas al 2026-10-16 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -885,7 +911,8 @@ segunda tardó 1.185 s (encargo 53).
   falla si no). Casos sintéticos solamente: nunca copies logs ni datos reales; los valores de empresa
   que quedan en el código (el nombre de la empresa) se comparan por hash. Los contratos y el código de Shipper de
   HYUNDAI ya no están en el código (encargo 44): sus pruebas los ponen en una configuración sintética, y no se
-  comparan por hash (el de un código corto se revierte probando).
+  comparan por hash (el de un código corto se revierte probando). Un valor inventado con la forma de un dato real va con
+  las cifras a la vista y sin forma jurídica: la guarda de datos reales frena los demás (encargo 72, «Git y GitHub»).
 - Antes de cada commit: `python tests/sonda_secretos.py --dry-run`, `git add` y
   `python tests/sonda_secretos.py`; las dos tienen que dar 0 (`CICLO-cola-siete-items.md`).
   - Bloquea las claves y los usuarios de `config.json`, las rutas prohibidas y el nombre o el apellido del
@@ -898,6 +925,7 @@ segunda tardó 1.185 s (encargo 53).
     las rutas: cada objeto va por su tipo y su hash.
   - `--negativo-clave`, `--negativo-ruta` y `--negativo-nombre` tienen que dar 1.
   - `test_sonda` la carga de `soporte.FUENTES / "tests"` si el censo dejó ahí su copia mutada; si no, del repo.
+  - No la corre el hook pre-commit: el hook corre la guarda de datos reales (encargo 72), que no lee `config.json`.
 - Cobertura de funciones (opcional): `AQUASHIELD_COBERTURA=<prefijo>` escribe `<prefijo>.<pid>` con las
   funciones ejecutadas. No cubre: los flujos de login y reserva en los portales, el JavaScript inyectado
   (`_JS_*`) ni el panel Tkinter. Detalle y cobertura por naviera en `CICLO-red-verificacion.md`.

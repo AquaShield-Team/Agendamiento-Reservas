@@ -5585,13 +5585,13 @@ console.log(JSON.stringify(r));
         # (_mk_lo_que_pide). Deja la evidencia de esa pantalla, cuyos avisos no están medidos. No pulsa nada.
         nada = "no pulsé nada más y la reserva no se envió"
         casos = (({"campos": ["Commodity"], "mensajes": ["Commodity is required"]},
-                  f"el portal no dejó avanzar y pide: Commodity («Commodity is required»); {nada} (ruta=A-B)"),
-                 (None, f"el portal no dejó avanzar, y no pude leer qué pide; {nada} (ruta=A-B)"))
+                  f"el portal no dejó avanzar y pide: Commodity («Commodity is required»); {nada} (ruta=A-C)"),
+                 (None, f"el portal no dejó avanzar, y no pude leer qué pide; {nada} (ruta=A-C)"))
         for i, (pide, que) in enumerate(casos):
             with self.subTest(pide=pide):
                 reg, vistas, log = self.corrida(f"corrida_mk_booking_{i}")
                 pagina = PaginaMaersk(mod=self.mod, pide=pide)
-                r = self.mod._mk_booking_sin_avanzar(pagina, reg, ["ruta=A-B"], 30)
+                r = self.mod._mk_booking_sin_avanzar(pagina, reg, ["ruta=A-C"], 30)
                 detalle = f"MAERSK: en «Booking Information», {que}"
                 self.assertEqual(r, ("NO ENVIADA", detalle))
                 self.assertEqual(pagina.capturas, [("mk_f30_booking.png", False)])
@@ -5604,13 +5604,13 @@ console.log(JSON.stringify(r));
         # pantalla (revisión del encargo 38).
         nada = "no pulsé nada más y la reserva no se envió"
         casos = (({"campos": ["Commodity"], "mensajes": ["Commodity is required"]},
-                  f"formulario incompleto, y el portal pide: Commodity («Commodity is required»); {nada} (ruta=A-B)"),
-                 (None, f"formulario incompleto, y no vi qué pide el portal; {nada} (ruta=A-B)"))
+                  f"formulario incompleto, y el portal pide: Commodity («Commodity is required»); {nada} (ruta=A-C)"),
+                 (None, f"formulario incompleto, y no vi qué pide el portal; {nada} (ruta=A-C)"))
         for i, (pide, que) in enumerate(casos):
             with self.subTest(pide=pide):
                 reg, vistas, log = self.corrida(f"corrida_mk_incompleto_{i}")
                 pagina = PaginaMaersk(mod=self.mod, pide=pide)
-                r = self.mod._mk_formulario_incompleto(pagina, reg, ["ruta=A-B"], 30)
+                r = self.mod._mk_formulario_incompleto(pagina, reg, ["ruta=A-C"], 30)
                 self.assertEqual(r, ("NO ENVIADA", f"MAERSK: {que}"))
                 self.assertEqual(pagina.capturas, [("mk_f30_booking.png", False)])     # su evidencia
                 for donde in (log.read_text(encoding="utf-8"), "\n".join(vistas)):      # log.txt y pantalla
@@ -8105,7 +8105,7 @@ class TestContinuarALaNaveMaersk(ConRegistro):
     def continuar(self, pagina):
         self.n = getattr(self, "n", 0) + 1
         reg, vistas, log = self.corrida(f"continuar_nave_{self.n}")
-        return self.mod._mk_continuar_a_la_nave(pagina, reg, ["ruta=A-B"], 30, self.TEXTOS), log, vistas
+        return self.mod._mk_continuar_a_la_nave(pagina, reg, ["ruta=A-C"], 30, self.TEXTOS), log, vistas
 
     def test_uno_a_la_vista(self):
         pagina = self.pagina()
@@ -8133,7 +8133,7 @@ class TestContinuarALaNaveMaersk(ConRegistro):
         pagina = self.pagina(falla=99, pide={"campos": ["Commodity"], "mensajes": ["Commodity is required"]})
         r, log, vistas = self.continuar(pagina)
         detalle = ("MAERSK: formulario incompleto, y el portal pide: Commodity («Commodity is required»); "
-                   f"{self.NADA} (ruta=A-B)")
+                   f"{self.NADA} (ruta=A-C)")
         self.assertEqual((r, pagina.clics, pagina.esperas), (("NO ENVIADA", detalle), [], 14))
         self.assertEqual(pagina.capturas, [("mk_f30_4_sailing.png", False), ("mk_f30_booking.png", False)])
         texto = log.read_text(encoding="utf-8")
@@ -8629,6 +8629,8 @@ class TestShipperMaersk(ConRegistro):
         # contenedor, casilla (input radio, con id) y label alternados, y el id de cada casilla termina con las cifras
         # que muestra el código (party__code) de la tarjeta de su resultado. Se pulsa solo si la que va antes del label
         # y la única cuyo id termina con esas cifras son la misma, y la tarjeta «Shipper» sigue sin la empresa.
+        # Las otras partes del buscador, «PARTE UNO» y «PARTE DOS», son inventadas (encargo 72): hasta ahí eran dos
+        # razones sociales con la forma de unas reales, y el repo es público.
         guion = (DOM_AQ + "const leerC = " + self.mod._JS_MK_SHIPPER_CASILLA + ";\nconst marcar = "
                  + self.mod._JS_MK_SHIPPER_MARCAR + ";\nconst EMPRESA = " + json.dumps(self.mod.MK_EMPRESA)
                  + ";\nconst NOMBRE = " + json.dumps(self.mod.MK_EMPRESA.title() + " S.A.") + r""";
@@ -8643,9 +8645,9 @@ const buscador = (hijos, titulo = 'Shipper') => el('mc-c-party-finder', {}, [], 
 const a = {titulo: 'Shipper', empresa: EMPRESA, agregar: 'Add', cerrar: 'Close'};
 const r = [];
 const leer = () => { global.clics = []; const c = leerC(a); r.push([c.casilla, c.marcada, marcar(a), global.clics]); };
-const tres = (c2 = {}) => [casilla('px-0123-777', 'c1'), resultado('OTRA S.A.', '****777'),
+const tres = (c2 = {}) => [casilla('px-0123-777', 'c1'), resultado('PARTE UNO', '****777'),
                            casilla('px-000-0123', 'c2', c2), resultado(NOMBRE, '***-0123'),
-                           casilla('px-000-0555', 'c3'), resultado('TERCERA S.A.', '****555')];
+                           casilla('px-000-0555', 'c3'), resultado('PARTE DOS', '****555')];
 // 0. El medido: tres resultados; el de la empresa, el segundo. El id de la primera casilla trae sus cifras, pero no al
 // final. 1. La tarjeta ya muestra a la empresa: se lee, pero no se pulsa. 2. Marcada.
 pagina(tarjeta(''), buscador(tres()));
@@ -8655,17 +8657,17 @@ leer();
 pagina(tarjeta(''), buscador(tres({checked: true})));
 leer();
 // 3. Algo entre los resultados: ya no van alternados; 4. un código sin cifras.
-pagina(tarjeta(''), buscador([casilla('px-000-0777', 'c1'), resultado('OTRA S.A.', '****777'), el('div', {}, []),
+pagina(tarjeta(''), buscador([casilla('px-000-0777', 'c1'), resultado('PARTE UNO', '****777'), el('div', {}, []),
                               casilla('px-000-0123', 'c2'), resultado(NOMBRE, '***-0123')]));
 leer();
-pagina(tarjeta(''), buscador([casilla('px-000-0777', 'c1'), resultado('OTRA S.A.', '****777'),
+pagina(tarjeta(''), buscador([casilla('px-000-0777', 'c1'), resultado('PARTE UNO', '****777'),
                               casilla('px-000-0123', 'c2'), resultado(NOMBRE, '*******')]));
 leer();
 // 5. Dos casillas cuyo id termina con sus cifras; 6. la que las trae no es la que va antes del resultado.
-pagina(tarjeta(''), buscador([casilla('py-111-0123', 'c1'), resultado('OTRA S.A.', '****777'),
+pagina(tarjeta(''), buscador([casilla('py-111-0123', 'c1'), resultado('PARTE UNO', '****777'),
                               casilla('px-000-0123', 'c2'), resultado(NOMBRE, '***-0123')]));
 leer();
-pagina(tarjeta(''), buscador([casilla('px-000-0123', 'c1'), resultado('OTRA S.A.', '****777'),
+pagina(tarjeta(''), buscador([casilla('px-000-0123', 'c1'), resultado('PARTE UNO', '****777'),
                               casilla('px-000-0999', 'c2'), resultado(NOMBRE, '***-0123')]));
 leer();
 // 7. El buscador de otra parte; 8. dos resultados con la empresa; 9. una casilla de verificación en lugar de la opción.
@@ -8674,7 +8676,7 @@ leer();
 pagina(tarjeta(''), buscador([casilla('px-000-0123', 'c1'), resultado(NOMBRE, '***-0123'),
                               casilla('px-000-0555', 'c2'), resultado('SALMONES ' + EMPRESA, '****555')]));
 leer();
-pagina(tarjeta(''), buscador([casilla('px-000-0777', 'c1'), resultado('OTRA S.A.', '****777'),
+pagina(tarjeta(''), buscador([casilla('px-000-0777', 'c1'), resultado('PARTE UNO', '****777'),
                               casilla('px-000-0123', 'c2', {}, 'checkbox'), resultado(NOMBRE, '***-0123')]));
 leer();
 // 10. Una casilla suelta al final: no van en pares (revisión del encargo 40); 11. dos tarjetas «Shipper»: se lee, pero
@@ -8698,6 +8700,8 @@ console.log(JSON.stringify(r));
         # su título en el slot «heading» y cada resultado es un label con su tarjeta; cerrado, no se ven. Una tarjeta
         # invisible no cuenta, la empresa en otra parte («Booked By») tampoco, ni en la dirección; va como palabra
         # entera.
+        # Las otras partes del buscador, «PARTE UNO» y «PARTE DOS», son inventadas (encargo 72): hasta ahí eran dos
+        # razones sociales con la forma de unas reales, y el repo es público.
         guion = (DOM_AQ + "const f = " + self.mod._JS_MK_SHIPPER + ";\nconst p = " + self.mod._JS_MK_SHIPPER_PULSAR
                  + ";\nconst EMPRESA = " + json.dumps(self.mod.MK_EMPRESA) + ";\nconst NOMBRE = "
                  + json.dumps(self.mod.MK_EMPRESA.title() + " S.A.") + r""";
@@ -8718,14 +8722,14 @@ const r = [];
 const leer = () => r.push([f(a), pulsa('agregar'), pulsa('resultado'), pulsa('cerrar')]);
 // 0. Llena, con el buscador cerrado.
 pagina(tarjeta('Booked By', NOMBRE), tarjeta('Shipper', NOMBRE), tarjeta('Shipper', NOMBRE, {invisible: true}),
-       buscador('Shipper', [NOMBRE, 'OTRA S.A.'], false));
+       buscador('Shipper', [NOMBRE, 'PARTE UNO'], false));
 leer();
 // 1. Vacía, con su «Add», y el buscador cerrado; 2. después, abierto.
 pagina(tarjeta('Booked By', NOMBRE), tarjeta('Shipper', '', {}, agregar('add')),
-       buscador('Shipper', [NOMBRE, 'OTRA S.A.', 'TERCERA S.A.'], false));
+       buscador('Shipper', [NOMBRE, 'PARTE UNO', 'PARTE DOS'], false));
 leer();
 pagina(tarjeta('Booked By', NOMBRE), tarjeta('Shipper', '', {}, agregar('add')),
-       buscador('Shipper', ['OTRA S.A.', NOMBRE, 'TERCERA S.A.'], true, [el('label', {}, ['Search by name'])]));
+       buscador('Shipper', ['PARTE UNO', NOMBRE, 'PARTE DOS'], true, [el('label', {}, ['Search by name'])]));
 leer();
 // 3. Abierto para otra parte; 4. sin la empresa como palabra entera; 5. con dos.
 pagina(tarjeta('Shipper', '', {}, agregar('add')), buscador('Consignee', [NOMBRE], true));
@@ -8752,8 +8756,8 @@ leer();
 pagina(tarjeta('Shipper', '', {}, agregar('add')), buscadorCon('Shipper', [], true));
 leer();
 // 12. La empresa solo en la dirección, de un resultado y de la tarjeta: no cuenta.
-pagina(tarjeta('Shipper', 'OTRA S.A.', {}, null, 'Planta ' + EMPRESA),
-       buscadorCon('Shipper', [resultado('OTRA S.A.', 'r0', true, 'Planta ' + EMPRESA)], true));
+pagina(tarjeta('Shipper', 'PARTE UNO', {}, null, 'Planta ' + EMPRESA),
+       buscadorCon('Shipper', [resultado('PARTE UNO', 'r0', true, 'Planta ' + EMPRESA)], true));
 leer();
 // 13. El encabezado es un componente con su título en su propia raíz shadow; el nombre, dentro de otro componente en el
 // party__info, o repartido en dos nodos: el texto se lee nodo por nodo y entra en las raíces shadow.
