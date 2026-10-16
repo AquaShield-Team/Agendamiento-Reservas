@@ -1548,6 +1548,15 @@ Los operadores de la plantilla son «usuario1» y «usuario2». Las credenciales
 `nombre_en_pantalla`: el nombre con que el portal muestra al operador. `_cosco_sesion_activa` lo busca para
 reconocer la sesión. Es opcional y en la plantilla va vacío: sin él, reconoce la sesión por la empresa.
 
+**La dirección del login de HYUNDAI sale de `config.json`** (encargo 70, `CICLO-hyundai-en-clon-nuevo.md`):
+`login_hyundai` va a la `url` de las credenciales de HYUNDAI del operador, y solo sin ella a
+`https://www.hmm21.com/e-service/auth/login.do`. La plantilla trae ahí la portada, `https://www.hmm21.com/`, en sus dos
+operadores, y el panel no muestra ni cambia esa llave. En un clon nuevo, `usuario1` y `usuario2` van a la portada, y un
+operador creado desde Credenciales, que nace sin ella, va al login (medido sin red, por el panel y «Solo iniciar
+sesión»). El `config.json` de este equipo trae la del login en el operador de las corridas. Es la única dirección que
+sale de `config.json`: las demás, y la de reservas de HYUNDAI, van escritas en el programa, y la `url` de MAERSK no la
+lee nadie. Si se arregla en la plantilla o en el programa, lo decide Marcelo.
+
 ## Archivos que no son código de la app
 
 - `perfiles/`: perfiles de Chrome con sesiones iniciadas. No borrar ni modificar.
