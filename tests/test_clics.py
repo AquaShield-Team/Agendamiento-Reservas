@@ -5246,12 +5246,13 @@ console.log(JSON.stringify(r));
         # El login de HYUNDAI va a su página de login, escrita en el programa, con cualquier `url` en las credenciales
         # o sin ella, como MAERSK (decisión de Marcelo, encargo 71, CICLO-hyundai-login-fijo.md). Hasta ahí iba a esa
         # llave, y config.example.json trae ahí la portada: en un clon nuevo, sus dos operadores iban a la portada
-        # (encargo 70). Los casos: los de la plantilla, tal como vienen; la portada, la del login, otra dirección,
-        # vacía y sin la llave, como un operador creado desde Credenciales.
+        # (encargo 70). Los casos: los de la plantilla, tal como vienen; la portada, la del login, otra página de
+        # e-service, otra dirección, vacía y sin la llave, como un operador creado desde Credenciales.
         self.assertEqual(self.mod.HMM_LOGIN, "https://www.hmm21.com/e-service/auth/login.do")
         plantilla = json.loads((soporte.FUENTES / "config.example.json").read_bytes().decode("utf-8"))
         casos = {f"plantilla {op}": datos["hyundai"] for op, datos in plantilla["usuarios"].items()}
         for nombre, url in (("portada", "https://www.hmm21.com/"), ("login", self.mod.HMM_LOGIN),
+                            ("otra de e-service", "https://www.hmm21.com/e-service/auth/otra.do"),
                             ("otra", "https://portal.invalid/hmm"), ("vacía", ""), ("None", None)):
             casos[nombre] = {"usuario": "u", "clave": "c", "contrato": "", "url": url}
         casos["sin la llave"] = {"usuario": "u", "clave": "c", "contrato": ""}

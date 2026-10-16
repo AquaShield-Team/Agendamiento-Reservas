@@ -1550,7 +1550,8 @@ reconocer la sesión. Es opcional y en la plantilla va vacío: sin él, reconoce
 
 **El login de HYUNDAI va siempre a su página de login** (decisión de Marcelo, encargo 71,
 `CICLO-hyundai-login-fijo.md`): `login_hyundai` va a `HMM_LOGIN`, `https://www.hmm21.com/e-service/auth/login.do`,
-escrita en el programa, como `login_maersk` a la suya, y no lee la `url` de las credenciales.
+escrita en el programa, y no lee la `url` de las credenciales, como `login_maersk`, que va siempre a su página de
+reservas, y sin sesión MAERSK lo lleva al login.
 - Hasta ahí iba a esa llave, y solo sin ella al login. La plantilla trae ahí la portada, `https://www.hmm21.com/`, en
   sus dos operadores, y el panel no muestra ni cambia esa llave: en un clon nuevo, `usuario1` y `usuario2` iban a la
   portada (encargo 70, `CICLO-hyundai-en-clon-nuevo.md`).
@@ -1561,7 +1562,7 @@ escrita en el programa, como `login_maersk` a la suya, y no lee la `url` de las 
   `config.json` ya creados, que la conservan, y la de MAERSK es de otra naviera. Ningún login de `NAVIERAS` lee una
   dirección de `config.json`; solo `_login_portal`, el andamiaje, que no se usa.
 - Lo vigila `test_clics.TestHyundai.test_el_login_va_siempre_a_su_pagina`, con los operadores de la plantilla tal como
-  vienen y con otras direcciones en la llave.
+  vienen y con otras direcciones en la llave, también otra página de e-service.
 
 ## Archivos que no son código de la app
 

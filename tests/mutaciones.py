@@ -8536,6 +8536,10 @@ MUTACIONES += [
     # La url de las credenciales si trae la llave, aunque venga vacía.
     dict(id="e71-login-la-llave-primero", pruebas=[HMM_LOGIN_VA],
          viejo=HMM_IR, nuevo='        page.goto(creds.get("url", HMM_LOGIN), wait_until="domcontentloaded")\n'),
+    # La url de las credenciales solo si es otra página de e-service (la encontró la revisión de código del encargo).
+    dict(id="e71-login-la-llave-si-es-de-e-service", pruebas=[HMM_LOGIN_VA],
+         viejo=HMM_IR, nuevo='        page.goto(creds.get("url") if str(creds.get("url") or "").startswith('
+                             '"https://www.hmm21.com/e-service/") else HMM_LOGIN, wait_until="domcontentloaded")\n'),
     # Otra página: la portada que trae la plantilla.
     dict(id="e71-login-a-la-portada", pruebas=[HMM_LOGIN_VA],
          viejo='HMM_LOGIN = "https://www.hmm21.com/e-service/auth/login.do"\n',
