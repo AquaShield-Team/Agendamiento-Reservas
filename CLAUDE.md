@@ -809,7 +809,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 833 pruebas al 2026-10-15 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 834 pruebas al 2026-10-15 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -1548,14 +1548,20 @@ Los operadores de la plantilla son «usuario1» y «usuario2». Las credenciales
 `nombre_en_pantalla`: el nombre con que el portal muestra al operador. `_cosco_sesion_activa` lo busca para
 reconocer la sesión. Es opcional y en la plantilla va vacío: sin él, reconoce la sesión por la empresa.
 
-**La dirección del login de HYUNDAI sale de `config.json`** (encargo 70, `CICLO-hyundai-en-clon-nuevo.md`):
-`login_hyundai` va a la `url` de las credenciales de HYUNDAI del operador, y solo sin ella a
-`https://www.hmm21.com/e-service/auth/login.do`. La plantilla trae ahí la portada, `https://www.hmm21.com/`, en sus dos
-operadores, y el panel no muestra ni cambia esa llave. En un clon nuevo, `usuario1` y `usuario2` van a la portada, y un
-operador creado desde Credenciales, que nace sin ella, va al login (medido sin red, por el panel y «Solo iniciar
-sesión»). El `config.json` de este equipo trae la del login en el operador de las corridas. Es la única dirección que
-sale de `config.json`: las demás, y la de reservas de HYUNDAI, van escritas en el programa, y la `url` de MAERSK no la
-lee nadie. Si se arregla en la plantilla o en el programa, lo decide Marcelo.
+**El login de HYUNDAI va siempre a su página de login** (decisión de Marcelo, encargo 71,
+`CICLO-hyundai-login-fijo.md`): `login_hyundai` va a `HMM_LOGIN`, `https://www.hmm21.com/e-service/auth/login.do`,
+escrita en el programa, como `login_maersk` a la suya, y no lee la `url` de las credenciales.
+- Hasta ahí iba a esa llave, y solo sin ella al login. La plantilla trae ahí la portada, `https://www.hmm21.com/`, en
+  sus dos operadores, y el panel no muestra ni cambia esa llave: en un clon nuevo, `usuario1` y `usuario2` iban a la
+  portada (encargo 70, `CICLO-hyundai-en-clon-nuevo.md`).
+- Medido sin red, por el panel y «Solo iniciar sesión»: con un `config.json` creado desde la plantilla, `usuario1`, un
+  operador con la forma del de las corridas de este equipo y uno creado desde Credenciales van los tres al login; con
+  el código de antes (`21d92bf`), `usuario1` iba a la portada.
+- **La llave `url` queda en la plantilla, sin uso,** como la de MAERSK (encargo 71): sacarla no cambia los
+  `config.json` ya creados, que la conservan, y la de MAERSK es de otra naviera. Ningún login de `NAVIERAS` lee una
+  dirección de `config.json`; solo `_login_portal`, el andamiaje, que no se usa.
+- Lo vigila `test_clics.TestHyundai.test_el_login_va_siempre_a_su_pagina`, con los operadores de la plantilla tal como
+  vienen y con otras direcciones en la llave.
 
 ## Archivos que no son código de la app
 

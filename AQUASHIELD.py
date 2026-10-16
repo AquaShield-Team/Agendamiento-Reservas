@@ -2537,9 +2537,17 @@ def login_cosco(page, creds, reg, on_pausa=None):
     return ok
 
 
+# La página del login de HYUNDAI (HMM). login_hyundai va siempre a ella, como login_maersk a la suya: la `url` de las
+# credenciales no se lee (decisión de Marcelo, encargo 71, CICLO-hyundai-login-fijo.md). Hasta ahí iba a esa llave, y
+# solo sin ella a esta página; config.example.json trae ahí la portada (https://www.hmm21.com/), así que en un clon
+# nuevo los dos operadores de la plantilla iban a la portada (medido sin red, encargo 70,
+# CICLO-hyundai-en-clon-nuevo.md). Los 22 inicios de sesión de HYUNDAI guardados en logs/ de este equipo son del
+# operador cuyo config.json trae esta página, y los 22 encontraron su campo de usuario.
+HMM_LOGIN = "https://www.hmm21.com/e-service/auth/login.do"
+
+
 def login_hyundai(page, creds, reg, on_pausa=None):
-    """Login HMM (HYUNDAI): formulario simple #userId/#userPwd, sin captcha."""
-    url = creds.get("url") or "https://www.hmm21.com/e-service/auth/login.do"
+    """Login HMM (HYUNDAI): formulario simple #userId/#userPwd, sin captcha, siempre en HMM_LOGIN."""
 
     def dentro():
         u = page.url.lower()
@@ -2547,7 +2555,7 @@ def login_hyundai(page, creds, reg, on_pausa=None):
 
     reg.paso("Abriendo login de HYUNDAI (HMM)...")
     try:
-        page.goto(url, wait_until="domcontentloaded")
+        page.goto(HMM_LOGIN, wait_until="domcontentloaded")
     except Exception:
         pass
     esperar_hasta(page, "#userId, input[name='userId']", 5, reg, "carga login")

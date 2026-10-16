@@ -8523,3 +8523,21 @@ MUTACIONES += [
          viejo="    plazo = \" \".join(str(plazo or \"\").split())[:40]\n",
          nuevo="    plazo = \" \".join(str(plazo or \"\").split())\n"),
 ]
+
+# --- Encargo 71 (CICLO-hyundai-login-fijo.md): el login de HYUNDAI va siempre a su página de login, escrita en el
+# programa, sin leer la `url` de las credenciales, como MAERSK (decisión de Marcelo). ---
+HMM_LOGIN_VA = "test_clics.TestHyundai.test_el_login_va_siempre_a_su_pagina"
+HMM_IR = '        page.goto(HMM_LOGIN, wait_until="domcontentloaded")\n'
+
+MUTACIONES += [
+    # Como hasta el encargo 70: la url de las credenciales, y solo sin ella la página del login.
+    dict(id="e71-login-lee-la-url", pruebas=[HMM_LOGIN_VA],
+         viejo=HMM_IR, nuevo='        page.goto(creds.get("url") or HMM_LOGIN, wait_until="domcontentloaded")\n'),
+    # La url de las credenciales si trae la llave, aunque venga vacía.
+    dict(id="e71-login-la-llave-primero", pruebas=[HMM_LOGIN_VA],
+         viejo=HMM_IR, nuevo='        page.goto(creds.get("url", HMM_LOGIN), wait_until="domcontentloaded")\n'),
+    # Otra página: la portada que trae la plantilla.
+    dict(id="e71-login-a-la-portada", pruebas=[HMM_LOGIN_VA],
+         viejo='HMM_LOGIN = "https://www.hmm21.com/e-service/auth/login.do"\n',
+         nuevo='HMM_LOGIN = "https://www.hmm21.com/"\n'),
+]
