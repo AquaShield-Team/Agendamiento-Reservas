@@ -1731,12 +1731,14 @@ class TestListaDeSugerencias(ConRegistro):
                          + self.DESPUES["_mk_ciudad"])
         for donde in self.leer(carpeta, vistas):
             self.assertNotIn("⚠", donde)
+        # Desde el encargo 74 dice qué pasa con el paréntesis si lo traen las dos; hasta ahí, «(sin lo que va entre
+        # paréntesis)».
         self.assertEqual(self.mod._mk_sin_una_exacta("PUERTO ALFA", 2),
                          "una sola sugerencia Container Yard que diga «PUERTO ALFA» antes de su primera coma (sin lo "
-                         "que va entre paréntesis): hay 2")
+                         "que va entre paréntesis, salvo que lo traigan las dos: entonces, el mismo): hay 2")
         self.assertEqual(self.mod._mk_sin_una_exacta("PUERTO ALFA", 0),
                          "una sola sugerencia Container Yard que diga «PUERTO ALFA» antes de su primera coma (sin lo "
-                         "que va entre paréntesis): no hay ninguna")
+                         "que va entre paréntesis, salvo que lo traigan las dos: entonces, el mismo): no hay ninguna")
 
     def test_maersk_decide_con_la_lista_quieta(self):
         # Revisión de código del encargo 43: la lista puede llegar de a poco. _mk_ciudad decide con dos lecturas iguales
@@ -1814,45 +1816,69 @@ class TestListaDeSugerencias(ConRegistro):
         self.assertEqual(self.llamar_con("_mk_ciudad", pagina, reg, "SAN  ALFA, PAIS"),
                          ("San Alfa, Pais", "San Alfa, Pais"))
 
+    def mk_elige(self, opcion, celda, extra):
+        """_mk_ciudad, con 'celda' escrita y 'opcion' (Container Yard) y 'extra' a la vista, pulsa 'opcion' y nada más
+        que lo de siempre."""
+        _, reg, _ = self.corrida()
+        pagina = PaginaSugerencias(self.mod, extra=extra)
+        pagina.opcion = opcion
+        self.assertEqual(self.llamar_con("_mk_ciudad", pagina, reg, celda, evidencia="mk_f5_origen"), (opcion, opcion))
+        self.assertEqual(pagina.eventos, [("campo",), ("escribe", celda.split(",")[0].upper())]
+                         + [("espera",)] * 3 + self.evidencia("_mk_ciudad", "mk_f5_origen")
+                         + [("pulsa", opcion)] + self.DESPUES["_mk_ciudad"])
+        self.assertEqual(pagina.tipo_pulsado, "Container Yard")
+
+    def mk_no_elige(self, opcion, celda, extra, n):
+        """_mk_ciudad no pulsa nada y corta (NO ENVIADA) con 'n' sugerencias con la forma de la regla, y log.txt lo
+        anota en las dos vueltas, con cuántas Container Yard había."""
+        carpeta, reg, _ = self.corrida()
+        pagina = PaginaSugerencias(self.mod, extra=extra)
+        pagina.opcion = opcion
+        e = self.llamar_con("_mk_ciudad", pagina, reg, celda, evidencia="mk_f5_origen")
+        self.assertIsInstance(e, self.mod.ObjetivoNoEncontrado)
+        ciudad = celda.split(",")[0]
+        self.assertEqual((e.paso, e.buscaba), ("Origen de MAERSK", self.mod._mk_sin_una_exacta(ciudad, n)))
+        self.assertNotIn("pulsa", [x[0] for x in pagina.eventos])
+        cy = 1 + sum(tipo == "Container Yard" for _, tipo in extra)
+        self.assertEqual((carpeta / "log.txt").read_text(encoding="utf-8").count(
+            f"Origen: {n} de las {cy} sugerencias Container Yard dicen «{ciudad}» antes de su primera coma"), 2)
+
     def test_maersk_quita_los_parentesis_de_los_dos_lados(self):
         # Decisión de Marcelo (encargo 73, CICLO-maersk-parentesis.md): lo que va entre paréntesis se quita también de
-        # lo escrito, como de la sugerencia (_mk_base de los dos lados). El 21-10, en el equipo de un colega, una fila
+        # lo escrito, como de la sugerencia (_mk_partes de los dos lados). El 21-10, en el equipo de un colega, una fila
         # cuyo destino tenía la forma «Ciudad (Estado), País», con la que MAERSK nombra sus lugares, quedó NO ENVIADA:
         # «0 de las 1 sugerencias Container Yard dicen … antes de su primera coma», dos veces. Hasta ahí, lo escrito con
-        # paréntesis no calzaba con ninguna. Vale para el origen y el destino: los dos los elige _mk_ciudad.
-        CY = "Container Yard"
-        elige = [("Puerto Alfa (Norte), Pais", "PUERTO ALFA (NORTE), PAIS", []),       # la forma del 21-10
-                 ("Puerto Alfa, Pais", "Puerto Alfa (Norte), Pais", []),              # el paréntesis solo en la celda
-                 # Lo que va entre paréntesis no distingue, de ningún lado: con una sola, esa, aunque diga otra cosa.
-                 ("Puerto Alfa (Sur), Pais", "Puerto Alfa (Norte)", [("Puerto Alfa (Norte), Pais", "Store Door")])]
-        for opcion, celda, extra in elige:
+        # paréntesis no calzaba con ninguna. Vale para el origen y el destino: los dos los elige _mk_ciudad. Hasta el
+        # encargo 74 esta prueba fijaba también que el paréntesis no distinguía («Alfa (Norte)» elegía «Alfa (Sur)» si
+        # era la única): desde entonces, test_maersk_si_los_dos_traen_parentesis_tiene_que_ser_el_mismo.
+        # La forma del 21-10, y el paréntesis solo en la celda.
+        for opcion, celda in (("Puerto Alfa (Norte), Pais", "PUERTO ALFA (NORTE), PAIS"),
+                              ("Puerto Alfa, Pais", "Puerto Alfa (Norte), Pais")):
             with self.subTest(opcion=opcion, celda=celda):
-                _, reg, _ = self.corrida()
-                pagina = PaginaSugerencias(self.mod, extra=extra)
-                pagina.opcion = opcion
-                self.assertEqual(self.llamar_con("_mk_ciudad", pagina, reg, celda, evidencia="mk_f5_origen"),
-                                 (opcion, opcion))
-                self.assertEqual(pagina.eventos, [("campo",), ("escribe", celda.split(",")[0].upper())]
-                                 + [("espera",)] * 3 + self.evidencia("_mk_ciudad", "mk_f5_origen")
-                                 + [("pulsa", opcion)] + self.DESPUES["_mk_ciudad"])
-                self.assertEqual(pagina.tipo_pulsado, CY)
-        # Dos que solo se distinguen por lo que va entre paréntesis: ninguna, aunque una lo diga igual que la celda; y
-        # lo escrito sin nada fuera de los paréntesis no calza ni con la que tampoco trae nada fuera de ellos.
-        no_elige = [("Puerto Alfa (Norte), Pais", "Puerto Alfa (Norte), Pais", [("Puerto Alfa (Sur), Pais", CY)], 2),
-                    ("(Norte), Pais", "(Norte), Pais", [], 0)]
-        for opcion, celda, extra, n in no_elige:
+                self.mk_elige(opcion, celda, [])
+        # Lo escrito sin nada fuera de los paréntesis no calza ni con la que tampoco trae nada fuera de ellos.
+        self.mk_no_elige("(Norte), Pais", "(Norte), Pais", [], 0)
+
+    def test_maersk_si_los_dos_traen_parentesis_tiene_que_ser_el_mismo(self):
+        # Decisión de Marcelo (encargo 74, CICLO-maersk-mismo-parentesis.md): si la celda y la sugerencia traen
+        # paréntesis, lo que va entre ellos tiene que ser lo mismo, en _mk_plano; si solo uno lo trae, cuenta lo de
+        # afuera (_mk_calza). En a538b77, «Alfa (Norte)» elegía «Alfa (Sur), País» si era la única Container Yard, y
+        # con dos que solo distinguía el paréntesis no elegía ninguna.
+        CY, SD = "Container Yard", "Store Door"
+        # Elige: el mismo, escrito de otra forma; y entre dos, la que dice lo mismo que la celda.
+        for opcion, celda, extra in (("Puerto Alfa (Región Uno), Pais", "PUERTO ALFA ( REGION  UNO ), PAIS", []),
+                                     ("Puerto Alfa (Norte), Pais", "Puerto Alfa (Norte)", [("Puerto Alfa (Sur), Pais",
+                                                                                            CY)])):
             with self.subTest(opcion=opcion, celda=celda, extra=extra):
-                carpeta, reg, _ = self.corrida()
-                pagina = PaginaSugerencias(self.mod, extra=extra)
-                pagina.opcion = opcion
-                e = self.llamar_con("_mk_ciudad", pagina, reg, celda, evidencia="mk_f5_origen")
-                self.assertIsInstance(e, self.mod.ObjetivoNoEncontrado)
-                ciudad = celda.split(",")[0]
-                self.assertEqual((e.paso, e.buscaba), ("Origen de MAERSK", self.mod._mk_sin_una_exacta(ciudad, n)))
-                self.assertNotIn("pulsa", [x[0] for x in pagina.eventos])
-                log = (carpeta / "log.txt").read_text(encoding="utf-8")
-                self.assertEqual(log.count(f"Origen: {n} de las {1 + len(extra)} sugerencias Container Yard dicen "
-                                           f"«{ciudad}» antes de su primera coma"), 2)
+                self.mk_elige(opcion, celda, extra)
+        # No elige: «Alfa (Norte)» contra la única «Alfa (Sur)» (la gemela Store Door de la celda no cuenta), y la celda
+        # sin paréntesis contra dos que solo los distinguen (encargo 43: con la celda sin él, cuenta lo de afuera).
+        for opcion, celda, extra, n in (("Puerto Alfa (Sur), Pais", "Puerto Alfa (Norte)",
+                                         [("Puerto Alfa (Norte), Pais", SD)], 0),
+                                        ("Puerto Alfa (Norte), Pais", "Puerto Alfa", [("Puerto Alfa (Sur), Pais", CY)],
+                                         2)):
+            with self.subTest(opcion=opcion, celda=celda, extra=extra):
+                self.mk_no_elige(opcion, celda, extra, n)
 
     def test_cada_reservador_la_pide_para_su_origen_y_su_destino(self):
         # Solo el origen y el destino: ni el commodity de ONE ni el contrato de COSCO, que usan los mismos ayudantes.

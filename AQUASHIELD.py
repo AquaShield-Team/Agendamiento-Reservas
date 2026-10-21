@@ -8681,7 +8681,8 @@ def _mk_got_it(page):
 # raíz shadow de cada opción, donde lo ve el filtro de Playwright y no text_content: «Container Yard» o «Store Door», y
 # su sigla (medido en las 4 listas del 30-09, CICLO-maersk-y-fila-sin-ruta.md). Hasta el encargo 43, la primera con
 # «container yard» o, si no había, la primera: así eligió el 29-09 y el 30-09 otro destino que el de la fila. Desde el
-# encargo 73, lo que va entre paréntesis se quita también de lo escrito (CICLO-maersk-parentesis.md).
+# encargo 73, lo que va entre paréntesis se quita también de lo escrito (CICLO-maersk-parentesis.md), y desde el 74, si
+# lo traen los dos, tiene que ser el mismo (_mk_calza; CICLO-maersk-mismo-parentesis.md).
 MK_CONTAINER_YARD = "Container Yard"
 
 
@@ -8693,16 +8694,36 @@ def _mk_plano(texto):
     return " ".join("".join(c for c in t if not unicodedata.combining(c)).upper().split())
 
 
-def _mk_base(sugerencia):
-    """La parte de una sugerencia de MAERSK antes de su primera coma, sin lo que va entre paréntesis y en _mk_plano: si
-    es la de lo escrito, la sugerencia tiene la forma de la regla de Marcelo (encargo 43). «Alfa (Beta), Gama» da
-    «ALFA». Desde el encargo 73, _mk_las_exactas la toma también de lo escrito."""
-    t = str(sugerencia or "").split(",")[0]
+def _mk_partes(texto):
+    """La parte de un texto de MAERSK (una sugerencia o lo escrito) antes de su primera coma, en dos: (lo de afuera de
+    los paréntesis, en _mk_plano; lo que va entre paréntesis, cada uno en _mk_plano, en el orden en que se quitan: los
+    de adentro primero y, en cada nivel, de izquierda a derecha). Un paréntesis sin cerrar queda afuera. «Alfa (Beta),
+    Gama» da («ALFA», («BETA»,)), y «Alfa» da («ALFA», ()). Lo de afuera es lo que hasta el encargo 74 daba _mk_base,
+    que salió con él: desde entonces la regla (_mk_calza) mira también lo de adentro, y las dos partes salen de aquí."""
+    t = str(texto or "").split(",")[0]
+    grupos = []
     while True:
-        sin = _re_mk.sub(r"\([^()]*\)", " ", t)
+        quitados = []
+
+        def quitar(m):
+            quitados.append(_mk_plano(m.group(1)))
+            return " "
+
+        sin = _re_mk.sub(r"\(([^()]*)\)", quitar, t)
         if sin == t:
-            return _mk_plano(t)
+            return _mk_plano(t), tuple(grupos)
+        grupos += quitados
         t = sin
+
+
+def _mk_calza(sugerencia, escrita):
+    """Si una sugerencia de MAERSK tiene la forma de la regla frente a lo escrito ('escrita', ya en _mk_partes): lo de
+    afuera de los paréntesis, igual; y si los dos traen paréntesis, lo que va entre ellos, también igual, en _mk_plano
+    (decisión de Marcelo, encargo 74, CICLO-maersk-mismo-parentesis.md). Si solo uno los trae, cuenta lo de afuera:
+    lo escrito «Alfa» calza con «Alfa (Norte), País» (encargo 43), y «Alfa (Norte)», con «Alfa, País» (encargo 73).
+    Desde el 74, «Alfa (Norte)» ya no calza con «Alfa (Sur), País»: en a538b77 calzaba, y si era la única, la elegía."""
+    afuera, parentesis = _mk_partes(sugerencia)
+    return afuera == escrita[0] and (not parentesis or not escrita[1] or parentesis == escrita[1])
 
 
 def _prefijo_de_la_lista(ciudad):
@@ -8732,17 +8753,18 @@ def _mk_sugerencias(page, ciudad):
 def _mk_las_exactas(cand, ciudad):
     """Entre las sugerencias 'cand' (_mk_sugerencias), las Container Yard (MK_CONTAINER_YARD, en su raíz shadow):
     devuelve (su localizador, el texto de cada una, el de text_content, sin la raíz shadow y en una línea, y las
-    posiciones de las que tienen la forma de la regla: _mk_base igual a la de la ciudad escrita).
+    posiciones de las que tienen la forma de la regla frente a la ciudad escrita: _mk_calza).
     Lo que va entre paréntesis se quita de los dos lados (decisión de Marcelo, encargo 73, CICLO-maersk-parentesis.md).
     Hasta ahí, solo de la sugerencia: una celda con paréntesis («Ciudad (Estado), País», la forma con que MAERSK nombra
-    sus lugares) no calzaba con ninguna, ni con la que la escribe igual, y la fila quedaba NO ENVIADA. Lo escrito sin
-    nada fuera de los paréntesis no calza con ninguna: no hay con qué comparar."""
+    sus lugares) no calzaba con ninguna, ni con la que la escribe igual, y la fila quedaba NO ENVIADA. Desde el encargo
+    74, si los dos lo traen, tiene que ser el mismo (_mk_calza). Lo escrito sin nada fuera de los paréntesis no calza
+    con ninguna: no hay con qué comparar."""
     cy = cand.filter(has_text=_re_mk.compile(_re_mk.escape(MK_CONTAINER_YARD), _re_mk.I))
     textos = [" ".join((t or "").split()) for t in cy.all_text_contents()]
-    escrita = _mk_base(ciudad)
-    if not escrita:
+    escrita = _mk_partes(ciudad)
+    if not escrita[0]:
         return cy, textos, []
-    return cy, textos, [i for i, t in enumerate(textos) if _mk_base(t) == escrita]
+    return cy, textos, [i for i, t in enumerate(textos) if _mk_calza(t, escrita)]
 
 
 # Cuántas veces lee _mk_ciudad el campo después de pulsar la sugerencia, una cada 0,4 s, hasta que quede con ella
@@ -8753,9 +8775,11 @@ MK_LECTURAS_CAMPO = 5
 
 def _mk_sin_una_exacta(ciudad, n):
     """Lo que buscaba _mk_ciudad cuando no hay una sola sugerencia con la forma de la regla ('n' la tienen), para el
-    motivo de la NO ENVIADA."""
+    motivo de la NO ENVIADA. Desde el encargo 74 dice también qué pasa con el paréntesis si lo traen las dos
+    (_mk_calza): hasta ahí decía solo «(sin lo que va entre paréntesis)»."""
     return (f"una sola sugerencia {MK_CONTAINER_YARD} que diga «{ciudad}» antes de su primera coma (sin lo que va "
-            f"entre paréntesis): {f'hay {n}' if n else 'no hay ninguna'}")
+            f"entre paréntesis, salvo que lo traigan las dos: entonces, el mismo): "
+            f"{f'hay {n}' if n else 'no hay ninguna'}")
 
 
 def _mk_ciudad(page, texto, reg, etiqueta, campo="", evidencia=""):
@@ -8763,7 +8787,8 @@ def _mk_ciudad(page, texto, reg, etiqueta, campo="", evidencia=""):
     el campo de su id (#mc-input-<campo>) o, sin él, en el primero «Enter city or port» visible y vacío (y si no hay uno
     vacío, en el primero), espera las sugerencias que traen sus primeros 5 caracteres ASCII (_mk_sugerencias) y pulsa la
     única Container Yard cuya parte antes de la primera coma, sin lo que va entre paréntesis, es la ciudad, también sin
-    lo que va entre paréntesis (_mk_las_exactas; desde el encargo 73, de los dos lados). Después comprueba que el campo
+    lo que va entre paréntesis (_mk_las_exactas; desde el encargo 73, de los dos lados, y desde el 74, si los dos lo
+    traen, tiene que ser el mismo: _mk_calza). Después comprueba que el campo
     quedó con el texto de esa sugerencia. Si no hay una sola, o el campo no calza, vuelve a escribir la ciudad una vez,
     y si tampoco, corta (ObjetivoNoEncontrado, con el motivo): la reserva queda NO ENVIADA, con la captura y el HTML de
     _sin_clic_a_ciegas (decisión de Marcelo, encargo 43, CICLO-maersk-elige-exacto.md). Si el campo no responde,

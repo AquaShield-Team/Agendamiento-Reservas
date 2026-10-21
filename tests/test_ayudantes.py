@@ -234,8 +234,9 @@ class TestMAERSK(soporte.CasoAQ):
 
     def test_la_forma_de_la_regla_de_origen_y_destino(self):
         # La regla de Marcelo para el origen y el destino de MAERSK (encargo 43): la parte de la sugerencia antes de
-        # su primera coma, sin lo que va entre paréntesis (_mk_base), es lo escrito, los dos sin tildes, en mayúsculas
-        # y con los espacios de a uno (_mk_plano). Los signos cuentan, y un paréntesis sin cerrar queda.
+        # su primera coma, sin lo que va entre paréntesis (lo de afuera de _mk_partes; hasta el encargo 74, _mk_base),
+        # es lo escrito, los dos sin tildes, en mayúsculas y con los espacios de a uno (_mk_plano). Los signos
+        # cuentan, y un paréntesis sin cerrar queda.
         casos = (("Puerto Alfa, Pais", "PUERTO ALFA"), ("Puerto Alfa (Norte), Pais", "PUERTO ALFA"),
                  ("(Norte) Puerto Alfa, Pais", "PUERTO ALFA"), ("Puerto Alfa (Norte (Alto)), Pais", "PUERTO ALFA"),
                  ("Puerto  Álfa , País", "PUERTO ALFA"), ("Puerto Alfa", "PUERTO ALFA"),
@@ -244,11 +245,35 @@ class TestMAERSK(soporte.CasoAQ):
                  (None, ""))
         for texto, base in casos:
             with self.subTest(sugerencia=texto):
-                self.assertEqual(self.mod._mk_base(texto), base)
+                self.assertEqual(self.mod._mk_partes(texto)[0], base)
         for texto, plano in (("  puerto   ñandú ", "PUERTO NANDU"), ("PUERTO ALFA (NORTE)", "PUERTO ALFA (NORTE)"),
                              ("PUERTO ALFA, PAIS", "PUERTO ALFA, PAIS"), ("", ""), (None, "")):
             with self.subTest(escrito=texto):
                 self.assertEqual(self.mod._mk_plano(texto), plano)
+
+    def test_el_parentesis_cuenta_si_lo_traen_los_dos(self):
+        # Decisión de Marcelo (encargo 74, CICLO-maersk-mismo-parentesis.md): si la celda y la sugerencia traen
+        # paréntesis, lo que va entre ellos tiene que ser lo mismo, en _mk_plano (sin tildes, en mayúsculas y con los
+        # espacios de a uno), además de lo de afuera. Si solo uno lo trae, cuenta lo de afuera: la celda sin paréntesis
+        # calza con la sugerencia que lo trae (encargo 43), y la celda con paréntesis, con la que no (encargo 73). En
+        # a538b77, «Alfa (Norte)» calzaba también con «Alfa (Sur), País».
+        partes = (("Alfa (Beta), Gama", ("ALFA", ("BETA",))), ("Alfa", ("ALFA", ())),
+                  ("Alfa (Norte (Viejo)), Pais", ("ALFA", ("VIEJO", "NORTE"))),
+                  ("(Norte) Alfa (Sur), Pais", ("ALFA", ("NORTE", "SUR"))), ("Alfa (Norte", ("ALFA (NORTE", ())),
+                  ("Alfa ( región  uno ), Pais", ("ALFA", ("REGION UNO",))), ("", ("", ())), (None, ("", ())))
+        for texto, esperado in partes:
+            with self.subTest(texto=texto):
+                self.assertEqual(self.mod._mk_partes(texto), esperado)
+        calzan = (("Alfa (Norte), Pais", "Alfa (Norte)", True),
+                  ("ALFA ( norte ), PAIS", "Alfa (Nórte)", True),           # el mismo, en _mk_plano
+                  ("Alfa (Sur), Pais", "Alfa (Norte)", False),              # los dos lo traen, y dicen otra cosa
+                  ("Alfa (Norte) (Puerto), Pais", "Alfa (Norte)", False),   # todo lo que va entre paréntesis
+                  ("Alfa, Pais", "Alfa (Norte)", True),                     # solo la celda (encargo 73)
+                  ("Alfa (Norte), Pais", "Alfa", True),                     # solo la sugerencia (encargo 43)
+                  ("Beta (Norte), Pais", "Alfa (Norte)", False))            # lo de afuera, otro
+        for sugerencia, escrito, calza in calzan:
+            with self.subTest(sugerencia=sugerencia, escrito=escrito):
+                self.assertIs(self.mod._mk_calza(sugerencia, self.mod._mk_partes(escrito)), calza)
 
 
 class TestCOSCO(soporte.CasoAQ):

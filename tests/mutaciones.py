@@ -5635,7 +5635,8 @@ MUTACIONES += [
 # ---
 FORMA_MK = "test_ayudantes.TestMAERSK.test_la_forma_de_la_regla_de_origen_y_destino"
 CY_MK = "    cy = cand.filter(has_text=_re_mk.compile(_re_mk.escape(MK_CONTAINER_YARD), _re_mk.I))\n"
-EXACTAS_MK = "    return cy, textos, [i for i, t in enumerate(textos) if _mk_base(t) == escrita]\n"
+# Desde el encargo 74, la regla está en _mk_calza, y lo de afuera de los paréntesis sale de _mk_partes (_mk_base salió).
+EXACTAS_MK = "    return cy, textos, [i for i, t in enumerate(textos) if _mk_calza(t, escrita)]\n"
 PLANO_MK = '    return " ".join("".join(c for c in t if not unicodedata.combining(c)).upper().split())\n'
 DEJO_MK = ("                        if not vista:\n                            por_que = falta\n"
            "                            break\n")
@@ -5650,9 +5651,9 @@ MUTACIONES += [
     # La forma: con lo que va entre paréntesis, sin cortar en la primera coma, con tildes, con mayúsculas o con los
     # espacios como vienen.
     dict(id="mk-base-con-parentesis", pruebas=[FORMA_MK, SUG_EXACTA],
-         viejo='        sin = _re_mk.sub(r"\\([^()]*\\)", " ", t)\n', nuevo="        sin = t\n"),
+         viejo='        sin = _re_mk.sub(r"\\(([^()]*)\\)", quitar, t)\n', nuevo="        sin = t\n"),
     dict(id="mk-base-sin-cortar-en-la-coma", pruebas=[FORMA_MK, SUG_EXACTA],
-         viejo='    t = str(sugerencia or "").split(",")[0]\n', nuevo='    t = str(sugerencia or "")\n'),
+         viejo='    t = str(texto or "").split(",")[0]\n', nuevo='    t = str(texto or "")\n'),
     dict(id="mk-plano-con-tildes", pruebas=[FORMA_MK, SUG_EXACTA], viejo=PLANO_MK,
          nuevo='    return " ".join(t.upper().split())\n'),
     dict(id="mk-plano-con-mayusculas", pruebas=[FORMA_MK], viejo=PLANO_MK,
@@ -8712,9 +8713,38 @@ MUTACIONES += [
 PAREN_MK = SUG + "test_maersk_quita_los_parentesis_de_los_dos_lados"
 
 MUTACIONES += [
-    # Lo escrito con sus paréntesis, como hasta el encargo 73; o sin mirar si queda algo fuera de ellos.
+    # Lo escrito con sus paréntesis, como hasta el encargo 73; o sin mirar si queda algo fuera de ellos. Desde el
+    # encargo 74, lo escrito sale de _mk_partes.
     dict(id="mk-escrita-con-parentesis", pruebas=[PAREN_MK],
-         viejo="    escrita = _mk_base(ciudad)\n", nuevo="    escrita = _mk_plano(ciudad)\n"),
+         viejo="    escrita = _mk_partes(ciudad)\n", nuevo="    escrita = (_mk_plano(ciudad), ())\n"),
     dict(id="mk-escrita-vacia-calza", pruebas=[PAREN_MK],
-         viejo="    if not escrita:\n        return cy, textos, []\n", nuevo=""),
+         viejo="    if not escrita[0]:\n        return cy, textos, []\n", nuevo=""),
+]
+
+# --- Encargo 74 (CICLO-maersk-mismo-parentesis.md): si la celda y la sugerencia de MAERSK traen paréntesis, lo que va
+# entre ellos tiene que ser lo mismo, en _mk_plano; si solo uno lo trae, cuenta lo de afuera (_mk_calza). Las dos partes
+# salen de _mk_partes, que reemplazó a _mk_base. El motivo de la NO ENVIADA lo dice ---
+MISMO_MK = SUG + "test_maersk_si_los_dos_traen_parentesis_tiene_que_ser_el_mismo"
+CUENTA_MK = "test_ayudantes.TestMAERSK.test_el_parentesis_cuenta_si_lo_traen_los_dos"
+REGLA_CALZA = ("    return afuera == escrita[0] and (not parentesis or not escrita[1] or parentesis == "
+               "escrita[1])\n")
+
+MUTACIONES += [
+    # La regla: sin mirar el paréntesis, como en a538b77; o exigiendo el mismo aunque solo uno lo traiga.
+    dict(id="mk-calza-sin-mirar-el-parentesis", pruebas=[MISMO_MK, CUENTA_MK], viejo=REGLA_CALZA,
+         nuevo="    return afuera == escrita[0]\n"),
+    dict(id="mk-calza-exige-el-de-la-celda", pruebas=[PAREN_MK, CUENTA_MK], viejo=REGLA_CALZA,
+         nuevo="    return afuera == escrita[0] and (not escrita[1] or parentesis == escrita[1])\n"),
+    dict(id="mk-calza-exige-el-de-la-sugerencia", pruebas=[MISMO_MK, CUENTA_MK], viejo=REGLA_CALZA,
+         nuevo="    return afuera == escrita[0] and (not parentesis or parentesis == escrita[1])\n"),
+    # Lo de adentro: sin _mk_plano, o sin guardarlo.
+    dict(id="mk-partes-sin-normalizar-el-parentesis", pruebas=[MISMO_MK, CUENTA_MK],
+         viejo="            quitados.append(_mk_plano(m.group(1)))\n",
+         nuevo="            quitados.append(m.group(1))\n"),
+    dict(id="mk-partes-sin-guardar-el-parentesis", pruebas=[MISMO_MK, CUENTA_MK],
+         viejo="        grupos += quitados\n", nuevo=""),
+    # El motivo, como hasta el encargo 74.
+    dict(id="mk-sin-una-exacta-sin-el-parentesis", pruebas=[SUG_EXACTA],
+         viejo='            f"entre paréntesis, salvo que lo traigan las dos: entonces, el mismo): "\n',
+         nuevo='            f"entre paréntesis): "\n'),
 ]
