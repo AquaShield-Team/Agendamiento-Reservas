@@ -8806,12 +8806,11 @@ def _mk_ciudad(page, texto, reg, etiqueta, campo="", evidencia=""):
     única Container Yard cuya parte antes de la primera coma, sin lo que va entre paréntesis, es la ciudad, también sin
     lo que va entre paréntesis (_mk_las_exactas; desde el encargo 73, de los dos lados; desde el 74, si los dos lo
     traen, tiene que ser el mismo; y desde el 75, con la celda con paréntesis decide la lista entera: _mk_ganadoras).
-    Después comprueba que el campo
-    quedó con el texto de esa sugerencia. Si no hay una sola, o el campo no calza, vuelve a escribir la ciudad una vez,
-    y si tampoco, corta (ObjetivoNoEncontrado, con el motivo): la reserva queda NO ENVIADA, con la captura y el HTML de
-    _sin_clic_a_ciegas (decisión de Marcelo, encargo 43, CICLO-maersk-elige-exacto.md). Si el campo no responde,
-    también corta. Hasta el encargo 43 pulsaba la
-    primera con «container yard» o, si no había, la primera, y solo miraba que el campo trajera los 4 primeros
+    Después comprueba que el campo quedó con el texto de esa sugerencia. Si no hay una sola, o el campo no calza, vuelve
+    a escribir la ciudad una vez, y si tampoco, corta (ObjetivoNoEncontrado, con el motivo): la reserva queda NO
+    ENVIADA, con la captura y el HTML de _sin_clic_a_ciegas (decisión de Marcelo, encargo 43,
+    CICLO-maersk-elige-exacto.md). Si el campo no responde, también corta. Hasta el encargo 43 pulsaba la primera con
+    «container yard» o, si no había, la primera, y solo miraba que el campo trajera los 4 primeros
     caracteres, que lo tecleado también trae; y hasta el 42, si no elegía, la reserva seguía sin el campo. Las
     sugerencias están en shadow DOM: se eligen con localizadores de Playwright (penetran shadow).
     Con 'evidencia', antes de pulsar deja con ese nombre la captura de la ventana y el HTML de la página y de sus

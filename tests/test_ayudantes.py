@@ -6,6 +6,7 @@ import ast
 import datetime
 import hashlib
 import inspect
+import itertools
 import json
 import re
 import types
@@ -277,6 +278,8 @@ class TestMAERSK(soporte.CasoAQ):
                   ("Alfa (Norte)", [S, A, N], [2]),
                   ("Alfa (Norte)", [A, "Beta (Sur), Pais"], [0]),            # otro nombre con paréntesis no cuenta
                   ("Alfa (Norte)", ["Beta (Norte), Pais"], []),              # el mismo paréntesis, otro nombre
+                  ("Alfa (Norte)", ["Beta, Pais"], []),                      # sin paréntesis, otro nombre
+                  ("Alfa (Norte)", [A, "Beta, Pais"], [0]),
                   ("Alfa (Norte)", [N, "Alfa (Norte), Otro Pais"], [0, 1]),  # dos del mismo: ganan las dos
                   ("Alfa (Norte)", [A, "Alfa, Otro Pais"], [0, 1]),
                   ("Alfa", [N], [0]),                                        # celda sin paréntesis (encargo 43)
@@ -285,6 +288,44 @@ class TestMAERSK(soporte.CasoAQ):
         for escrito, lista, ganan in listas:
             with self.subTest(escrito=escrito, lista=lista):
                 self.assertEqual(self.mod._mk_ganadoras(lista, self.mod._mk_partes(escrito)), ganan)
+
+    def test_la_regla_por_lista_en_todas_las_listas_chicas(self):
+        # Revisión de código del encargo 75: las pruebas por casos dejaron pasar dos huecos seguidos (en el 74, la sin
+        # paréntesis que ganaba por descarte; en el 75, la sin paréntesis con otro nombre). Esta recorre todas las
+        # listas de 0 a 3 sugerencias de «Alfa» y «Beta», sin paréntesis, con «Norte» y con «Sur», contra las celdas
+        # «Alfa», «Alfa (Norte)» y «Alfa (Sur)» (777 casos), y exige lo que la regla promete (_mk_ganadoras), sin
+        # repetir cómo lo calcula: la elegida dice lo mismo afuera que la celda; con la celda con paréntesis, no trae
+        # otro, y si no trae ninguno, ninguna otra con ese nombre trae otro; si hay una sola con el mismo paréntesis,
+        # gana esa; y con la celda sin paréntesis, se elige si y solo si hay una sola con lo mismo afuera (encargo 43).
+        partes = self.mod._mk_partes
+        textos = ("Alfa, Pais", "Alfa (Norte), Pais", "Alfa (Sur), Pais", "Beta, Pais", "Beta (Norte), Pais",
+                  "Beta (Sur), Pais")
+        casos = elegidas = ninguna = 0
+        for celda in ("Alfa", "Alfa (Norte)", "Alfa (Sur)"):
+            afuera, parentesis = partes(celda)
+            for largo in range(4):
+                for lista in itertools.product(textos, repeat=largo):
+                    casos += 1
+                    ganan = self.mod._mk_ganadoras(list(lista), partes(celda))
+                    del_nombre = [partes(t) for t in lista if partes(t)[0] == afuera]
+                    mismas = [t for t in lista if partes(t) == (afuera, parentesis)]
+                    with self.subTest(celda=celda, lista=lista):
+                        if parentesis and len(mismas) == 1:
+                            self.assertEqual([lista[i] for i in ganan], mismas)
+                        if not parentesis:
+                            self.assertEqual(len(ganan) == 1, len(del_nombre) == 1)
+                        if len(ganan) != 1:
+                            ninguna += 1
+                            continue
+                        elegidas += 1
+                        a, p = partes(lista[ganan[0]])
+                        self.assertEqual(a, afuera)
+                        if parentesis:
+                            self.assertIn(p, ((), parentesis))
+                            if not p:
+                                self.assertFalse(any(q for _, q in del_nombre))
+        # El control: la enumeración no es vacua, y hay de las dos.
+        self.assertEqual((casos, elegidas > 100, ninguna > 100), (777, True, True))
 
 
 class TestCOSCO(soporte.CasoAQ):

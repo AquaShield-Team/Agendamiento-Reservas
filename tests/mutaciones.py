@@ -8723,8 +8723,9 @@ MUTACIONES += [
 ]
 
 # --- Encargo 74 (CICLO-maersk-mismo-parentesis.md): si la celda y la sugerencia de MAERSK traen paréntesis, lo que va
-# entre ellos tiene que ser lo mismo, en _mk_plano; si solo uno lo trae, cuenta lo de afuera (_mk_calza). Las dos partes
-# salen de _mk_partes, que reemplazó a _mk_base. El motivo de la NO ENVIADA lo dice ---
+# entre ellos tiene que ser lo mismo, en _mk_plano; si solo uno lo trae, cuenta lo de afuera (en el 74, _mk_calza, par
+# por par; desde el 75, _mk_ganadoras, por lista). Las dos partes salen de _mk_partes, que reemplazó a _mk_base. El
+# motivo de la NO ENVIADA lo dice ---
 MISMO_MK = SUG + "test_maersk_si_los_dos_traen_parentesis_tiene_que_ser_el_mismo"
 # Desde el encargo 75, la tabla es la de las listas enteras (hasta ahí, test_el_parentesis_cuenta_si_lo_traen_los_dos).
 CUENTA_MK = "test_ayudantes.TestMAERSK.test_la_regla_del_parentesis_por_lista"
@@ -8754,27 +8755,35 @@ LISTA_MK = SUG + "test_maersk_con_parentesis_decide_la_lista_entera"
 SIN_PAREN_MK = "        return [i for i, (a, p) in enumerate(partes) if a == afuera]\n"
 OTRO_MK = "    otro = any(a == afuera and p for a, p in partes)\n"
 GANA_SIN_MK = "    return [] if otro else sin\n"
+# La que recorre todas las listas chicas (revisión de código del encargo 75): la tumban las que rompen lo que la
+# regla promete, no las que solo cambian si se elige.
+TODAS_MK = "test_ayudantes.TestMAERSK.test_la_regla_por_lista_en_todas_las_listas_chicas"
 
 MUTACIONES += [
     # Sin mirar el paréntesis de la celda (como en a538b77), o sin preferir el mismo (como en el 74 con la del mismo y
     # la que no lo trae).
-    dict(id="mk-ganadoras-sin-mirar-el-parentesis", pruebas=[LISTA_MK, MISMO_MK, CUENTA_MK],
+    dict(id="mk-ganadoras-sin-mirar-el-parentesis", pruebas=[LISTA_MK, MISMO_MK, CUENTA_MK, TODAS_MK],
          viejo="    if not parentesis:\n", nuevo="    if True:\n"),
-    dict(id="mk-ganadoras-sin-preferir-el-mismo", pruebas=[LISTA_MK, MISMO_MK, CUENTA_MK],
+    dict(id="mk-ganadoras-sin-preferir-el-mismo", pruebas=[LISTA_MK, MISMO_MK, CUENTA_MK, TODAS_MK],
          viejo="    if mismas:\n        return mismas\n", nuevo=""),
     # La que no lo trae: sin mirar las otras (el M1 de seguridad del 74), nunca (exige el mismo aunque solo la celda
     # lo traiga), o con cualquier otra con paréntesis, aunque sea otro nombre.
-    dict(id="mk-ganadoras-sin-mirar-las-otras", pruebas=[LISTA_MK, CUENTA_MK], viejo=GANA_SIN_MK,
+    dict(id="mk-ganadoras-sin-mirar-las-otras", pruebas=[LISTA_MK, CUENTA_MK, TODAS_MK], viejo=GANA_SIN_MK,
          nuevo="    return sin\n"),
     dict(id="mk-ganadoras-sin-la-que-no-lo-trae", pruebas=[PAREN_MK, LISTA_MK, CUENTA_MK], viejo=GANA_SIN_MK,
          nuevo="    return []\n"),
     dict(id="mk-ganadoras-otro-nombre-cuenta", pruebas=[LISTA_MK, CUENTA_MK], viejo=OTRO_MK,
          nuevo="    otro = any(p for a, p in partes)\n"),
     # El mismo paréntesis con otro nombre; y la celda sin paréntesis exigiendo que la sugerencia tampoco lo traiga.
-    dict(id="mk-ganadoras-mismo-parentesis-otro-nombre", pruebas=[CUENTA_MK],
+    dict(id="mk-ganadoras-mismo-parentesis-otro-nombre", pruebas=[CUENTA_MK, TODAS_MK],
          viejo="    mismas = [i for i, (a, p) in enumerate(partes) if a == afuera and p == parentesis]\n",
          nuevo="    mismas = [i for i, (a, p) in enumerate(partes) if p == parentesis]\n"),
-    dict(id="mk-ganadoras-celda-sin-parentesis-exige-que-no-lo-traiga", pruebas=[SUG_EXACTA, MISMO_MK, CUENTA_MK],
+    dict(id="mk-ganadoras-celda-sin-parentesis-exige-que-no-lo-traiga",
+         pruebas=[SUG_EXACTA, MISMO_MK, CUENTA_MK, TODAS_MK],
          viejo=SIN_PAREN_MK,
          nuevo="        return [i for i, (a, p) in enumerate(partes) if a == afuera and not p]\n"),
+    # La que no lo trae, con otro nombre (revisión de código del encargo 75: sin esta, ninguna prueba caía).
+    dict(id="mk-ganadoras-la-que-no-lo-trae-con-otro-nombre", pruebas=[LISTA_MK, CUENTA_MK, TODAS_MK],
+         viejo="    sin = [i for i, (a, p) in enumerate(partes) if a == afuera and not p]\n",
+         nuevo="    sin = [i for i, (a, p) in enumerate(partes) if not p]\n"),
 ]

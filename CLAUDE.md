@@ -739,9 +739,10 @@ cerrado:
       `CICLO-maersk-parentesis-por-lista.md`; `_mk_ganadoras`): primero ganan las del mismo paréntesis; si no hay
       ninguna, las que no lo traen, solo si ninguna otra Container Yard con lo mismo afuera trae otro paréntesis (esa
       otra dice que el nombre se repite); si no, ninguna, y la fila queda NO ENVIADA sin pulsar nada. Se elige solo si
-      gana una. Con «Alfa (Sur)» y «Alfa», ninguna (en el 74, «Alfa»); con «Alfa» y «Alfa (Norte)», «Alfa (Norte)» (en
-      el 74, ninguna). Una con otra cosa afuera no cuenta. Con la celda sin paréntesis, como desde el encargo 43: ganan
-      todas las que dicen lo mismo afuera, traigan paréntesis o no («Alfa» elige «Alfa (Norte), País» si es la única).
+      gana una. Con la celda «Alfa (Norte)»: «Alfa (Sur)» y «Alfa», ninguna (en el 74, «Alfa»); «Alfa» y «Alfa
+      (Norte)», «Alfa (Norte)» (en el 74, ninguna). Una con otra cosa afuera no cuenta, traiga paréntesis o no. Con
+      la celda sin paréntesis, como desde el encargo 43: ganan todas las que dicen lo mismo afuera, traigan paréntesis
+      o no («Alfa» elige «Alfa (Norte), País» si es la única).
       Medido: ninguna de las 30 elecciones de `logs/` cambia, y solo `reservar_maersk` alcanza el código que cambió. El
       motivo de la NO ENVIADA dice la regla (`_mk_sin_una_exacta`).
     - El país no viene aparte en la lista: la raíz shadow trae el tipo de lugar y su sigla (CY o SD), y cada Container

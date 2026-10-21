@@ -1893,15 +1893,16 @@ class TestListaDeSugerencias(ConRegistro):
         N, S, A = "Puerto Alfa (Norte), Pais", "Puerto Alfa (Sur), Pais", "Puerto Alfa, Pais"
         celda = "Puerto Alfa (Norte)"
         # Elige: la del mismo paréntesis, con la que no lo trae o con otra; la que no lo trae, si otra con paréntesis
-        # tiene otro nombre, o es Store Door.
+        # tiene otro nombre, o es Store Door, o si otra sin paréntesis tiene otro nombre.
         for opcion, extra in ((N, [(A, CY)]), (N, [(S, CY), (A, CY)]), (A, [("Puerto Beta (Sur), Pais", CY)]),
-                              (A, [(S, SD)])):
+                              (A, [(S, SD)]), (A, [("Puerto Beta, Pais", CY)])):
             with self.subTest(opcion=opcion, extra=extra):
                 self.mk_elige(opcion, celda, extra)
         # No elige: la que no lo trae, con otra del mismo nombre y otro paréntesis (en el 74 la elegía); dos del mismo
-        # paréntesis; y dos que no lo traen.
+        # paréntesis; dos que no lo traen; y una sin paréntesis con otro nombre (revisión de código del encargo 75: la
+        # red no fijaba que lo de afuera cuente también para la que no lo trae).
         for opcion, extra, n in ((S, [(A, CY)], 0), (N, [("Puerto Alfa (Norte), Otro Pais", CY)], 2),
-                                 (A, [("Puerto Alfa, Otro Pais", CY)], 2)):
+                                 (A, [("Puerto Alfa, Otro Pais", CY)], 2), ("Puerto Beta, Pais", [], 0)):
             with self.subTest(opcion=opcion, extra=extra):
                 self.mk_no_elige(opcion, celda, extra, n)
 
