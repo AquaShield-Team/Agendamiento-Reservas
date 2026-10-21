@@ -251,12 +251,14 @@ class TestMAERSK(soporte.CasoAQ):
             with self.subTest(escrito=texto):
                 self.assertEqual(self.mod._mk_plano(texto), plano)
 
-    def test_el_parentesis_cuenta_si_lo_traen_los_dos(self):
-        # Decisión de Marcelo (encargo 74, CICLO-maersk-mismo-parentesis.md): si la celda y la sugerencia traen
-        # paréntesis, lo que va entre ellos tiene que ser lo mismo, en _mk_plano (sin tildes, en mayúsculas y con los
-        # espacios de a uno), además de lo de afuera. Si solo uno lo trae, cuenta lo de afuera: la celda sin paréntesis
-        # calza con la sugerencia que lo trae (encargo 43), y la celda con paréntesis, con la que no (encargo 73). En
-        # a538b77, «Alfa (Norte)» calzaba también con «Alfa (Sur), País».
+    def test_la_regla_del_parentesis_por_lista(self):
+        # Decisión de Marcelo (encargo 75, la opción (a) del 74, CICLO-maersk-parentesis-por-lista.md): con la celda con
+        # paréntesis decide la lista entera (_mk_ganadoras), no cada par. Primero, las del mismo paréntesis, lo de
+        # adentro en _mk_plano (sin tildes, en mayúsculas y con los espacios de a uno); si no hay ninguna, las que no lo
+        # traen, solo si ninguna otra con lo mismo afuera trae otro; si no, ninguna. Con la celda sin paréntesis, todas
+        # las que dicen lo mismo afuera (encargo 43). _mk_ciudad elige solo si gana una. Hasta el 75 (_mk_calza, del
+        # 74), par por par: con «Alfa (Norte)», «Alfa (Sur)» y «Alfa» ganaba «Alfa», y con «Alfa» y «Alfa (Norte)», las
+        # dos. Esta prueba, hasta el 75, test_el_parentesis_cuenta_si_lo_traen_los_dos.
         partes = (("Alfa (Beta), Gama", ("ALFA", ("BETA",))), ("Alfa", ("ALFA", ())),
                   ("Alfa (Norte (Viejo)), Pais", ("ALFA", ("VIEJO", "NORTE"))),
                   ("(Norte) Alfa (Sur), Pais", ("ALFA", ("NORTE", "SUR"))), ("Alfa (Norte", ("ALFA (NORTE", ())),
@@ -264,16 +266,25 @@ class TestMAERSK(soporte.CasoAQ):
         for texto, esperado in partes:
             with self.subTest(texto=texto):
                 self.assertEqual(self.mod._mk_partes(texto), esperado)
-        calzan = (("Alfa (Norte), Pais", "Alfa (Norte)", True),
-                  ("ALFA ( norte ), PAIS", "Alfa (Nórte)", True),           # el mismo, en _mk_plano
-                  ("Alfa (Sur), Pais", "Alfa (Norte)", False),              # los dos lo traen, y dicen otra cosa
-                  ("Alfa (Norte) (Puerto), Pais", "Alfa (Norte)", False),   # todo lo que va entre paréntesis
-                  ("Alfa, Pais", "Alfa (Norte)", True),                     # solo la celda (encargo 73)
-                  ("Alfa (Norte), Pais", "Alfa", True),                     # solo la sugerencia (encargo 43)
-                  ("Beta (Norte), Pais", "Alfa (Norte)", False))            # lo de afuera, otro
-        for sugerencia, escrito, calza in calzan:
-            with self.subTest(sugerencia=sugerencia, escrito=escrito):
-                self.assertIs(self.mod._mk_calza(sugerencia, self.mod._mk_partes(escrito)), calza)
+        A, N, S = "Alfa, Pais", "Alfa (Norte), Pais", "Alfa (Sur), Pais"
+        listas = (("Alfa (Norte)", [N], [0]),
+                  ("Alfa (Nórte)", ["ALFA ( norte ), PAIS"], [0]),            # el mismo, en _mk_plano
+                  ("Alfa (Norte)", [S], []),                                 # otro paréntesis (encargo 74)
+                  ("Alfa (Norte)", ["Alfa (Norte) (Puerto), Pais"], []),     # todo lo que va entre paréntesis
+                  ("Alfa (Norte)", [A], [0]),                                # la que no lo trae, sola (encargo 73)
+                  ("Alfa (Norte)", [S, A], []),                              # otra con ese nombre trae otro
+                  ("Alfa (Norte)", [A, N], [1]),                             # gana la del mismo
+                  ("Alfa (Norte)", [S, A, N], [2]),
+                  ("Alfa (Norte)", [A, "Beta (Sur), Pais"], [0]),            # otro nombre con paréntesis no cuenta
+                  ("Alfa (Norte)", ["Beta (Norte), Pais"], []),              # el mismo paréntesis, otro nombre
+                  ("Alfa (Norte)", [N, "Alfa (Norte), Otro Pais"], [0, 1]),  # dos del mismo: ganan las dos
+                  ("Alfa (Norte)", [A, "Alfa, Otro Pais"], [0, 1]),
+                  ("Alfa", [N], [0]),                                        # celda sin paréntesis (encargo 43)
+                  ("Alfa", [N, S], [0, 1]),
+                  ("Alfa", [A, N], [0, 1]))
+        for escrito, lista, ganan in listas:
+            with self.subTest(escrito=escrito, lista=lista):
+                self.assertEqual(self.mod._mk_ganadoras(lista, self.mod._mk_partes(escrito)), ganan)
 
 
 class TestCOSCO(soporte.CasoAQ):

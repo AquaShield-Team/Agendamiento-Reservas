@@ -702,8 +702,9 @@ cerrado:
     tilde y la ñ se caían) y con los espacios de a uno (`_mk_sugerencias`), y pulsa, entre las Container Yard, la única
     cuya parte antes de la primera coma, sin lo que
     va entre paréntesis, es lo escrito, sin distinguir mayúsculas ni tildes y con los espacios de a uno
-    (`_mk_las_exactas`, `_mk_calza`, `_mk_partes`, `_mk_plano`; los signos cuentan; desde el encargo 73 los paréntesis
-    se quitan de los dos lados, y desde el 74, si los traen los dos, tienen que decir lo mismo: abajo).
+    (`_mk_las_exactas`, `_mk_ganadoras`, `_mk_partes`, `_mk_plano`; los signos cuentan; desde el encargo 73 los
+    paréntesis se quitan de los dos lados; desde el 74, si los traen los dos, tienen que decir lo mismo; y desde el 75,
+    con la celda con paréntesis decide la lista entera: abajo).
     «Container Yard» está en la raíz shadow de la opción, donde lo ve el filtro de Playwright y no `text_content`
     (`MK_CONTAINER_YARD`): la Store Door gemela, con el mismo texto, no cuenta. Decide con la lista quieta (dos lecturas
     iguales seguidas de sus Container Yard, como `_mk_resultados_quietos`). Después comprueba que el campo quedó con el
@@ -729,13 +730,20 @@ cerrado:
       trae dos que solo distinga el paréntesis. El prefijo (`_prefijo_de_la_lista`), que comparte CMA, no cambió: busca
       los primeros 5 caracteres de lo escrito en la sugerencia, los dos con sus paréntesis.
     - **Si la celda y la sugerencia traen paréntesis, tienen que decir lo mismo** (decisión de Marcelo, encargo 74,
-      `CICLO-maersk-mismo-parentesis.md`; `_mk_calza`): lo que va entre ellos, en `_mk_plano` (sin tildes, en
-      mayúsculas y con los espacios de a uno), además de lo de afuera. Si solo uno lo trae, cuenta lo de afuera: la
-      celda «Alfa» calza con «Alfa (Norte), País» (encargo 43), y «Alfa (Norte)», con «Alfa, País» (encargo 73). Así,
-      «Alfa (Norte)» contra la única «Alfa (Sur), País» queda NO ENVIADA, y entre «Alfa (Norte)» y «Alfa (Sur)» elige
-      la que dice lo mismo que la celda; en `a538b77` (encargo 73), el paréntesis no distinguía de ningún lado. Las dos
-      partes salen de `_mk_partes`, que reemplazó a `_mk_base`; el motivo de la NO ENVIADA lo dice
-      (`_mk_sin_una_exacta`).
+      `CICLO-maersk-mismo-parentesis.md`): lo que va entre ellos, en `_mk_plano` (sin tildes, en mayúsculas y con los
+      espacios de a uno), además de lo de afuera. Así, «Alfa (Norte)» contra la única «Alfa (Sur), País» queda NO
+      ENVIADA; en `a538b77` (encargo 73), el paréntesis no distinguía de ningún lado. Las dos partes salen de
+      `_mk_partes`, que reemplazó a `_mk_base`. En el 74 se decidía par por par (`_mk_calza`), y la revisión de
+      seguridad encontró, con listas al azar, que la sugerencia sin paréntesis ganaba por descarte (abajo).
+    - **Con la celda con paréntesis decide la lista entera** (decisión de Marcelo, encargo 75, la opción (a) del 74,
+      `CICLO-maersk-parentesis-por-lista.md`; `_mk_ganadoras`): primero ganan las del mismo paréntesis; si no hay
+      ninguna, las que no lo traen, solo si ninguna otra Container Yard con lo mismo afuera trae otro paréntesis (esa
+      otra dice que el nombre se repite); si no, ninguna, y la fila queda NO ENVIADA sin pulsar nada. Se elige solo si
+      gana una. Con «Alfa (Sur)» y «Alfa», ninguna (en el 74, «Alfa»); con «Alfa» y «Alfa (Norte)», «Alfa (Norte)» (en
+      el 74, ninguna). Una con otra cosa afuera no cuenta. Con la celda sin paréntesis, como desde el encargo 43: ganan
+      todas las que dicen lo mismo afuera, traigan paréntesis o no («Alfa» elige «Alfa (Norte), País» si es la única).
+      Medido: ninguna de las 30 elecciones de `logs/` cambia, y solo `reservar_maersk` alcanza el código que cambió. El
+      motivo de la NO ENVIADA dice la regla (`_mk_sin_una_exacta`).
     - El país no viene aparte en la lista: la raíz shadow trae el tipo de lugar y su sigla (CY o SD), y cada Container
       Yard viene repetida, con el mismo texto, como Store Door (medido el 30-09, `CICLO-maersk-y-fila-sin-ruta.md`). Las
       otras cinco navieras eligen como antes: CMA, la primera con los mismos 5 caracteres, que desde el encargo 48 arma

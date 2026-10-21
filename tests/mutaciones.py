@@ -5635,8 +5635,9 @@ MUTACIONES += [
 # ---
 FORMA_MK = "test_ayudantes.TestMAERSK.test_la_forma_de_la_regla_de_origen_y_destino"
 CY_MK = "    cy = cand.filter(has_text=_re_mk.compile(_re_mk.escape(MK_CONTAINER_YARD), _re_mk.I))\n"
-# Desde el encargo 74, la regla está en _mk_calza, y lo de afuera de los paréntesis sale de _mk_partes (_mk_base salió).
-EXACTAS_MK = "    return cy, textos, [i for i, t in enumerate(textos) if _mk_calza(t, escrita)]\n"
+# Desde el encargo 74, lo de afuera de los paréntesis sale de _mk_partes (_mk_base salió); desde el 75, la regla está en
+# _mk_ganadoras, que mira la lista entera (en el 74, _mk_calza, par por par).
+EXACTAS_MK = "    return cy, textos, _mk_ganadoras(textos, escrita)\n"
 PLANO_MK = '    return " ".join("".join(c for c in t if not unicodedata.combining(c)).upper().split())\n'
 DEJO_MK = ("                        if not vista:\n                            por_que = falta\n"
            "                            break\n")
@@ -8725,26 +8726,55 @@ MUTACIONES += [
 # entre ellos tiene que ser lo mismo, en _mk_plano; si solo uno lo trae, cuenta lo de afuera (_mk_calza). Las dos partes
 # salen de _mk_partes, que reemplazó a _mk_base. El motivo de la NO ENVIADA lo dice ---
 MISMO_MK = SUG + "test_maersk_si_los_dos_traen_parentesis_tiene_que_ser_el_mismo"
-CUENTA_MK = "test_ayudantes.TestMAERSK.test_el_parentesis_cuenta_si_lo_traen_los_dos"
-REGLA_CALZA = ("    return afuera == escrita[0] and (not parentesis or not escrita[1] or parentesis == "
-               "escrita[1])\n")
+# Desde el encargo 75, la tabla es la de las listas enteras (hasta ahí, test_el_parentesis_cuenta_si_lo_traen_los_dos).
+CUENTA_MK = "test_ayudantes.TestMAERSK.test_la_regla_del_parentesis_por_lista"
 
 MUTACIONES += [
-    # La regla: sin mirar el paréntesis, como en a538b77; o exigiendo el mismo aunque solo uno lo traiga.
-    dict(id="mk-calza-sin-mirar-el-parentesis", pruebas=[MISMO_MK, CUENTA_MK], viejo=REGLA_CALZA,
-         nuevo="    return afuera == escrita[0]\n"),
-    dict(id="mk-calza-exige-el-de-la-celda", pruebas=[PAREN_MK, CUENTA_MK], viejo=REGLA_CALZA,
-         nuevo="    return afuera == escrita[0] and (not escrita[1] or parentesis == escrita[1])\n"),
-    dict(id="mk-calza-exige-el-de-la-sugerencia", pruebas=[MISMO_MK, CUENTA_MK], viejo=REGLA_CALZA,
-         nuevo="    return afuera == escrita[0] and (not parentesis or parentesis == escrita[1])\n"),
+    # Las tres de la regla par por par (mk-calza-sin-mirar-el-parentesis, mk-calza-exige-el-de-la-celda y
+    # mk-calza-exige-el-de-la-sugerencia) salieron en el encargo 75 con _mk_calza: sus equivalentes en _mk_ganadoras
+    # están en el bloque del 75.
     # Lo de adentro: sin _mk_plano, o sin guardarlo.
     dict(id="mk-partes-sin-normalizar-el-parentesis", pruebas=[MISMO_MK, CUENTA_MK],
          viejo="            quitados.append(_mk_plano(m.group(1)))\n",
          nuevo="            quitados.append(m.group(1))\n"),
     dict(id="mk-partes-sin-guardar-el-parentesis", pruebas=[MISMO_MK, CUENTA_MK],
          viejo="        grupos += quitados\n", nuevo=""),
-    # El motivo, como hasta el encargo 74.
+    # El motivo, como hasta el encargo 74 (desde el 75 dice la regla de la lista).
     dict(id="mk-sin-una-exacta-sin-el-parentesis", pruebas=[SUG_EXACTA],
-         viejo='            f"entre paréntesis, salvo que lo traigan las dos: entonces, el mismo): "\n',
-         nuevo='            f"entre paréntesis): "\n'),
+         viejo=('            f"entre paréntesis; si la celda lo trae, primero la del mismo, y si no hay, la que no lo '
+                'trae, solo si "\n            f"ninguna otra con ese nombre trae otro): '),
+         nuevo='            f"entre paréntesis): '),
+]
+
+# --- Encargo 75 (CICLO-maersk-parentesis-por-lista.md): la opción (a) del 74. Con la celda con paréntesis decide la
+# lista entera (_mk_ganadoras, que reemplazó a _mk_calza): primero, las del mismo paréntesis; si no hay, las que no lo
+# traen, solo si ninguna otra con lo mismo afuera trae otro; si no, ninguna. Con la celda sin paréntesis, como en el
+# 43 ---
+LISTA_MK = SUG + "test_maersk_con_parentesis_decide_la_lista_entera"
+SIN_PAREN_MK = "        return [i for i, (a, p) in enumerate(partes) if a == afuera]\n"
+OTRO_MK = "    otro = any(a == afuera and p for a, p in partes)\n"
+GANA_SIN_MK = "    return [] if otro else sin\n"
+
+MUTACIONES += [
+    # Sin mirar el paréntesis de la celda (como en a538b77), o sin preferir el mismo (como en el 74 con la del mismo y
+    # la que no lo trae).
+    dict(id="mk-ganadoras-sin-mirar-el-parentesis", pruebas=[LISTA_MK, MISMO_MK, CUENTA_MK],
+         viejo="    if not parentesis:\n", nuevo="    if True:\n"),
+    dict(id="mk-ganadoras-sin-preferir-el-mismo", pruebas=[LISTA_MK, MISMO_MK, CUENTA_MK],
+         viejo="    if mismas:\n        return mismas\n", nuevo=""),
+    # La que no lo trae: sin mirar las otras (el M1 de seguridad del 74), nunca (exige el mismo aunque solo la celda
+    # lo traiga), o con cualquier otra con paréntesis, aunque sea otro nombre.
+    dict(id="mk-ganadoras-sin-mirar-las-otras", pruebas=[LISTA_MK, CUENTA_MK], viejo=GANA_SIN_MK,
+         nuevo="    return sin\n"),
+    dict(id="mk-ganadoras-sin-la-que-no-lo-trae", pruebas=[PAREN_MK, LISTA_MK, CUENTA_MK], viejo=GANA_SIN_MK,
+         nuevo="    return []\n"),
+    dict(id="mk-ganadoras-otro-nombre-cuenta", pruebas=[LISTA_MK, CUENTA_MK], viejo=OTRO_MK,
+         nuevo="    otro = any(p for a, p in partes)\n"),
+    # El mismo paréntesis con otro nombre; y la celda sin paréntesis exigiendo que la sugerencia tampoco lo traiga.
+    dict(id="mk-ganadoras-mismo-parentesis-otro-nombre", pruebas=[CUENTA_MK],
+         viejo="    mismas = [i for i, (a, p) in enumerate(partes) if a == afuera and p == parentesis]\n",
+         nuevo="    mismas = [i for i, (a, p) in enumerate(partes) if p == parentesis]\n"),
+    dict(id="mk-ganadoras-celda-sin-parentesis-exige-que-no-lo-traiga", pruebas=[SUG_EXACTA, MISMO_MK, CUENTA_MK],
+         viejo=SIN_PAREN_MK,
+         nuevo="        return [i for i, (a, p) in enumerate(partes) if a == afuera and not p]\n"),
 ]

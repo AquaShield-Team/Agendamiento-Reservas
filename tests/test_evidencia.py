@@ -1731,14 +1731,16 @@ class TestListaDeSugerencias(ConRegistro):
                          + self.DESPUES["_mk_ciudad"])
         for donde in self.leer(carpeta, vistas):
             self.assertNotIn("⚠", donde)
-        # Desde el encargo 74 dice qué pasa con el paréntesis si lo traen las dos; hasta ahí, «(sin lo que va entre
-        # paréntesis)».
+        # Dice la regla del paréntesis: hasta el encargo 74, «(sin lo que va entre paréntesis)»; en el 74, «…, salvo
+        # que lo traigan las dos: entonces, el mismo»; desde el 75, la de la celda con paréntesis (_mk_ganadoras).
+        regla = ("(sin lo que va entre paréntesis; si la celda lo trae, primero la del mismo, y si no hay, la que no "
+                 "lo trae, solo si ninguna otra con ese nombre trae otro)")
         self.assertEqual(self.mod._mk_sin_una_exacta("PUERTO ALFA", 2),
-                         "una sola sugerencia Container Yard que diga «PUERTO ALFA» antes de su primera coma (sin lo "
-                         "que va entre paréntesis, salvo que lo traigan las dos: entonces, el mismo): hay 2")
+                         f"una sola sugerencia Container Yard que diga «PUERTO ALFA» antes de su primera coma {regla}: "
+                         f"hay 2")
         self.assertEqual(self.mod._mk_sin_una_exacta("PUERTO ALFA", 0),
-                         "una sola sugerencia Container Yard que diga «PUERTO ALFA» antes de su primera coma (sin lo "
-                         "que va entre paréntesis, salvo que lo traigan las dos: entonces, el mismo): no hay ninguna")
+                         f"una sola sugerencia Container Yard que diga «PUERTO ALFA» antes de su primera coma {regla}: "
+                         f"no hay ninguna")
 
     def test_maersk_decide_con_la_lista_quieta(self):
         # Revisión de código del encargo 43: la lista puede llegar de a poco. _mk_ciudad decide con dos lecturas iguales
@@ -1862,8 +1864,9 @@ class TestListaDeSugerencias(ConRegistro):
     def test_maersk_si_los_dos_traen_parentesis_tiene_que_ser_el_mismo(self):
         # Decisión de Marcelo (encargo 74, CICLO-maersk-mismo-parentesis.md): si la celda y la sugerencia traen
         # paréntesis, lo que va entre ellos tiene que ser lo mismo, en _mk_plano; si solo uno lo trae, cuenta lo de
-        # afuera (_mk_calza). En a538b77, «Alfa (Norte)» elegía «Alfa (Sur), País» si era la única Container Yard, y
-        # con dos que solo distinguía el paréntesis no elegía ninguna.
+        # afuera (en el 74, _mk_calza; desde el 75, _mk_ganadoras, que mira la lista entera: abajo). En a538b77,
+        # «Alfa (Norte)» elegía «Alfa (Sur), País» si era la única Container Yard, y con dos que solo distinguía el
+        # paréntesis no elegía ninguna.
         CY, SD = "Container Yard", "Store Door"
         # Elige: el mismo, escrito de otra forma; y entre dos, la que dice lo mismo que la celda.
         for opcion, celda, extra in (("Puerto Alfa (Región Uno), Pais", "PUERTO ALFA ( REGION  UNO ), PAIS", []),
@@ -1878,6 +1881,28 @@ class TestListaDeSugerencias(ConRegistro):
                                         ("Puerto Alfa (Norte), Pais", "Puerto Alfa", [("Puerto Alfa (Sur), Pais", CY)],
                                          2)):
             with self.subTest(opcion=opcion, celda=celda, extra=extra):
+                self.mk_no_elige(opcion, celda, extra, n)
+
+    def test_maersk_con_parentesis_decide_la_lista_entera(self):
+        # Decisión de Marcelo (encargo 75, la opción (a) del 74, CICLO-maersk-parentesis-por-lista.md): con la celda con
+        # paréntesis, primero gana la del mismo paréntesis; si no hay ninguna, la que no lo trae, solo si ninguna otra
+        # con ese nombre trae otro; si no, NO ENVIADA, sin pulsar nada (_mk_ganadoras). En el 74 se miraba par por
+        # par: con «Alfa (Sur)» y «Alfa» ganaba «Alfa», y con «Alfa» y «Alfa (Norte)» no ganaba ninguna (la revisión de
+        # seguridad del 74 lo encontró probando listas al azar; las pruebas de entonces miraban pares).
+        CY, SD = "Container Yard", "Store Door"
+        N, S, A = "Puerto Alfa (Norte), Pais", "Puerto Alfa (Sur), Pais", "Puerto Alfa, Pais"
+        celda = "Puerto Alfa (Norte)"
+        # Elige: la del mismo paréntesis, con la que no lo trae o con otra; la que no lo trae, si otra con paréntesis
+        # tiene otro nombre, o es Store Door.
+        for opcion, extra in ((N, [(A, CY)]), (N, [(S, CY), (A, CY)]), (A, [("Puerto Beta (Sur), Pais", CY)]),
+                              (A, [(S, SD)])):
+            with self.subTest(opcion=opcion, extra=extra):
+                self.mk_elige(opcion, celda, extra)
+        # No elige: la que no lo trae, con otra del mismo nombre y otro paréntesis (en el 74 la elegía); dos del mismo
+        # paréntesis; y dos que no lo traen.
+        for opcion, extra, n in ((S, [(A, CY)], 0), (N, [("Puerto Alfa (Norte), Otro Pais", CY)], 2),
+                                 (A, [("Puerto Alfa, Otro Pais", CY)], 2)):
+            with self.subTest(opcion=opcion, extra=extra):
                 self.mk_no_elige(opcion, celda, extra, n)
 
     def test_cada_reservador_la_pide_para_su_origen_y_su_destino(self):
