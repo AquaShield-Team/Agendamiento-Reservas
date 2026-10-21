@@ -8704,3 +8704,17 @@ MUTACIONES += [
     dict(id="e72-gitignore-sin-los-hooks", archivo=".gitignore", pruebas=[GD_GITIGNORE],
          viejo="!/.githooks/\n", nuevo=""),
 ]
+
+# --- Encargo 73 (CICLO-maersk-parentesis.md): MAERSK quita lo que va entre paréntesis también de lo escrito, como de la
+# sugerencia, al elegir el origen y el destino (_mk_las_exactas). Hasta ahí, solo de la sugerencia: el 21-10, en el
+# equipo de un colega, una fila con el destino «Ciudad (Estado), País» quedó NO ENVIADA. Lo escrito sin nada fuera de
+# los paréntesis no calza con ninguna ---
+PAREN_MK = SUG + "test_maersk_quita_los_parentesis_de_los_dos_lados"
+
+MUTACIONES += [
+    # Lo escrito con sus paréntesis, como hasta el encargo 73; o sin mirar si queda algo fuera de ellos.
+    dict(id="mk-escrita-con-parentesis", pruebas=[PAREN_MK],
+         viejo="    escrita = _mk_base(ciudad)\n", nuevo="    escrita = _mk_plano(ciudad)\n"),
+    dict(id="mk-escrita-vacia-calza", pruebas=[PAREN_MK],
+         viejo="    if not escrita:\n        return cy, textos, []\n", nuevo=""),
+]

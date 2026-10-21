@@ -8680,7 +8680,8 @@ def _mk_got_it(page):
 # coma, sin lo que va entre paréntesis, es lo escrito, sin distinguir mayúsculas ni tildes. El tipo de lugar está en la
 # raíz shadow de cada opción, donde lo ve el filtro de Playwright y no text_content: «Container Yard» o «Store Door», y
 # su sigla (medido en las 4 listas del 30-09, CICLO-maersk-y-fila-sin-ruta.md). Hasta el encargo 43, la primera con
-# «container yard» o, si no había, la primera: así eligió el 29-09 y el 30-09 otro destino que el de la fila.
+# «container yard» o, si no había, la primera: así eligió el 29-09 y el 30-09 otro destino que el de la fila. Desde el
+# encargo 73, lo que va entre paréntesis se quita también de lo escrito (CICLO-maersk-parentesis.md).
 MK_CONTAINER_YARD = "Container Yard"
 
 
@@ -8694,7 +8695,8 @@ def _mk_plano(texto):
 
 def _mk_base(sugerencia):
     """La parte de una sugerencia de MAERSK antes de su primera coma, sin lo que va entre paréntesis y en _mk_plano: si
-    es lo escrito, la sugerencia tiene la forma de la regla de Marcelo (encargo 43). «Alfa (Beta), Gama» da «ALFA»."""
+    es la de lo escrito, la sugerencia tiene la forma de la regla de Marcelo (encargo 43). «Alfa (Beta), Gama» da
+    «ALFA». Desde el encargo 73, _mk_las_exactas la toma también de lo escrito."""
     t = str(sugerencia or "").split(",")[0]
     while True:
         sin = _re_mk.sub(r"\([^()]*\)", " ", t)
@@ -8730,10 +8732,16 @@ def _mk_sugerencias(page, ciudad):
 def _mk_las_exactas(cand, ciudad):
     """Entre las sugerencias 'cand' (_mk_sugerencias), las Container Yard (MK_CONTAINER_YARD, en su raíz shadow):
     devuelve (su localizador, el texto de cada una, el de text_content, sin la raíz shadow y en una línea, y las
-    posiciones de las que tienen la forma de la regla: _mk_base igual a la ciudad escrita, en _mk_plano)."""
+    posiciones de las que tienen la forma de la regla: _mk_base igual a la de la ciudad escrita).
+    Lo que va entre paréntesis se quita de los dos lados (decisión de Marcelo, encargo 73, CICLO-maersk-parentesis.md).
+    Hasta ahí, solo de la sugerencia: una celda con paréntesis («Ciudad (Estado), País», la forma con que MAERSK nombra
+    sus lugares) no calzaba con ninguna, ni con la que la escribe igual, y la fila quedaba NO ENVIADA. Lo escrito sin
+    nada fuera de los paréntesis no calza con ninguna: no hay con qué comparar."""
     cy = cand.filter(has_text=_re_mk.compile(_re_mk.escape(MK_CONTAINER_YARD), _re_mk.I))
     textos = [" ".join((t or "").split()) for t in cy.all_text_contents()]
-    escrita = _mk_plano(ciudad)
+    escrita = _mk_base(ciudad)
+    if not escrita:
+        return cy, textos, []
     return cy, textos, [i for i, t in enumerate(textos) if _mk_base(t) == escrita]
 
 
@@ -8754,11 +8762,12 @@ def _mk_ciudad(page, texto, reg, etiqueta, campo="", evidencia=""):
     """Autocompletado de ciudad/puerto de MAERSK. Escribe la ciudad (la parte de la celda antes de la primera coma) en
     el campo de su id (#mc-input-<campo>) o, sin él, en el primero «Enter city or port» visible y vacío (y si no hay uno
     vacío, en el primero), espera las sugerencias que traen sus primeros 5 caracteres ASCII (_mk_sugerencias) y pulsa la
-    única Container Yard cuya parte antes de la primera coma, sin lo que va entre paréntesis, es la ciudad
-    (_mk_las_exactas). Después comprueba que el campo quedó con el texto de esa sugerencia. Si no hay una sola, o el
-    campo no calza, vuelve a escribir la ciudad una vez, y si tampoco, corta (ObjetivoNoEncontrado, con el motivo): la
-    reserva queda NO ENVIADA, con la captura y el HTML de _sin_clic_a_ciegas (decisión de Marcelo, encargo 43,
-    CICLO-maersk-elige-exacto.md). Si el campo no responde, también corta. Hasta el encargo 43 pulsaba la
+    única Container Yard cuya parte antes de la primera coma, sin lo que va entre paréntesis, es la ciudad, también sin
+    lo que va entre paréntesis (_mk_las_exactas; desde el encargo 73, de los dos lados). Después comprueba que el campo
+    quedó con el texto de esa sugerencia. Si no hay una sola, o el campo no calza, vuelve a escribir la ciudad una vez,
+    y si tampoco, corta (ObjetivoNoEncontrado, con el motivo): la reserva queda NO ENVIADA, con la captura y el HTML de
+    _sin_clic_a_ciegas (decisión de Marcelo, encargo 43, CICLO-maersk-elige-exacto.md). Si el campo no responde,
+    también corta. Hasta el encargo 43 pulsaba la
     primera con «container yard» o, si no había, la primera, y solo miraba que el campo trajera los 4 primeros
     caracteres, que lo tecleado también trae; y hasta el 42, si no elegía, la reserva seguía sin el campo. Las
     sugerencias están en shadow DOM: se eligen con localizadores de Playwright (penetran shadow).
