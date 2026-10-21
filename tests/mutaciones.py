@@ -8786,4 +8786,12 @@ MUTACIONES += [
     dict(id="mk-ganadoras-la-que-no-lo-trae-con-otro-nombre", pruebas=[LISTA_MK, CUENTA_MK, TODAS_MK],
          viejo="    sin = [i for i, (a, p) in enumerate(partes) if a == afuera and not p]\n",
          nuevo="    sin = [i for i, (a, p) in enumerate(partes) if not p]\n"),
+    # Lo de afuera que solo empieza igual, en la del mismo paréntesis o en la que no lo trae (revisión de seguridad
+    # del encargo 75: sin «Alfa Beta» en la red, ninguna prueba caía; es lo que arregló el encargo 43).
+    dict(id="mk-ganadoras-la-del-mismo-por-prefijo", pruebas=[LISTA_MK, TODAS_MK],
+         viejo="    mismas = [i for i, (a, p) in enumerate(partes) if a == afuera and p == parentesis]\n",
+         nuevo="    mismas = [i for i, (a, p) in enumerate(partes) if a.startswith(afuera) and p == parentesis]\n"),
+    dict(id="mk-ganadoras-la-que-no-lo-trae-por-prefijo", pruebas=[LISTA_MK, TODAS_MK],
+         viejo="    sin = [i for i, (a, p) in enumerate(partes) if a == afuera and not p]\n",
+         nuevo="    sin = [i for i, (a, p) in enumerate(partes) if a.startswith(afuera) and not p]\n"),
 ]

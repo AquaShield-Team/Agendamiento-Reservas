@@ -1899,10 +1899,13 @@ class TestListaDeSugerencias(ConRegistro):
             with self.subTest(opcion=opcion, extra=extra):
                 self.mk_elige(opcion, celda, extra)
         # No elige: la que no lo trae, con otra del mismo nombre y otro paréntesis (en el 74 la elegía); dos del mismo
-        # paréntesis; dos que no lo traen; y una sin paréntesis con otro nombre (revisión de código del encargo 75: la
-        # red no fijaba que lo de afuera cuente también para la que no lo trae).
+        # paréntesis; dos que no lo traen; una sin paréntesis con otro nombre (revisión de código del encargo 75: la
+        # red no fijaba que lo de afuera cuente también para la que no lo trae); y otro nombre que empieza como el de
+        # la celda, con su paréntesis y sin él (revisión de seguridad del 75: lo de afuera es igual, no «empieza
+        # igual»).
         for opcion, extra, n in ((S, [(A, CY)], 0), (N, [("Puerto Alfa (Norte), Otro Pais", CY)], 2),
-                                 (A, [("Puerto Alfa, Otro Pais", CY)], 2), ("Puerto Beta, Pais", [], 0)):
+                                 (A, [("Puerto Alfa, Otro Pais", CY)], 2), ("Puerto Beta, Pais", [], 0),
+                                 ("Puerto Alfa Beta (Norte), Pais", [], 0), ("Puerto Alfa Beta, Pais", [], 0)):
             with self.subTest(opcion=opcion, extra=extra):
                 self.mk_no_elige(opcion, celda, extra, n)
 

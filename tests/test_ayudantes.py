@@ -292,14 +292,17 @@ class TestMAERSK(soporte.CasoAQ):
     def test_la_regla_por_lista_en_todas_las_listas_chicas(self):
         # Revisión de código del encargo 75: las pruebas por casos dejaron pasar dos huecos seguidos (en el 74, la sin
         # paréntesis que ganaba por descarte; en el 75, la sin paréntesis con otro nombre). Esta recorre todas las
-        # listas de 0 a 3 sugerencias de «Alfa» y «Beta», sin paréntesis, con «Norte» y con «Sur», contra las celdas
-        # «Alfa», «Alfa (Norte)» y «Alfa (Sur)» (777 casos), y exige lo que la regla promete (_mk_ganadoras), sin
-        # repetir cómo lo calcula: la elegida dice lo mismo afuera que la celda; con la celda con paréntesis, no trae
-        # otro, y si no trae ninguno, ninguna otra con ese nombre trae otro; si hay una sola con el mismo paréntesis,
-        # gana esa; y con la celda sin paréntesis, se elige si y solo si hay una sola con lo mismo afuera (encargo 43).
+        # listas de 0 a 3 sugerencias de «Alfa», «Beta» y «Alfa Beta», sin paréntesis, con «Norte» y con «Sur»
+        # («Alfa Beta», solo sin paréntesis y con «Norte»), contra las celdas «Alfa», «Alfa (Norte)» y «Alfa (Sur)»
+        # (1.755 casos), y exige lo que la regla promete (_mk_ganadoras), sin repetir cómo lo calcula: la elegida dice
+        # lo mismo afuera que la celda; con la celda con paréntesis, no trae otro, y si no trae ninguno, ninguna otra
+        # con ese nombre trae otro; si hay una sola con el mismo paréntesis, gana esa; y con la celda sin paréntesis,
+        # se elige si y solo si hay una sola con lo mismo afuera (encargo 43). «Alfa Beta», que empieza como «Alfa»,
+        # la sumó la revisión de seguridad del 75: con solo «Alfa» y «Beta», «lo mismo afuera» y «empieza igual» daban
+        # lo mismo, y la prueba no veía la diferencia que arregló el encargo 43.
         partes = self.mod._mk_partes
         textos = ("Alfa, Pais", "Alfa (Norte), Pais", "Alfa (Sur), Pais", "Beta, Pais", "Beta (Norte), Pais",
-                  "Beta (Sur), Pais")
+                  "Beta (Sur), Pais", "Alfa Beta, Pais", "Alfa Beta (Norte), Pais")
         casos = elegidas = ninguna = 0
         for celda in ("Alfa", "Alfa (Norte)", "Alfa (Sur)"):
             afuera, parentesis = partes(celda)
@@ -325,7 +328,7 @@ class TestMAERSK(soporte.CasoAQ):
                             if not p:
                                 self.assertFalse(any(q for _, q in del_nombre))
         # El control: la enumeración no es vacua, y hay de las dos.
-        self.assertEqual((casos, elegidas > 100, ninguna > 100), (777, True, True))
+        self.assertEqual((casos, elegidas > 100, ninguna > 100), (1755, True, True))
 
 
 class TestCOSCO(soporte.CasoAQ):
