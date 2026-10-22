@@ -114,6 +114,26 @@ class TestNumeroTrasEnvio(soporte.CasoAQ):
         pagina = P(self.CONFIRMA_ONE)
         self.assertEqual((self.num(pagina, "cma"), self.num(pagina, "cosco"), pagina.esperas), ("", "", 0))
 
+    def test_frase_de_cosco_que_dice_que_se_envio(self):
+        # COSCO no muestra el número: dice que la reserva se envió, con una referencia (encargo 77; la forma, medida en
+        # el marco del formulario el 22-10). referencia_tras_envio la lee como el número: la página, sus marcos y sus
+        # raíces shadow, con reintentos. Referencias inventadas, con las cifras a la vista.
+        ref = lambda pagina, nav="cosco": self.mod.referencia_tras_envio(pagina, nav)
+        envio = 'Booking CD1234567890 has been submitted successfully! Please check booking status in the "To do list".'
+        self.assertEqual(ref(P("New Booking", frames=[Marco("nada"), Marco(envio)])), "CD1234567890")
+        self.assertEqual(ref(P("booking   CD0000000000 \t has been submitted successfully")), "CD0000000000")
+        for otra in ("Booking CD123456789 has been submitted successfully", "Booking CD1234567890 was submitted",
+                     "Booking Cd1234567890 has been submitted successfully", "New Booking",
+                     "booking CD0000000000\nhas been submitted successfully"):    # partida en dos líneas
+            with self.subTest(otra=otra):
+                self.assertEqual(ref(P(otra)), "")
+        # Solo COSCO: ni ONE ni CMA leen la frase, y sin forma no espera.
+        pagina = P(envio)
+        self.assertEqual((ref(pagina, "one"), ref(pagina, "cma"), pagina.esperas), ("", "", 0))
+        # Sin la frase, espera lo mismo que el número.
+        pagina = P("New Booking")
+        self.assertEqual((ref(pagina), pagina.esperas), ("", self.mod.BKG_ESPERA_SEG))
+
 
 class TestNumeroLimpio(soporte.CasoAQ):
     """Los patrones se prueban con estado EMITIDA: desde f03bb75 solo una EMITIDA tiene número."""

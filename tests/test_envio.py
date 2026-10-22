@@ -3,6 +3,8 @@
 evidencia (CICLO-estado-tras-envio.md).
 
 - EMITIDA solo con la confirmación y un número con la forma medida de la naviera.
+- EMITIDA – CONFIRMAR POR CORREO (COSCO, desde el encargo 77): se pulsó, sin errores ni fallas, y la pantalla dice que
+  la reserva se envió (FORMA_ENVIADA); el número llega por correo.
 - ENVIADA – REVISAR EN PORTAL: se pulsó (o el clic pudo salir) y no hubo confirmación.
 - NO ENVIADA: el botón no se pulsó, o el portal marcó errores de validación (con los campos).
 - La evidencia: la captura y el HTML de la página y de cada marco, en la carpeta de la corrida.
@@ -153,6 +155,105 @@ class TestResultadoEnvio(ConRegistro):
         r, carpeta, _ = self.envio(pagina)
         self.assertEqual(r[0], "EMITIDA")
         self.assertIn("<p>lecturas=4</p>", (carpeta / "nav_f5_9_confirmado.html").read_text(encoding="utf-8"))
+
+    def cosco(self, pagina, **kw):
+        return self.envio(pagina, naviera="cosco", nombre="COSCO", **kw)
+
+    def test_cosco_enviada_con_su_frase_es_emitida_por_correo(self):
+        # Decisión de Marcelo, encargo 77: COSCO manda el número por correo. Su página tras el envío dice, en el marco
+        # del formulario, que la reserva se envió (la forma medida el 22-10): sin errores, EMITIDA – CONFIRMAR POR CORREO,
+        # nunca EMITIDA. Hasta ahí, ENVIADA – REVISAR EN PORTAL. Una referencia inventada, con las cifras a la vista.
+        pagina = Pantalla("New Booking · Booking Request · Templates",
+                          frames=[Marco("nada"), Marco(COSCO_ENVIADA)])
+        r, carpeta, log = self.cosco(pagina)
+        detalle = ("COSCO: se pulsó «Submit» y la página dijo «Booking CD1234567890 has been submitted successfully». "
+                   "COSCO manda el número de la reserva por correo, en un aviso y en la confirmación: confírmalo ahí y "
+                   "anótalo en la planilla.")
+        self.assertEqual(r, ("EMITIDA – CONFIRMAR POR CORREO", detalle))
+        self.assertEqual(self.mod.EMITIDA_POR_CORREO, "EMITIDA – CONFIRMAR POR CORREO")
+        self.assertIn(f"· ✅ EMITIDA – CONFIRMAR POR CORREO · {detalle}", log)
+        # El registro del panel la pinta como las emitidas, no como una alerta (clase, en JS_INDEX).
+        self.assertEqual(clases(self, [l for l in log.splitlines() if "CONFIRMAR POR CORREO" in l]), [["f-ok", "OK"]])
+        self.assertEqual(pagina.esperas, 0)                                 # la frase ya estaba
+        self.assertEqual(self.evidencia(carpeta), ["nav_f5_9_confirmado.html", "nav_f5_9_confirmado.png",
+                                                   "nav_f5_9_confirmado_marco1.html", "nav_f5_9_confirmado_marco2.html"])
+        # Lo que el panel lee en la columna del número, y el número limpio (ninguno: no es una EMITIDA).
+        res = {"estado": r[0], "detalle": r[1]}
+        self.assertEqual((self.mod._texto_n_reserva(res), self.mod._extraer_bkg_limpio(res)), ("confirmar por correo", ""))
+
+    def test_cosco_sin_su_frase_sigue_enviada(self):
+        pagina = Pantalla("New Booking · Booking Details · Submit")
+        r, _, log = self.cosco(pagina)
+        detalle = "COSCO: se pulsó «Submit», pero la pantalla no mostró que la reserva se enviara. " + REVISA
+        self.assertEqual(r, ("ENVIADA – REVISAR EN PORTAL", detalle))
+        self.assertIn(f"· ⚠ ENVIADA – REVISAR EN PORTAL · {detalle}", log)
+        self.assertEqual(pagina.esperas, self.mod.BKG_ESPERA_SEG)          # esperó la frase, como el número
+
+    def test_cosco_con_cualquier_duda_sigue_enviada(self):
+        # Ante cualquier duda, ENVIADA – REVISAR EN PORTAL (encargo 77): el clic que pudo no salir, una falla del
+        # programa después de pulsar, o un error del portal, aunque la frase esté; con errores de validación, NO ENVIADA.
+        casos = {"falla al pulsar": dict(pulsado=None, error=TimeoutError("30000 ms")),
+                 "clic sin respuesta": dict(pulsado=None),
+                 "falla después": dict(error=RuntimeError("se cerró")),
+                 "error del portal": dict(error_portal="Sistema ocupado")}
+        for caso, kw in casos.items():
+            with self.subTest(caso=caso):
+                r, _, _ = self.cosco(Pantalla(COSCO_ENVIADA), **kw)
+                self.assertEqual(r[0], "ENVIADA – REVISAR EN PORTAL")
+        r, _, _ = self.cosco(Pantalla(COSCO_ENVIADA), campos=["Gross Weight is required"])
+        self.assertEqual(r[0], "NO ENVIADA")
+
+    def test_cosco_solo_con_la_forma_medida(self):
+        # La frase, con la referencia de la forma medida: «Booking», «CD» y 10 cifras, y «has been submitted
+        # successfully». Otra forma, o solo una parte, no basta: ENVIADA – REVISAR EN PORTAL.
+        otras = ["Booking CD123456789 has been submitted successfully!",       # 9 cifras
+                 "Booking CD12345678901 has been submitted successfully!",     # 11 cifras
+                 "Booking cd1234567890 has been submitted successfully!",      # la referencia distingue mayúsculas
+                 "Booking XD1234567890 has been submitted successfully!",      # otro prefijo
+                 "CD1234567890 has been submitted successfully!",              # sin «Booking»
+                 "Booking CD1234567890 has been submitted",                    # sin «successfully»
+                 "Booking CD1234567890 · Please check booking status",
+                 "BookingCD1234567890 has been submitted successfully!",       # «Booking» pegado a la referencia
+                 "Booking CD1234567890 has been submitted successfullyX",      # una letra pegada al final
+                 # De la revisión de seguridad: otra palabra que termina en «Booking», un salto de línea, y la «ſ»
+                 # (s larga), que el plegado de Unicode tomaría por una «s».
+                 "Rebooking CD1234567890 has been submitted successfully!",
+                 "Pre-Booking CD1234567890 has been submitted successfully!",
+                 "Booking\nCD1234567890 has been submitted successfully!",
+                 "Booking CD1234567890 has been submitted " + chr(0x17F) + "uccessfully!"]
+        for texto in otras:
+            with self.subTest(texto=texto):
+                r, _, _ = self.cosco(Pantalla(texto))
+                self.assertEqual(r[0], "ENVIADA – REVISAR EN PORTAL")
+        r, _, _ = self.cosco(Pantalla("booking CD1234567890 HAS BEEN SUBMITTED SUCCESSFULLY!"))   # las palabras, en
+        self.assertEqual(r[0], "EMITIDA – CONFIRMAR POR CORREO")                                # cualquier caja
+
+    def test_la_lectura_que_falla_tras_pulsar_es_enviada(self):
+        # Con el clic ya dado, una lectura que falla (el navegador que cierra «Detener» en medio de la espera del número
+        # o de la frase) es una falla del programa después de pulsar: ENVIADA – REVISAR EN PORTAL. Hasta la revisión de
+        # seguridad del encargo 77, la excepción salía del reservador y la fila quedaba DETENIDO o ERROR, con el envío
+        # ya hecho (en COSCO, desde que tiene frase, también en esos 15 s).
+        class SeCierra(Pantalla):
+            def wait_for_timeout(self, ms):
+                raise RuntimeError("Target page, context or browser has been closed")
+        for naviera, nombre in (("cosco", "COSCO"), ("one", "ONE")):
+            with self.subTest(naviera=naviera):
+                r, carpeta, log = self.envio(SeCierra("Booking Details"), naviera=naviera, nombre=nombre)
+                self.assertEqual(r, ("ENVIADA – REVISAR EN PORTAL",
+                                     f"{nombre}: se pulsó «Submit», pero después el programa falló (RuntimeError: "
+                                     "Target page, context or browser has been closed). " + REVISA))
+                self.assertIn("falla del programa al leer la pantalla después del envío: RuntimeError: Target page", log)
+                self.assertEqual(self.evidencia(carpeta), ["nav_f5_9_confirmado.html", "nav_f5_9_confirmado.png"])
+
+    def test_la_frase_de_cosco_no_vale_en_otra_naviera(self):
+        for naviera, nombre in (("one", "ONE"), ("maersk", "MAERSK")):
+            with self.subTest(naviera=naviera):
+                r, _, _ = self.envio(Pantalla(COSCO_ENVIADA), naviera=naviera, nombre=nombre)
+                self.assertEqual(r[0], "ENVIADA – REVISAR EN PORTAL")
+
+
+COSCO_ENVIADA = ('Booking CD1234567890 has been submitted successfully! Please check booking status in the "To do list".\n'
+                 "Copy to Create New")
 
 
 class Marco(Pantalla):
@@ -360,7 +461,8 @@ class TestReservadores(soporte.CasoAQ):
         self.assertIn(normal("if campos and vio_reminder:\n"
                              "    error_portal = '; '.join(campos + ([error_portal] if error_portal else []))\n"
                              "    campos = []"), condicionales)
-        self.assertNotIn("cosco", self.mod.FORMA_BOOKING)     # sin forma medida: nunca EMITIDA
+        self.assertNotIn("cosco", self.mod.FORMA_BOOKING)     # sin forma medida: nunca EMITIDA a secas (desde el
+                                                              # encargo 77, EMITIDA – CONFIRMAR POR CORREO, con su frase)
 
     def test_la_evidencia_y_el_estado_solo_despues_de_la_guarda(self):
         # FRENA del encargo: guardar la evidencia no puede cambiar el flujo antes de la guarda.
@@ -391,6 +493,13 @@ def correr_node(caso, guion):
     rc, out, err = soporte.hijo([node, str(ruta)], cwd=caso.sb)
     caso.assertEqual(rc, 0, err[-600:])
     return json.loads(out)
+
+
+def clases(caso, lineas):
+    """Cómo pinta el registro del panel cada línea (clase, en JS_INDEX), corrida en Node."""
+    m = re.search(r"^function clase\(l\) \{\n.*?\n\}\n", caso.mod.JS_INDEX, re.S | re.M)
+    caso.assertIsNotNone(m, "no encontré clase en JS_INDEX")
+    return correr_node(caso, m.group(0) + f"console.log(JSON.stringify({json.dumps(lineas)}.map(clase)));\n")
 
 
 class Nada:
@@ -507,6 +616,42 @@ class TestCosco(soporte.CasoAQ):
                                                submit_ventana=self.pulsa, exito=True)
         self.assertEqual((r, esperas, estado["clics"]), (([], "", True), 7, 1))
         self.assertIn("Ventana 'Reminder': pulsé una vez su Submit, el de la ventana (por su título y su texto).", log)
+        # Un paso normal, no un error (encargo 77): log.txt dice cuándo aparece y cuándo deja de verse, contados desde
+        # que empieza a esperar (6 vueltas de 1,5 s).
+        self.assertEqual(log.count("Ventana 'Reminder' a la vista a los 2 s de esperar el resultado: es un paso normal de "
+                                   "COSCO, que recuerda enviar los documentos antes de su plazo."), 1)
+        self.assertEqual(log.count("La ventana 'Reminder' dejó de verse a los 9 s de esperar el resultado, después de "
+                                   "pulsar su Submit."), 1)
+
+    def test_reminder_sin_su_submit_se_cierra_y_sigue(self):
+        # Como el 22-10 (encargo 77): la ventana aparece, el programa no identifica su Submit y no pulsa nada, la
+        # ventana se cierra sola y después llega la señal de envío. Sin errores, sin un solo clic.
+        r, esperas, estado, log = self.esperar(reminder=lambda e: e["vistos"].count("reminder") <= 5,
+                                               submit_ventana="sin-ventana", exito=True)
+        self.assertEqual((r, esperas, estado["clics"]), (([], "", True), 7, 0))
+        self.assertEqual(log.count("Ventana 'Reminder': no identifiqué su Submit sin ambigüedad (sin-ventana, sin "
+                                   "respuesta); no pulsé nada y sigo esperando."), 1)
+        self.assertEqual(log.count("La ventana 'Reminder' dejó de verse a los 9 s de esperar el resultado, sin que el "
+                                   "programa pulsara nada."), 1)
+        # Un paso normal: el registro del panel no pinta ninguna de sus líneas como una alerta (clase, en JS_INDEX).
+        lineas = [l for l in log.splitlines() if "Reminder" in l]
+        self.assertEqual(len(lineas), 4)                  # la espera, la ventana a la vista, su Submit y el cierre
+        self.assertNotIn(["f-alerta", "REVISAR"], clases(self, lineas))
+
+    def test_reminder_que_vuelve_dice_una_vez_que_se_cerro(self):
+        # La ventana aparece, se va, vuelve y se va: cada aviso, una sola vez.
+        vueltas = iter([True, False, True])
+        r, _, estado, log = self.esperar(reminder=lambda e: next(vueltas, False), submit_ventana="ambiguo",
+                                         exito=lambda e: e["vistos"].count("reminder") >= 6, submit_presente=True)
+        self.assertEqual((r, estado["clics"]), (([], "", True), 0))
+        self.assertEqual([log.count("a la vista a los"), log.count("La ventana 'Reminder' dejó de verse")], [1, 1])
+
+    def test_al_agotarse_con_la_carga_lee_los_errores(self):
+        # Como con la ventana, con la máscara de carga hasta el final los errores no se leen en ninguna vuelta: también
+        # se leen al cumplirse el plazo (revisión de código del encargo 77), y van como aviso del portal, sin la ventana
+        # también: al plazo no se sabe si COSCO creó la reserva (revisión de seguridad).
+        r, esperas, _, _ = self.esperar(carga=True, errores={"campos": ["Gross Weight is required"], "portal": "Ocupado"})
+        self.assertEqual((r, esperas), (([], "Gross Weight is required; Ocupado", False), 120))
 
     def test_reminder_tardio_tambien_una_sola_vez(self):
         # La ventana aparece en la sexta vuelta y no se cierra: un clic, y después solo se espera hasta el plazo.
@@ -517,7 +662,8 @@ class TestCosco(soporte.CasoAQ):
     def test_reminder_ambiguo_no_pulsa(self):
         r, esperas, estado, log = self.esperar(reminder=True, submit_ventana="ambiguo")
         self.assertEqual((r, esperas, estado["clics"]), (([], "", True), 120, 0))
-        aviso = "Ventana 'Reminder': no identifiqué su Submit sin ambigüedad (ambiguo, sin respuesta); no pulsé nada."
+        aviso = ("Ventana 'Reminder': no identifiqué su Submit sin ambigüedad (ambiguo, sin respuesta); no pulsé nada y "
+                 "sigo esperando.")
         self.assertEqual(log.count(aviso), 1)
 
     def test_espera_se_agota(self):
@@ -525,6 +671,14 @@ class TestCosco(soporte.CasoAQ):
         r, esperas, _, log = self.esperar(submit_presente=True)
         self.assertEqual((r, esperas), (([], "", False), 120))
         self.assertIn("Se cumplió el plazo de 180 s sin confirmación de COSCO.", log)
+
+    def test_al_agotarse_lee_los_errores(self):
+        # Con la ventana abierta hasta el final, los errores no se leen en ninguna vuelta: al cumplirse el plazo se
+        # leen una vez, para que el estado no decida sin ellos (encargo 77), y van como aviso del portal: ENVIADA –
+        # REVISAR EN PORTAL, nunca NO ENVIADA. Hasta ahí, volvía sin leerlos.
+        r, esperas, _, _ = self.esperar(reminder=True, submit_ventana="ambiguo",
+                                        errores={"campos": ["Gross Weight is required"], "portal": ""})
+        self.assertEqual((r, esperas), (([], "Gross Weight is required", True), 120))
 
     def test_js_submit_del_reminder_solo_el_de_la_ventana(self):
         # La ventana medida en las capturas: título «Reminder», el texto y los botones «Submit» y «Back». El
@@ -677,8 +831,27 @@ class TestLecturaDelPanel(soporte.CasoAQ):
         esperado = {"EN CURSO": "curso", "EMITIDA": "emitida", "OK-EJEMPLO": "lista", "DETENIDO": "detenido",
                     "NO ENVIADA": "no-enviada", "ENVIADA – REVISAR EN PORTAL": "revisar-portal",
                     "REVISAR": "revisar", "ERROR": "revisar", "SIN-CUPO": "sin-cupo", "": "otro",
-                    "OTRO ESTADO": "otro"}
+                    "OTRO ESTADO": "otro", "EMITIDA – CONFIRMAR POR CORREO": "emitida-correo"}
         self.assertEqual(self.lecturas(list(esperado)), esperado)
+
+    def test_emitida_por_correo_se_pinta_como_emitida_sin_numero(self):
+        # COSCO, desde el encargo 77: el panel la lee por el mismo texto del programa (EMITIDA_POR_CORREO, que el
+        # JavaScript repite), la cuenta como emitida, y su columna dice lo de la planilla (n_reserva): «confirmar por
+        # correo». El mismo estado que log.txt y que la planilla (test_planilla).
+        js = self.mod.JS_INDEX
+        self.assertEqual(js.count(f'if (est === "{self.mod.EMITIDA_POR_CORREO}") return "emitida-correo";'), 1)
+        m = re.search(r'\} else if \(lectura === "emitida-correo"\) \{\n(.*?)\n        \} else if', js, re.S)
+        self.assertIsNotNone(m, "el panel no tiene rama para emitida-correo")
+        for trozo in ('chip(f, "ok", "emitida – confirmar por correo");', "totalEmitidas++;",
+                      'tr.classList.add("fila-emitida");', '${esc(nres)}</span>'):
+            with self.subTest(trozo=trozo):
+                self.assertIn(trozo, m.group(1))
+        t = self.mod._texto_n_reserva
+        self.assertEqual(self.mod.CONFIRMAR_POR_CORREO, "confirmar por correo")
+        self.assertEqual([t({"estado": "EMITIDA – CONFIRMAR POR CORREO"}),
+                          t({"estado": "EMITIDA – CONFIRMAR POR CORREO", "booking": "BKGFALSO12",
+                             "detalle": "Booking CD1234567890 has been submitted successfully"})],
+                         ["confirmar por correo", "confirmar por correo"])
 
     def test_cada_lectura_nueva_pinta_su_fila(self):
         js = self.mod.JS_INDEX

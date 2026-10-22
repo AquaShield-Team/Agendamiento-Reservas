@@ -603,8 +603,9 @@ class TestLecturasConPlazo(ConCorrida):
     def test_ninguna_lectura_de_cma_sin_plazo(self):
         # La foto de las lecturas sin plazo de Playwright en lo que corre desde login_cma y reservar_cma: quedan solo
         # detrás de la pregunta con plazo (_cma_cuantos, _cma_se_ve y _pulsar_boton con plazo_ms) y en la rama sin plazo
-        # de los ayudantes comunes, que CMA llama con plazo_ms; y numero_tras_envio, que con CMA no lee (no tiene forma
-        # medida). Un evaluate con timeout tiene plazo.
+        # de los ayudantes comunes, que CMA llama con plazo_ms; y _leer_tras_envio (lo que leen numero_tras_envio
+        # y, desde el encargo 77, referencia_tras_envio), que con CMA no lee: no tiene forma medida ni frase de
+        # envío. Un evaluate con timeout tiene plazo.
         _, funcs = arbol_y_funciones(self.mod)
         vistas = lo_que_corre_en_cma(funcs)
         sin = sorted({(n, c.func.attr) for n in vistas for c in ast.walk(funcs[n])
@@ -613,10 +614,11 @@ class TestLecturasConPlazo(ConCorrida):
                       and not isinstance(c.func.value, ast.Constant)})
         self.assertEqual(sin, [("_cma_cuantos", "count"), ("_cma_se_ve", "is_visible"),
                                ("_guardar_html_completo", "content"), ("_guardar_html_completo", "evaluate"),
+                               ("_leer_tras_envio", "evaluate"),
                                ("_pulsar_boton", "count"), ("_pulsar_boton", "evaluate"),
-                               ("_pulsar_boton", "is_visible"), ("click_si_existe", "evaluate"),
-                               ("numero_tras_envio", "evaluate")])
+                               ("_pulsar_boton", "is_visible"), ("click_si_existe", "evaluate")])
         self.assertNotIn("cma", self.mod.FORMA_BOOKING)
+        self.assertNotIn("cma", self.mod.FORMA_ENVIADA)
         self.assertNotIn("texto_pagina", vistas)
         # Cada llamada de CMA a esos ayudantes comunes, con plazo_ms.
         cma = {n for n in vistas if n in ("login_cma", "reservar_cma") or n.startswith("_cma_")}

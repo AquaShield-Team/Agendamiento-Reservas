@@ -349,6 +349,18 @@ class TestEscritura(ConPlanilla):
                                    ("ONE", "H7"): (None, "OK-EJEMPLO · armada sin emitir"),
                                    ("ONE", "I7"): (None, "lista para emitir")})
 
+    def test_web_descarga_de_emitida_por_correo(self):
+        # COSCO, desde el encargo 77: la columna de estado lleva el estado y su detalle, como en log.txt, y la del número
+        # dice «confirmar por correo», como el panel; la referencia que muestra COSCO no va a esa columna.
+        det = ("COSCO: se pulsó «Submit» y la página dijo «Booking CD1234567890 has been submitted successfully». COSCO "
+               "manda el número de la reserva por correo, en un aviso y en la confirmación: confírmalo ahí y anótalo en "
+               "la planilla.")
+        cambios = self._cambios_de_la_descarga(
+            "COSCO", {"5": {"estado": "EMITIDA – CONFIRMAR POR CORREO", "detalle": det, "booking": ""}})
+        self.assertEqual(cambios, {("COSCO", "I4"): (None, "N° de reserva emitida"),     # la hoja COSCO no la trae
+                                   ("COSCO", "H5"): (None, f"EMITIDA – CONFIRMAR POR CORREO · {det}"),
+                                   ("COSCO", "I5"): (None, "confirmar por correo")})
+
     def test_web_descarga_de_consolidado_solo_escribe_consolidado(self):
         # Al correr CONSOLIDADO, los números de fila son de CONSOLIDADO: no se reparten a las hojas.
         cambios = self._cambios_de_la_descarga(
@@ -422,7 +434,9 @@ class TestEstadosNuevos(ConPlanilla):
     ESTADOS = [("ENVIADA – REVISAR EN PORTAL", "ONE: se pulsó «Submit», pero la pantalla no mostró la "
                 "confirmación con el número de reserva."),
                ("NO ENVIADA", "COSCO: el portal no aceptó el envío y marcó: «Gross Weight is required»."),
-               ("EMITIDA", "MSC emitida con éxito (Booking: EBKG65432109)")]
+               ("EMITIDA", "MSC emitida con éxito (Booking: EBKG65432109)"),
+               ("EMITIDA – CONFIRMAR POR CORREO", "COSCO: se pulsó «Submit» y la página dijo «Booking CD1234567890 "
+                "has been submitted successfully».")]                                 # desde el encargo 77
 
     def estado(self, i):
         return self.ESTADOS[i % len(self.ESTADOS)]
