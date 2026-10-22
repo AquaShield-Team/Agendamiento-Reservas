@@ -194,6 +194,11 @@ Con eso, **14 mutaciones y 17 pares, los 17 muerden** (control verde; originales
    seguridad). Ahora toma cada elemento antes de mirar si se ve, y la página falsa no deja pulsar una posición.
 5. **Una prueba con el nombre de una clase que no existe** (`TestDejaLaEvidencia`) en la primera corrida: el error lo
    dijo, y la clase es `TestCadaReservadorLaDeja`.
+6. **El barrido de lo que va a subir, con la opción equivocada** (después del commit de este informe): la sonda de
+   valores reales toma el rango como argumento suelto, y con `--rango` git no entendió la opción y la sonda contó «0
+   líneas agregadas» con «control: ok», sin avisar. Su control mira los valores vigilados, no que el diff traiga
+   líneas. Corrido bien (`barrido_e72.py origin/main..main`): 663 líneas, las mismas que cuenta `git diff --numstat`,
+   y 0 valores reales.
 
 ## Premisas que se refutaron
 
