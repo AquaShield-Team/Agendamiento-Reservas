@@ -273,7 +273,10 @@ class TestCadaReservadorLaDeja(soporte.CasoAQ):
                                           # elegir (test_clics.TestContenedorMaersk, CICLO-maersk-contenedor.md), y
                                           # desde el 63, con la de los ajustes reefer, con el mismo ayudante
                                           # (TestReeferMaersk, CICLO-maersk-otro-contenedor-y-reefer.md).
-                                          + ["_mk_elegir_unica"]))
+                                          + ["_mk_elegir_unica"]
+                                          # Desde el encargo 76, HYUNDAI en «Booking Reference» antes de volver a pulsar
+                                          # su NEXT (test_clics.TestHyundai, CICLO-hyundai-paso-uno.md).
+                                          + ["_hmm_reintentar_paso2"]))
 
 
 class TestHtmlSinObjetivo(ConRegistro):

@@ -8795,3 +8795,71 @@ MUTACIONES += [
          viejo="    sin = [i for i, (a, p) in enumerate(partes) if a == afuera and not p]\n",
          nuevo="    sin = [i for i, (a, p) in enumerate(partes) if a.startswith(afuera) and not p]\n"),
 ]
+
+# --- Encargo 76 (CICLO-hyundai-paso-uno.md): el paso 01 de HYUNDAI, «Booking Reference». El formulario se espera hasta
+# HMM_ESPERA_PASO1 s (hasta ahí, 6), y si después del NEXT la página sigue ahí con su formulario a la vista, se vuelve a
+# pulsar ese NEXT, una sola vez, con la evidencia antes (_hmm_reintentar_paso2). El 22-10, en el equipo de un colega, el
+# NEXT se pulsó antes de que cargara el formulario, y la fila quedó REVISAR ---
+P1 = "test_clics.TestHyundai.test_el_paso1_"
+P1_ESPERA, P1_VUELVE, P1_TERCERO = P1 + "espera_su_formulario", P1 + "vuelve_a_pulsar_su_next_una_vez", \
+    P1 + "nunca_pulsa_un_tercer_next"
+P1_SIN_FORM, P1_UN_NEXT, P1_AVANZA = P1 + "sin_su_formulario_no_vuelve_a_pulsar", P1 + "sin_un_solo_next_no_pulsa", \
+    P1 + "que_avanza_no_vuelve_a_pulsar"
+P1_LINEA = "    ok_paso2 = _hmm_esperar_paso2(page) or _hmm_reintentar_paso2(page, reg, f)\n"
+P1_EVIDENCIA = ('    _evidencia_antes_de_la_guarda(page, reg, f"hmm_f{fila}_paso1", "en Booking Reference, antes de '
+                'volver a pulsar "\n                                  "su NEXT", completa=False)\n')
+
+MUTACIONES += [
+    # La espera de antes; o el formulario buscado por otro campo, que no está.
+    dict(id="e76-paso1-espera-de-antes", pruebas=[P1_ESPERA, P1_SIN_FORM],
+         viejo="HMM_ESPERA_PASO1 = 30\n", nuevo="HMM_ESPERA_PASO1 = 6\n"),
+    dict(id="e76-paso1-otra-señal", pruebas=[P1_ESPERA],
+         viejo='HMM_PASO1 = "#previousBkgNo, #referenceNo0"\n', nuevo='HMM_PASO1 = "#referenceNo1"\n'),
+    # Sin el segundo clic, como hasta el encargo 76; con un tercero; o dándolo por bueno sin mirar si llegó.
+    dict(id="e76-paso1-sin-segundo-clic", pruebas=[P1_VUELVE],
+         viejo=P1_LINEA, nuevo="    ok_paso2 = _hmm_esperar_paso2(page)\n"),
+    dict(id="e76-paso1-un-tercer-clic", pruebas=[P1_TERCERO],
+         viejo=P1_LINEA,
+         nuevo="    ok_paso2 = (_hmm_esperar_paso2(page) or _hmm_reintentar_paso2(page, reg, f)\n"
+               "                or _hmm_reintentar_paso2(page, reg, f))\n"),
+    dict(id="e76-paso1-segundo-clic-sin-mirar-si-llego", pruebas=[P1_TERCERO],
+         viejo='    reg.info("NEXT ok (role) -> Select Vessel, el clic del reintento")\n'
+               '    return _hmm_esperar_paso2(page)\n',
+         nuevo='    reg.info("NEXT ok (role) -> Select Vessel, el clic del reintento")\n    return True\n'),
+    # El segundo clic sin el formulario a la vista; con 0 o con más de un NEXT; o sin buscarlo por su nombre.
+    dict(id="e76-paso1-segundo-clic-sin-formulario", pruebas=[P1_SIN_FORM],
+         viejo="        if not _hmm_cuantos_se_ven(page.locator(HMM_PASO1)):\n            return False\n",
+         nuevo="        pass\n"),
+    dict(id="e76-paso1-cualquier-cantidad-de-next", pruebas=[P1_UN_NEXT],
+         viejo="    if len(vistos) != 1:\n        return _hmm_sin_reintento(",
+         nuevo="    if not vistos:\n        return _hmm_sin_reintento("),
+    dict(id="e76-paso1-next-sin-su-nombre", pruebas=[P1_VUELVE],
+         viejo='        botones = page.get_by_role("button", name=HMM_NEXT_PASO1, exact=False)\n',
+         nuevo='        botones = page.get_by_role("button")\n'),
+    # Sin la evidencia antes del segundo clic.
+    dict(id="e76-paso1-sin-evidencia", pruebas=[P1_VUELVE, "test_evidencia.TestCadaReservadorLaDeja.test_solo_ahi"],
+         viejo=P1_EVIDENCIA, nuevo=""),
+    # Sin mirar el paso 02: no llega nunca.
+    dict(id="e76-paso2-sin-mirar", pruebas=[P1_ESPERA, P1_AVANZA],
+         viejo="        if _hmm_se_ve_el_paso2(page):\n            return True\n", nuevo="        pass\n"),
+    # De la revisión de código del encargo 76: sin mirar si el paso 02 llegó mientras guardaba la evidencia; y el
+    # segundo clic en la posición, sin tomar el elemento que vio a la vista.
+    dict(id="e76-paso1-sin-mirar-el-paso2-tras-la-evidencia", pruebas=[P1 + "no_vuelve_a_pulsar_si_el_paso2_llego"],
+         viejo='    if _hmm_se_ve_el_paso2(page):\n        reg.info("el paso 02 llegó mientras guardaba la evidencia: '
+               'no vuelvo a pulsar NEXT")\n        return True\n',
+         nuevo=""),
+    dict(id="e76-paso1-clic-por-su-posicion", pruebas=[P1_VUELVE],
+         viejo=("        vistos = [e for e in (botones.nth(i).element_handle(timeout=4500) for i in "
+                "range(botones.count()))\n"),
+         nuevo="        vistos = [e for e in (botones.nth(i) for i in range(botones.count()))\n"),
+    # De la revisión de seguridad del encargo 76: un clic del reintento que da error, sin esperar el paso 02; y sin
+    # mirar si el paso 02 llegó cuando el reintento no pulsa.
+    dict(id="e76-paso1-error-del-clic-sin-esperar", pruebas=[P1 + "si_el_clic_del_reintento_da_error_espera_el_paso2"],
+         viejo='"miro si llega el paso 02, sin otro clic")\n        return _hmm_esperar_paso2(page)\n',
+         nuevo='"miro si llega el paso 02, sin otro clic")\n        return False\n'),
+    dict(id="e76-paso1-sin-reintento-sin-mirar-el-paso2",
+         pruebas=[P1 + "no_vuelve_a_pulsar_si_llega_mientras_busca_el_next"],
+         viejo="    if _hmm_se_ve_el_paso2(page):\n        reg.info(f\"no volví a pulsar «{HMM_NEXT_PASO1}» "
+               "({motivo}), y el paso 02 ya llegó\")\n        return True\n",
+         nuevo=""),
+]

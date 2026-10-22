@@ -400,6 +400,9 @@ def _evidencia_antes_de_la_guarda(page, reg, nombre, momento="en la guarda", com
     - _mk_elegir_unica, con la lista de tipos de contenedor o la de los ajustes reefer abierta, antes de elegir
       («mk_f<fila>_contenedor» y «mk_f<fila>_reefer»), con la captura de la ventana (decisiones de Marcelo, encargos
       62 y 63, CICLO-maersk-contenedor.md y CICLO-maersk-otro-contenedor-y-reefer.md).
+    - _hmm_reintentar_paso2, si después del NEXT de «Booking Reference» la página sigue ahí con su formulario a la
+      vista, antes de volver a pulsar ese NEXT («hmm_f<fila>_paso1»), con la captura de la ventana (encargo 76,
+      CICLO-hyundai-paso-uno.md).
     - Antes de pulsar una sugerencia de origen o de destino, cuando el ayudante ve la que pulsaría, con la captura de
       la ventana (decisión de Marcelo, CICLO-origen-y-destino.md): «<nav>_f<fila>_origen» y «_destino»; en CMA, con su
       modo («cma_f<fila>_origen_<modo>», «_destino_<modo>» y «_entrega_<modo>», el lugar de entrega), y en MAERSK y
@@ -8180,6 +8183,90 @@ def _hmm_remark(page, reg):
     esperar(page, 0.2)
 
 
+# El paso 01 de HYUNDAI, «Booking Reference» (encargo 76, CICLO-hyundai-paso-uno.md). Su formulario se reconoce por sus
+# dos campos, el de una reserva anterior y la primera referencia: las 19 esperas de logs/ los vieron, del 21-09 al
+# 15-10. Ninguna de las 59 páginas guardadas de los pasos 02 a 05 trae uno, ni su botón, «NEXT - Select Vessel».
+HMM_PASO1 = "#previousBkgNo, #referenceNo0"
+HMM_NEXT_PASO1 = "NEXT - Select Vessel"
+# Cuánto espera ese formulario antes de pulsar su NEXT. En las 19 esperas de logs/ llegó de 0,5 a 4,1 s. El 22-10, en el
+# equipo de un colega, no llegó en los 6 s de antes: el NEXT se pulsó sin él, y 15 s después el formulario estaba a la
+# vista y la página seguía en el paso 01. Hipótesis.
+HMM_ESPERA_PASO1 = 30
+# Cuántas veces mira, una por segundo, si llegó el paso 02 después del NEXT: en logs/ llegó de 1,0 a 1,5 s después.
+HMM_VUELTAS_PASO2 = 15
+
+
+def _hmm_se_ve_el_paso2(page):
+    """True si se ve el origen del paso 02 (#schOriginText). Solo lee; si la lectura falla, False."""
+    try:
+        return bool(page.locator("#schOriginText").first.is_visible())
+    except Exception:
+        return False
+
+
+def _hmm_esperar_paso2(page):
+    """True si se ve el origen del paso 02; lo mira una vez por segundo, hasta HMM_VUELTAS_PASO2 veces."""
+    for _ in range(HMM_VUELTAS_PASO2):
+        if _hmm_se_ve_el_paso2(page):
+            return True
+        esperar(page, 1)
+    return False
+
+
+def _hmm_cuantos_se_ven(loc):
+    return sum(1 for i in range(loc.count()) if loc.nth(i).is_visible())
+
+
+def _hmm_sin_reintento(page, reg, motivo):
+    """El reintento no pulsa: lo dice, y True si el paso 02 llegó entretanto (revisión de seguridad del encargo 76: si
+    no, un falso REVISAR con la página ya en el paso 02)."""
+    if _hmm_se_ve_el_paso2(page):
+        reg.info(f"no volví a pulsar «{HMM_NEXT_PASO1}» ({motivo}), y el paso 02 ya llegó")
+        return True
+    reg.info(f"no volví a pulsar «{HMM_NEXT_PASO1}»: {motivo}")
+    return False
+
+
+def _hmm_reintentar_paso2(page, reg, fila):
+    """Después de un NEXT que no llevó al paso 02: si la página sigue en «Booking Reference» con su formulario a la
+    vista (un campo de HMM_PASO1 se ve), deja la evidencia (hmm_f<fila>_paso1) y vuelve a pulsar ese NEXT, una sola vez:
+    el único botón a la vista con el nombre HMM_NEXT_PASO1, buscado por su rol como el primer clic (_hmm_realclick), y
+    tomado antes de mirar si se ve, para pulsar el que se vio. True si entonces llega el paso 02. Sin el formulario a la
+    vista, o sin un solo NEXT, no pulsa nada (encargo 76: el 22-10, el NEXT se pulsó antes de que cargara el formulario,
+    y la página siguió en el paso 01). Si el paso 02 llegó mientras guardaba la evidencia, o mientras buscaba el NEXT,
+    tampoco, y True (revisiones del encargo 76). Si el clic da un error, pudo salir igual (una navegación lenta vence su
+    plazo): espera el paso 02 como después de un clic, sin otro."""
+    try:
+        if not _hmm_cuantos_se_ven(page.locator(HMM_PASO1)):
+            return False
+    except Exception:
+        return False
+    reg.info("sigue en «Booking Reference», con su formulario a la vista: busco su NEXT para pulsarlo otra vez, una "
+             "sola vez")
+    _evidencia_antes_de_la_guarda(page, reg, f"hmm_f{fila}_paso1", "en Booking Reference, antes de volver a pulsar "
+                                  "su NEXT", completa=False)
+    if _hmm_se_ve_el_paso2(page):
+        reg.info("el paso 02 llegó mientras guardaba la evidencia: no vuelvo a pulsar NEXT")
+        return True
+    try:
+        botones = page.get_by_role("button", name=HMM_NEXT_PASO1, exact=False)
+        vistos = [e for e in (botones.nth(i).element_handle(timeout=4500) for i in range(botones.count()))
+                  if e.is_visible()]
+    except Exception as e:
+        return _hmm_sin_reintento(page, reg, f"no pude buscarlo: {_texto_error(e)}")
+    if len(vistos) != 1:
+        return _hmm_sin_reintento(page, reg, f"hay {len(vistos)} a la vista, no uno")
+    (boton,) = vistos
+    try:
+        boton.click(timeout=4500)
+    except Exception as e:
+        reg.info(f"el clic del reintento en «{HMM_NEXT_PASO1}» dio un error ({_texto_error(e)}), y pudo salir igual: "
+                 "miro si llega el paso 02, sin otro clic")
+        return _hmm_esperar_paso2(page)
+    reg.info("NEXT ok (role) -> Select Vessel, el clic del reintento")
+    return _hmm_esperar_paso2(page)
+
+
 @_con_la_nave_de_la_fila
 @_con_la_ruta_de_la_fila
 @_sin_clic_a_ciegas("hmm")
@@ -8193,21 +8280,13 @@ def reservar_hyundai(page, reserva, creds, reg, on_pausa=None):
                   wait_until="domcontentloaded")
     except Exception as e:
         reg.info(f"goto booking: {str(e)[:60]}")
-    esperar_hasta(page, "#previousBkgNo, #referenceNo0", 6, reg, "cargar Booking Step by Step")
+    # Hasta el encargo 76, el formulario se esperaba 6 s y el NEXT se pulsaba una vez (CICLO-hyundai-paso-uno.md).
+    esperar_hasta(page, HMM_PASO1, HMM_ESPERA_PASO1, reg, "cargar Booking Step by Step")
     reg.captura(page, f"hmm_f{f}_1_ref", full=True)
 
-    # Paso 1: Booking Reference (opcional) -> Select Vessel
-    _hmm_realclick(page, "NEXT - Select Vessel", reg, "-> Select Vessel")
-
-    # esperar a que aparezca el campo de origen del paso 2 (hasta 15s)
-    ok_paso2 = False
-    for _ in range(15):
-        try:
-            if page.locator("#schOriginText").first.is_visible():
-                ok_paso2 = True; break
-        except Exception:
-            pass
-        esperar(page, 1)
+    # Paso 1: Booking Reference (opcional) -> Select Vessel; si sigue ahí con su formulario, el mismo NEXT otra vez.
+    _hmm_realclick(page, HMM_NEXT_PASO1, reg, "-> Select Vessel")
+    ok_paso2 = _hmm_esperar_paso2(page) or _hmm_reintentar_paso2(page, reg, f)
     if not ok_paso2:
         reg.paso("No avanzó a Select Vessel (no apareció #schOriginText).")
         reg.captura(page, f"hmm_f{f}_2x_sinpaso2", full=True)

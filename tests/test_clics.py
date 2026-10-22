@@ -5268,6 +5268,231 @@ console.log(JSON.stringify(r));
                 self.assertEqual(pagina.idas, [self.mod.HMM_LOGIN])
                 self.assertIn(f"URL: {self.mod.HMM_LOGIN}", log.read_text(encoding="utf-8"))
 
+    # --- El paso 01, «Booking Reference» (encargo 76, CICLO-hyundai-paso-uno.md). El 22-10, en el equipo de un colega,
+    # el formulario no llegó en los 6 s que se esperaba, el NEXT se pulsó sin él, y 15 s después la página seguía en el
+    # paso 01, con el formulario a la vista: REVISAR. Ahora lo espera hasta HMM_ESPERA_PASO1 s, y si después del NEXT la
+    # página sigue ahí con su formulario, vuelve a pulsar ese NEXT, una sola vez. ---
+    LLEGO = ("NO ENVIADA", "Origen de HYUNDAI: no encontré una sugerencia que elegir para «PUERTO ALFA», así que no "
+                           "pulsé nada. La reserva no se envió; revisa ese paso en el portal.")
+    NO_LLEGO = ("REVISAR", "HYUNDAI: no se abrió el paso Select Vessel")
+    VUELVE = ("sigue en «Booking Reference», con su formulario a la vista: busco su NEXT para pulsarlo otra vez, una "
+              "sola vez")
+    SEGUNDO = "NEXT ok (role) -> Select Vessel, el clic del reintento"
+
+    def paso1(self, caso, cambios=None, **k):
+        """Corre reservar_hyundai sobre PaginaPaso1Hmm hasta el origen del paso 02, donde _hmm_autocomplete no elige: la
+        fila queda NO ENVIADA ahí (LLEGO), y así se ve que llegó. Devuelve (resultado, página, log.txt)."""
+        pagina = PaginaPaso1Hmm(self.mod, **k)
+        reg, _, log = self.corrida(f"hmm_paso1_{caso}")
+        with mock.patch.multiple(self.mod, _hmm_autocomplete=lambda *a, **kw: False, **(cambios or {})):
+            r = self.mod.reservar_hyundai(pagina, dict(TestSinSugerenciaNoSigue.RESERVA), {"contrato": "CT-PRUEBA"},
+                                          reg)
+        self.assertEqual(pagina.prohibidos, [])
+        # Cada botón, el NEXT por su rol, como lo busca _hmm_realclick: el segundo clic no pulsa otra cosa.
+        self.assertEqual(set(pagina.roles), {("button", self.mod.HMM_NEXT_PASO1, False)})
+        return r, pagina, log.read_text(encoding="utf-8")
+
+    def test_el_paso1_espera_su_formulario(self):
+        # El caso del 22-10: el formulario llega a los 10 s. Se pulsa el NEXT una vez, con el formulario, y llega.
+        self.assertEqual((self.mod.HMM_PASO1, self.mod.HMM_NEXT_PASO1, self.mod.HMM_ESPERA_PASO1),
+                         ("#previousBkgNo, #referenceNo0", "NEXT - Select Vessel", 30))
+        r, pagina, log = self.paso1("llega_a_los_10", llega=10)
+        self.assertEqual(r, self.LLEGO)
+        self.assertEqual(pagina.esperas_formulario, [(self.mod.HMM_PASO1, 29600, "visible")])
+        self.assertEqual(pagina.clics, [(10.0, True)])
+        self.assertNotIn("[sin señal]", log)
+        self.assertNotIn(self.VUELVE, log)
+        # Control: con la espera de antes y sin el segundo clic, la misma página da lo del 22-10.
+        r, pagina, log = self.paso1("como_el_22_10", llega=10, cambios=dict(
+            HMM_ESPERA_PASO1=6, _hmm_reintentar_paso2=lambda *a, **k: False))
+        self.assertEqual(r, self.NO_LLEGO)
+        self.assertEqual(pagina.clics, [(6.0, False)])
+        self.assertIn("(cargar Booking Step by Step) [sin señal]", log)
+        self.assertIn("No avanzó a Select Vessel (no apareció #schOriginText).", log)
+
+    def test_el_paso1_vuelve_a_pulsar_su_next_una_vez(self):
+        # El formulario está, y el primer clic no lleva al paso 02: deja la evidencia y pulsa el mismo NEXT otra vez.
+        r, pagina, log = self.paso1("segundo_clic", llega=2, pasa=[False, True])
+        self.assertEqual(r, self.LLEGO)
+        self.assertEqual(pagina.clics, [(2.0, True), (17.0, True)])
+        self.assertEqual([c for c, _ in pagina.capturas],
+                         ["hmm_f9_1_ref.png", "hmm_f9_paso1.png", "hmm_f9_sin_objetivo.png"])
+        self.assertIn(("hmm_f9_paso1.png", False), pagina.capturas)              # la ventana
+        carpeta = self.sb / "hmm_paso1_segundo_clic"
+        self.assertIn("paso 01 sintetico", (carpeta / "hmm_f9_paso1.html").read_text(encoding="utf-8"))
+        self.assertLess(log.index(self.VUELVE), log.index("evidencia en Booking Reference, antes de volver a pulsar su "
+                                                          "NEXT: hmm_f9_paso1.png y 1 de 1 HTML"))
+        self.assertLess(log.index("hmm_f9_paso1.png y 1 de 1 HTML"), log.index(self.SEGUNDO))
+
+    def test_el_paso1_nunca_pulsa_un_tercer_next(self):
+        # Si tampoco el segundo lleva al paso 02, REVISAR, como antes, sin un tercer clic.
+        r, pagina, log = self.paso1("dos_que_no_pasan", llega=2, pasa=[False, False])
+        self.assertEqual(r, self.NO_LLEGO)
+        self.assertEqual(pagina.clics, [(2.0, True), (17.0, True)])
+        self.assertEqual(log.count(self.VUELVE), 1)
+        self.assertIn("hmm_f9_2x_sinpaso2.png", [c for c, _ in pagina.capturas])
+
+    def test_el_paso1_sin_su_formulario_no_vuelve_a_pulsar(self):
+        # Sin el formulario a la vista no lo vuelve a pulsar: el clic sin él es lo que no avanzó el 22-10.
+        r, pagina, log = self.paso1("sin_formulario", llega=None)
+        self.assertEqual(r, self.NO_LLEGO)
+        self.assertEqual(pagina.esperas_formulario, [(self.mod.HMM_PASO1, 29600, "visible")])
+        self.assertEqual(pagina.clics, [(30.0, False)])
+        self.assertIn("(cargar Booking Step by Step) [sin señal]", log)
+        self.assertNotIn(self.VUELVE, log)
+        self.assertNotIn("hmm_f9_paso1.png", [c for c, _ in pagina.capturas])
+
+    def test_el_paso1_sin_un_solo_next_no_pulsa(self):
+        # Con 0 o 2 NEXT a la vista no elige uno: deja la evidencia, lo dice y queda REVISAR, sin otro clic.
+        for nexts in (0, 2):
+            with self.subTest(nexts=nexts):
+                r, pagina, log = self.paso1(f"{nexts}_next", llega=2, pasa=[False], nexts=nexts)
+                self.assertEqual(r, self.NO_LLEGO)
+                self.assertEqual(pagina.clics, [(2.0, True)])
+                self.assertIn(f"no volví a pulsar «{self.mod.HMM_NEXT_PASO1}»: hay {nexts} a la vista, no uno", log)
+                self.assertIn("hmm_f9_paso1.png", [c for c, _ in pagina.capturas])
+                self.assertNotIn(self.SEGUNDO, log)
+
+    def test_el_paso1_no_vuelve_a_pulsar_si_el_paso2_llego(self):
+        # Si el paso 02 llega mientras se guarda la evidencia, no lo vuelve a pulsar y sigue (revisión de código del
+        # encargo 76: hasta ahí, no veía ningún NEXT y quedaba REVISAR, con la página ya en el paso 02).
+        r, pagina, log = self.paso1("llega_en_la_evidencia", llega=2, pasa=[False], llega_en_la_evidencia=True)
+        self.assertEqual(r, self.LLEGO)
+        self.assertEqual(pagina.clics, [(2.0, True)])
+        self.assertIn("el paso 02 llegó mientras guardaba la evidencia: no vuelvo a pulsar NEXT", log)
+        self.assertNotIn("no volví a pulsar", log)
+
+    def test_el_paso1_no_vuelve_a_pulsar_si_llega_mientras_busca_el_next(self):
+        # Si el paso 02 llega mientras busca el NEXT, no ve ninguno y no pulsa, pero sigue (revisión de seguridad del
+        # encargo 76: hasta ahí, REVISAR con la página ya en el paso 02).
+        r, pagina, log = self.paso1("llega_al_buscar", llega=2, pasa=[False], llega_al_buscar=True)
+        self.assertEqual(r, self.LLEGO)
+        self.assertEqual(pagina.clics, [(2.0, True)])
+        self.assertIn(f"no volví a pulsar «{self.mod.HMM_NEXT_PASO1}» (hay 0 a la vista, no uno), y el paso 02 ya "
+                      "llegó", log)
+
+    def test_el_paso1_si_el_clic_del_reintento_da_error_espera_el_paso2(self):
+        # Un clic que sale y da error (una navegación lenta vence su plazo): espera el paso 02 como después de un clic,
+        # sin otro (revisión de seguridad del encargo 76: hasta ahí, REVISAR aunque el paso 02 llegara).
+        for pasa, esperado in ((True, self.LLEGO), (False, self.NO_LLEGO)):
+            with self.subTest(pasa=pasa):
+                r, pagina, log = self.paso1(f"clic_con_error_{pasa}", llega=2, pasa=[False, pasa],
+                                            segundo_clic_lanza=True)
+                self.assertEqual(r, esperado)
+                self.assertEqual(pagina.clics, [(2.0, True), (17.0, True)])
+                self.assertIn(f"el clic del reintento en «{self.mod.HMM_NEXT_PASO1}» dio un error (TimeoutError: "
+                              "navegación lenta), y pudo salir igual: miro si llega el paso 02, sin otro clic", log)
+                self.assertNotIn(self.SEGUNDO, log)
+
+    def test_el_paso1_que_avanza_no_vuelve_a_pulsar(self):
+        # Lo de siempre (19 de 19 en logs/): el formulario llega, un clic, y el paso 02.
+        r, pagina, log = self.paso1("de_siempre", llega=2)
+        self.assertEqual(r, self.LLEGO)
+        self.assertEqual(pagina.clics, [(2.0, True)])
+        self.assertNotIn(self.VUELVE, log)
+        self.assertEqual([c for c, _ in pagina.capturas], ["hmm_f9_1_ref.png", "hmm_f9_sin_objetivo.png"])
+
+
+class LocPaso1Hmm:
+    """Un localizador de PaginaPaso1Hmm: 'que' es «origen» (#schOriginText), «formulario» (los dos campos de
+    HMM_PASO1) o «next» (el NEXT del paso 01, por su rol). Lo que el programa le pide a uno para leer o pulsar. El de
+    una posición (nth) no se pulsa: el segundo clic toma cada elemento (element_handle) y pulsa el que vio a la vista
+    (revisiones del encargo 76: sin esto, pulsar la posición pasaba igual)."""
+    first = property(lambda s: s)
+
+    def __init__(self, pagina, que, por_posicion=False):
+        self.pagina, self.que, self.por_posicion = pagina, que, por_posicion
+
+    def count(self):
+        p = self.pagina
+        return {"origen": int(p.paso == 2), "formulario": 2 * p.formulario(),
+                "next": p.nexts * (p.paso == 1)}.get(self.que, 0)
+
+    def nth(self, i):
+        return LocPaso1Hmm(self.pagina, self.que, por_posicion=True)
+
+    def is_visible(self, **k):
+        return self.count() > 0
+
+    def scroll_into_view_if_needed(self, **k):
+        pass
+
+    def element_handle(self, **k):
+        return LocPaso1Hmm(self.pagina, self.que)
+
+    def click(self, **k):
+        if self.que != "next" or self.por_posicion:
+            self.pagina.prohibidos.append(f"clic en {self.que}{' por su posición' if self.por_posicion else ''}")
+            return
+        self.pagina.clic()
+
+
+class PaginaPaso1Hmm(soporte.PaginaFalsa):
+    """El paso 01 de HYUNDAI falso, «Booking Reference» (encargo 76), con un reloj que avanza con cada espera. Su
+    formulario aparece a los 'llega' s de abrirse (None: nunca). Un clic en su NEXT sin el formulario no avanza, como el
+    22-10; con él, cada clic avanza o no según 'pasa', en orden (sin más, avanza). En el paso 02 se ve el origen y ya no
+    el formulario. 'nexts' es cuántos NEXT a la vista cuenta en el paso 01 (el primer clic, por su rol y con .first, lo
+    pulsa igual). Con 'llega_en_la_evidencia', pasa al paso 02 mientras se guarda la captura de hmm_f9_paso1; con
+    'llega_al_buscar', cuando se busca el NEXT por segunda vez; y con 'segundo_clic_lanza', el segundo clic hace lo
+    suyo y después levanta un TimeoutError, como una navegación lenta. Anota la espera del formulario con su plazo, cada
+    botón que se busca por su rol y cada clic, con el segundo y si el formulario estaba. Otro JavaScript que el del HTML
+    de la evidencia, otro localizador u otro clic quedan en 'prohibidos'."""
+
+    def __init__(self, mod, llega=2.0, pasa=(), nexts=1, llega_en_la_evidencia=False, llega_al_buscar=False,
+                 segundo_clic_lanza=False):
+        super().__init__()
+        self.mod, self.llega, self.pasa, self.nexts = mod, llega, list(pasa), nexts
+        self.llega_en_la_evidencia, self.llega_al_buscar = llega_en_la_evidencia, llega_al_buscar
+        self.segundo_clic_lanza = segundo_clic_lanza
+        self.t, self.paso = 0.0, 1
+        self.esperas_formulario, self.roles, self.clics, self.prohibidos, self.abiertas = [], [], [], [], []
+        self.goto = lambda url, **k: self.abiertas.append(url)
+
+    def formulario(self):
+        return self.paso == 1 and self.llega is not None and self.t >= self.llega
+
+    def wait_for_timeout(self, ms):
+        super().wait_for_timeout(ms)
+        self.t += ms / 1000
+
+    def screenshot(self, path=None, full_page=False, timeout=None):
+        super().screenshot(path, full_page, timeout)
+        if self.llega_en_la_evidencia and Path(path).name == "hmm_f9_paso1.png":
+            self.paso = 2
+
+    def wait_for_selector(self, sel, timeout=None, state=None):
+        self.esperas_formulario.append((sel, timeout, state))
+        if sel == self.mod.HMM_PASO1 and self.llega is not None and self.llega <= self.t + timeout / 1000:
+            self.t = max(self.t, self.llega)
+            return
+        self.t += timeout / 1000
+        raise TimeoutError(f"{sel}: {timeout} ms")
+
+    def evaluate(self, js, *a):
+        if js == self.mod._JS_HTML_COMPLETO:
+            return {"html": "<body>paso 01 sintetico</body>", "sombras": 0}
+        self.prohibidos.append(js[:40])
+        return None
+
+    def locator(self, sel):
+        que = {"#schOriginText": "origen", self.mod.HMM_PASO1: "formulario"}.get(sel)
+        if que is None:
+            self.prohibidos.append(f"locator {sel}")
+        return LocPaso1Hmm(self, que or "otro")
+
+    def get_by_role(self, rol, name=None, exact=None):
+        if self.llega_al_buscar and self.roles:
+            self.paso = 2
+        self.roles.append((rol, name, exact))
+        return LocPaso1Hmm(self, "next")
+
+    def clic(self):
+        self.clics.append((round(self.t, 1), self.formulario()))
+        if self.formulario() and (self.pasa.pop(0) if self.pasa else True):
+            self.paso = 2
+        if self.segundo_clic_lanza and len(self.clics) == 2:
+            raise TimeoutError("navegación lenta")
+
 
 class PaginaLoginHmm(soporte.PaginaFalsa):
     """El login de HYUNDAI falso: anota cada dirección a la que va y se queda en ella; no trae ningún elemento."""

@@ -206,6 +206,10 @@ la captura de la página completa y el mismo HTML, para medir con el candado cer
   (`CICLO-evidencia-remark-hyundai.md`); con ella se identificó el campo (`CICLO-pendientes-con-evidencia.md`).
   `test_solo_ahi` la cuenta, y `TestEvidenciaRemarkHyundai` corre esa llamada y el Remark, tal como están, sobre una
   página falsa.
+- HYUNDAI la deja también, con la captura de la ventana, si después del NEXT de «Booking Reference» la página sigue ahí
+  con su formulario a la vista, antes de volver a pulsar ese NEXT: `hmm_f<fila>_paso1`, desde `_hmm_reintentar_paso2`
+  (encargo 76, `CICLO-hyundai-paso-uno.md`; ver «HYUNDAI pasa a «Select Vessel» con el formulario cargado»). Es el
+  primer HTML del paso 01: hasta ahí, solo su captura (`hmm_f<fila>_1_ref`).
 - HYUNDAI y CMA la dejan también al leer su lista de salidas, con la captura de la ventana: `hmm_f<fila>_naves`, y
   `cma_f<fila>_rutas` (y `_rutas_mas`, `_rutas_mas2`… tras cada «Cargar N siguientes resultados»). Con el de HYUNDAI
   se midió su tarjeta, y desde el encargo 32 aplica la próxima salida; la de CMA todavía espera el suyo
@@ -506,6 +510,22 @@ cerrado:
 - **HYUNDAI escribe el Remark en el campo de su recuadro:** el único textarea del formulario titulado «Remark (n / m)»
   (`_JS_HMM_REMARK`), medido en `hmm_f<fila>_remark.html` (`CICLO-pendientes-con-evidencia.md`). Hasta `e423a38` iba
   al primer textarea visible (FRENO). Si no lo encuentra, corta: `reservar_hyundai` lleva `_sin_clic_a_ciegas("hmm")`.
+- **HYUNDAI pasa a «Select Vessel» con el formulario cargado** (encargo 76, `CICLO-hyundai-paso-uno.md`): espera el
+  formulario del paso 01, «Booking Reference» (`HMM_PASO1`: `#previousBkgNo, #referenceNo0`), hasta `HMM_ESPERA_PASO1`
+  s (30; hipótesis; hasta ahí, 6), y pulsa «NEXT - Select Vessel» (`HMM_NEXT_PASO1`) por su rol, como antes. Si no
+  llega, lo pulsa igual, como antes.
+  - Si en `HMM_VUELTAS_PASO2` vueltas de 1 s no se ve `#schOriginText` y un campo del formulario sí, deja
+    `hmm_f<fila>_paso1` y vuelve a pulsar ese NEXT, una sola vez: el único botón a la vista con ese nombre, por su rol
+    (`_hmm_reintentar_paso2`), cada uno tomado (`element_handle`) antes de mirar si se ve; con 0 o más de uno, no pulsa
+    nada. Sin el formulario a la vista no lo vuelve a pulsar. Si el paso 02 llegó mientras guardaba la evidencia o
+    buscaba el NEXT, no pulsa y sigue (`_hmm_sin_reintento`); si el clic da un error, pudo salir igual, y espera el
+    paso 02 sin otro clic (revisiones del encargo). El reintento pulsa una sola vez; el primer clic es el de siempre,
+    `_hmm_realclick`, con sus respaldos por texto y por JavaScript. Si el paso 02 no llega, REVISAR, como antes.
+  - El 22-10, en el equipo de un colega, el formulario no llegó en 6 s («[sin señal]»), el NEXT se pulsó sin él, y 15 s
+    después la página seguía en el paso 01, con el formulario a la vista: REVISAR. En `logs/` de este equipo (19
+    corridas, del 21-09 al 15-10) llegó de 0,5 a 4,1 s, nunca «[sin señal]», y el paso 02, de 1,0 a 1,5 s después del
+    NEXT. Ninguna de las 59 páginas guardadas de los pasos 02 a 05 trae un campo del paso 01 ni su NEXT.
+  - Lo vigila `test_clics.TestHyundai` (`test_el_paso1_*`, con `PaginaPaso1Hmm`, una página falsa con reloj).
 - **ONE avanza su asistente con el «Next» de cada pantalla** (`_one_siguiente`, `_JS_ONE_SIGUIENTE`;
   `CICLO-cola-seis-items.md`): el único botón a la vista con el texto «Next» o «Siguiente», medido con OCR en las
   capturas del 2026-09-21 y en la corrida del 2026-09-26 con candado cerrado, que encontró uno solo en cada una de las
