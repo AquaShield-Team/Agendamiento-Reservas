@@ -8650,8 +8650,10 @@ MUTACIONES += [
     dict(id="e72-git-espera-sin-plazo", archivo=GUARDA, pruebas=[GD_PLAZO],
          viejo="        p.communicate(timeout=10)\n", nuevo="        p.communicate()\n"),
     dict(id="e72-etiqueta-sin-tope", archivo=GUARDA, pruebas=[GD_TIRA],
-         viejo='r"(?i:booking\\s{1,20}(?:number|no\\.?|n[°º]))(?:\\s{0,20}:)?\\s{0,20}(\\d{9})(?!\\d)"',
-         nuevo='r"(?i:booking\\s+(?:number|no\\.?|n[°º]))\\s*:?\\s*(\\d{9})(?!\\d)"'),
+         viejo=(r'r"(?i:booking(?:\s{1,20}(?:number|no\.?|n[°º])(?:\s{0,20}:)?|\s{0,3}:))"' + "\n"
+                + r'                                  r"\s{0,20}(\d{9})(?!\d)"'),
+         nuevo=(r'r"(?i:booking(?:\s+(?:number|no\.?|n[°º])\s*:?|\s*:))"' + "\n"
+                + r'                                  r"\s*(\d{9})(?!\d)"')),
     dict(id="e72-sin-quitar-invisibles", archivo=GUARDA, pruebas=[GD_MUESTRAS],
          viejo='unicodedata.normalize("NFC", texto).translate(INVISIBLES)',
          nuevo='unicodedata.normalize("NFC", texto)'),
@@ -8862,4 +8864,66 @@ MUTACIONES += [
          viejo="    if _hmm_se_ve_el_paso2(page):\n        reg.info(f\"no volví a pulsar «{HMM_NEXT_PASO1}» "
                "({motivo}), y el paso 02 ya llegó\")\n        return True\n",
          nuevo=""),
+]
+
+# --- Encargo 77 (CICLO-guarda-y-estado-tras-el-envio.md), ítem (b): la guarda de datos reconoce los números de MAERSK
+# que empiezan con 28, y los de CMA-CGM y COSCO con la forma de su página tras el envío del 22-10. Y la prueba de
+# _extraer_bkg_limpio fija que un «28» suelto no lo toma la regla de los «27…» y que el detalle «(Booking: …)» sí ---
+GD_CMA = "    for m in RESERVA_CMA.finditer(t):\n"
+GD_COSCO = "    for m in RESERVA_COSCO.finditer(t):\n"
+GD_NUMERO = '        numero("número de reserva", m, m.group(1))\n'
+GD_FORMA_CMA = r'RESERVA_CMA = re.compile(_ANTES + r"[A-Za-z]{3}[ -]?(\d{7})(?![A-Za-z0-9])")'
+GD_FORMA_COSCO = r'RESERVA_COSCO = re.compile(_ANTES + r"[A-Za-z]{2}[ -]?(\d{10})(?![A-Za-z0-9])")'
+GD_ANTES = r'_ANTES = r"(?:(?<![A-Za-z0-9])|(?<=\\[nrtf]))"'
+GD_ETIQUETA = r'RESERVA_CON_ETIQUETA = re.compile(r"(?i:booking(?:\s{1,20}(?:number|no\.?|n[°º])(?:\s{0,20}:)?|\s{0,3}:))"'
+
+MUTACIONES += [
+    # Como hasta el encargo 77: solo los «27».
+    dict(id="e77-maersk-solo-27", archivo=GUARDA, pruebas=[GD_MUESTRAS], viejo="2[78](", nuevo="27("),
+    # El «28» con su etiqueta, contado dos veces (por RESERVA_MAERSK y por la etiqueta).
+    dict(id="e77-etiqueta-cuenta-dos-veces", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo="        if not RESERVA_MAERSK.fullmatch(m.group(1)):", nuevo="        if True:"),
+    # Sin CMA-CGM o sin COSCO; o sin dejar pasar sus inventados a la vista.
+    dict(id="e77-sin-cma", archivo=GUARDA, pruebas=[GD_MUESTRAS], viejo=GD_CMA + GD_NUMERO, nuevo=""),
+    dict(id="e77-sin-cosco", archivo=GUARDA, pruebas=[GD_MUESTRAS], viejo=GD_COSCO + GD_NUMERO, nuevo=""),
+    dict(id="e77-cma-sin-inventados", archivo=GUARDA, pruebas=[GD_MUESTRAS], viejo=GD_CMA + GD_NUMERO,
+         nuevo=GD_CMA + '        hallazgo("número de reserva", m)\n'),
+    dict(id="e77-cosco-sin-inventados", archivo=GUARDA, pruebas=[GD_MUESTRAS], viejo=GD_COSCO + GD_NUMERO,
+         nuevo=GD_COSCO + '        hallazgo("número de reserva", m)\n'),
+    # _extraer_bkg_limpio con la regla de los «27» abierta a los «28» (lo que el comentario dice que no hace).
+    dict(id="e77-limpio-toma-el-28-suelto", pruebas=[LI + "test_patrones_por_naviera"],
+         viejo='    m = _re.search(r"\\b(27\\d{7})\\b", det)\n', nuevo='    m = _re.search(r"\\b(2[78]\\d{7})\\b", det)\n'),
+    # Los bordes de CMA-CGM y de COSCO (revisión de código del encargo 77): sin ellos, o con otro largo, la forma calza
+    # con un texto que no es la medida.
+    dict(id="e77-cma-sin-borde-despues", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo=GD_FORMA_CMA, nuevo=GD_FORMA_CMA.replace(r"(\d{7})(?![A-Za-z0-9])", r"(\d{7})")),
+    dict(id="e77-cma-borde-despues-solo-cifras", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo=GD_FORMA_CMA, nuevo=GD_FORMA_CMA.replace(r"(\d{7})(?![A-Za-z0-9])", r"(\d{7})(?!\d)")),
+    dict(id="e77-borde-antes-solo-letras", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo=GD_ANTES, nuevo=GD_ANTES.replace(r"(?<![A-Za-z0-9])", r"(?<![A-Za-z])")),
+    dict(id="e77-cma-de-6-a-8-cifras", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo=GD_FORMA_CMA, nuevo=GD_FORMA_CMA.replace(r"(\d{7})", r"(\d{6,8})")),
+    dict(id="e77-cosco-sin-borde-antes", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo=GD_FORMA_COSCO, nuevo=GD_FORMA_COSCO.replace("_ANTES + ", "")),
+    dict(id="e77-cosco-sin-borde-despues", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo=GD_FORMA_COSCO, nuevo=GD_FORMA_COSCO.replace(r"(?![A-Za-z0-9])", "")),
+    dict(id="e77-cosco-de-9-a-11-cifras", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo=GD_FORMA_COSCO, nuevo=GD_FORMA_COSCO.replace(r"(\d{10})", r"(\d{9,11})")),
+    # Lo de la revisión de seguridad del encargo 77: la forma ancha (otro prefijo de COSCO, minúsculas en CMA, un
+    # espacio o un guion antes de las cifras), el número detrás del escape de un literal y la etiqueta «Booking:».
+    dict(id="e77-cosco-solo-cd", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo=GD_FORMA_COSCO, nuevo=GD_FORMA_COSCO.replace("[A-Za-z]{2}[ -]?", "CD[ -]?")),
+    dict(id="e77-cma-solo-mayusculas", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo=GD_FORMA_CMA, nuevo=GD_FORMA_CMA.replace("[A-Za-z]{3}", "[A-Z]{3}")),
+    dict(id="e77-cma-sin-separador", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo=GD_FORMA_CMA, nuevo=GD_FORMA_CMA.replace("[A-Za-z]{3}[ -]?", "[A-Za-z]{3}")),
+    dict(id="e77-cosco-sin-separador", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo=GD_FORMA_COSCO, nuevo=GD_FORMA_COSCO.replace("[A-Za-z]{2}[ -]?", "[A-Za-z]{2}")),
+    dict(id="e77-sin-el-escape-delante", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo=GD_ANTES, nuevo=r'_ANTES = r"(?<![A-Za-z0-9])"'),
+    dict(id="e77-sclg-sin-el-escape-delante", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo='RESERVA = re.compile(_ANTES + r"(?:SCLG',
+         nuevo='RESERVA = re.compile(r"(?<![A-Za-z0-9])(?:SCLG'),
+    dict(id="e77-sin-la-etiqueta-booking", archivo=GUARDA, pruebas=[GD_MUESTRAS],
+         viejo=GD_ETIQUETA, nuevo=GD_ETIQUETA.replace(r"|\s{0,3}:))", "))")),
 ]

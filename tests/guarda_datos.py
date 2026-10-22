@@ -16,8 +16,11 @@ una razón social, su forma jurídica.
 - contenedor con su dígito de control bien calculado (ISO 6346).
 - teléfono chileno, móvil o fijo.
 - número de reserva con la forma con que el programa lo lee: SCLG, EBKG o SCLA y 8 cifras (FORMA_BOOKING de
-  AQUASHIELD.py), 9 cifras que empiezan con 27 (MAERSK, en `_extraer_bkg_limpio`), o 9 cifras detrás de su etiqueta
-  («Booking number»).
+  AQUASHIELD.py), 9 cifras que empiezan con 27 o con 28 (MAERSK: los «28» desde la emisión del 22-10, encargo 77), o 9
+  cifras detrás de su etiqueta («Booking number», o «Booking:», como escribe el programa una EMITIDA); y, con la forma de
+  su página tras el envío del 22-10 (encargo 77), los de CMA-CGM, tres letras y 7 cifras, y los de COSCO, dos letras
+  («CD» en la muestra) y 10 cifras, con las letras en cualquier caja y un espacio o un guion antes de las cifras. Las
+  formas con letras se ven también detrás del escape de un literal («\\n», «\\t»).
 - BL de naviera: un prefijo de naviera (SCAC) y de 6 a 12 letras o cifras, con 6 cifras seguidas.
 - pedido de AquaChile: 40 y 6 cifras.
 - dirección IPv4 pública.
@@ -33,7 +36,8 @@ LO QUE PASA, declarado, y cada cosa con su contador al lado del resultado:
 - La propia empresa entre comillas, «», paréntesis o detrás de un signo (`COSCO_SHIPPER = "AQUACHILE S.A."`): se aparta
   antes de buscar, porque en el código va pegada a un identificador. NEPPEX no lo necesitaba: mira una página.
 - Un número inventado: el que tiene las cifras que cambian todas iguales, o seguidas de a una, subiendo o bajando
-  (12345678, 98765432, 11111111; de uno de MAERSK, las 7 que siguen al 27). Un número inventado con otra forma frena, y
+  (12345678, 98765432, 11111111; de uno de MAERSK, las 7 que siguen al 27 o al 28; de uno de CMA-CGM, las 7 que siguen a
+  las letras; de uno de COSCO, las 10 que siguen a las letras). Un número inventado con otra forma frena, y
   se reescribe con una de esas.
 - Un correo de un dominio reservado para ejemplos (RFC 2606 y RFC 6761: example.com, .net y .org, y los que terminan en
   .example, .test, .invalid o .localhost), y el usuario y la clave de una dirección («https://usuario:clave@…»): esos
@@ -59,13 +63,18 @@ LO QUE NO VE (LÍMITES), como en NEPPEX y por lo que midieron las revisiones del
   dos letras en minúscula;
 - el nombre y la forma en campos separados (un JSON), o unidos por un punto o un guion a otra palabra en minúscula;
 - una forma que no está en las listas;
-- una nave, un viaje, un contrato o una dirección postal; un número de reserva de CMA-CGM o de COSCO, que no tienen
-  forma medida; uno de MAERSK que no empieza con 27 y va sin su etiqueta; un teléfono de 9 cifras pegadas; una IPv6;
+- una nave, un viaje, un contrato o una dirección postal; un número de reserva de CMA-CGM o de COSCO con otra forma que
+  la medida el 22-10 (una muestra de cada una), aunque se ve en minúscula y con un espacio o un guion; uno de MAERSK
+  que no empieza con 27 ni con 28 y va sin su etiqueta; un número partido por un carácter invisible (se cambia por un
+  espacio) o escrito con cifras de ancho completo; un teléfono de 9 cifras pegadas; una IPv6;
 - un nombre y apellido en mayúsculas, o con el apellido primero;
 - un dato pegado a otra palabra o a una tira de 200 caracteres o más, partido en dos líneas, o armado en el código
   (`"40" + str(…)`);
 - un archivo en UTF-16 sin BOM.
 Una versión de cuatro partes, de una a tres cifras cada una, se lee como una IP: si es pública, frena, y se reescribe.
+Y tres letras y 7 cifras, o dos letras y 10 cifras, pegadas o con un espacio o un guion (un monto con el código de su
+moneda, por ejemplo), se leen como un número de CMA-CGM o de COSCO: frena, y se reescribe con las cifras a la vista o
+con sus puntos de miles (revisiones del encargo 77).
 
 DÓNDE CORRE:
 - En la suite (tests/test_guarda_datos.py), sobre lo que git versionaría: lo seguido y lo nuevo que .gitignore no
@@ -209,11 +218,26 @@ DOMINIOS_RESERVADOS = re.compile(r"(?:^|\.)(?:example\.(?:com|net|org)|[\w-]+\.(
 CONTENEDOR = re.compile(r"(?<![A-Za-z0-9])([A-Z]{4})\s?(\d{6})\s?(\d)(?![A-Za-z0-9])")
 TELEFONO = re.compile(r"(?<!\d)\+?56[ .-]?\(?(?:9|2|[3-7]\d)\)?[ .-]?\d{3,4}[ .-]?\d{4}(?!\d)"
                       r"|(?<!\d)(?<!\d[.,])\(?0?(?:9|2|[3-7]\d)\)?[ .-]\d{4}[ .-]\d{4}(?!\d)(?![.,]\d)")
-RESERVA = re.compile(r"(?<![A-Za-z0-9])(?:SCLG|EBKG|SCLA)\s?(\d{8})(?!\d)")
-RESERVA_MAERSK = re.compile(r"(?<!\d)27(\d{7})(?!\d)")
+# Delante de un número de reserva, ni una letra ni una cifra pegada, salvo la letra de un escape escrito en un literal
+# («\n», «\r», «\t», «\f»): en una prueba, el texto de una página va en un literal, y con «\nCD…» la «n» lo tapaba
+# (revisión de seguridad del encargo 77).
+_ANTES = r"(?:(?<![A-Za-z0-9])|(?<=\\[nrtf]))"
+RESERVA = re.compile(_ANTES + r"(?:SCLG|EBKG|SCLA)\s?(\d{8})(?!\d)")
+# MAERSK: 9 cifras que empiezan con 27 o, desde la emisión del 22-10, con 28 (encargo 77).
+RESERVA_MAERSK = re.compile(r"(?<!\d)2[78](\d{7})(?!\d)")
+# CMA-CGM y COSCO, con la forma de su página tras el envío del 22-10 (encargo 77; una muestra de cada una): CMA, tres
+# letras y 7 cifras («Booking AAA9999999», en la tarjeta «Booking enviado»); COSCO, «CD» y 10 cifras («Booking
+# CD9999999999 has been submitted successfully!»). Con una sola muestra, la forma se toma más ancha, como la de SCLG:
+# las letras en cualquier caja, COSCO con dos letras cualesquiera, y un espacio o un guion antes de las cifras
+# (revisión de seguridad del encargo 77). En lo versionado no agrega ningún hallazgo.
+RESERVA_CMA = re.compile(_ANTES + r"[A-Za-z]{3}[ -]?(\d{7})(?![A-Za-z0-9])")
+RESERVA_COSCO = re.compile(_ANTES + r"[A-Za-z]{2}[ -]?(\d{10})(?![A-Za-z0-9])")
 # Los espacios, con tope: con `\s*:?\s*`, una tira larga de espacios detrás de la etiqueta retrocedía sin fin (64.000,
-# 46 s; lo midió la revisión de seguridad del encargo 72).
-RESERVA_CON_ETIQUETA = re.compile(r"(?i:booking\s{1,20}(?:number|no\.?|n[°º]))(?:\s{0,20}:)?\s{0,20}(\d{9})(?!\d)")
+# 46 s; lo midió la revisión de seguridad del encargo 72). «Booking:» también es una etiqueta: así escribe el programa
+# el número de una EMITIDA («(Booking: …)», _resultado_envio), y un número de MAERSK con otro prefijo pasaba
+# (revisión de seguridad del encargo 77).
+RESERVA_CON_ETIQUETA = re.compile(r"(?i:booking(?:\s{1,20}(?:number|no\.?|n[°º])(?:\s{0,20}:)?|\s{0,3}:))"
+                                  r"\s{0,20}(\d{9})(?!\d)")
 BL = re.compile(r"(?<![A-Za-z0-9])(?:MAEU|MEDU|MSCU|HLCU|CMDU|ONEY|COSU|EGLV|EVRG|YMLU|ZIMU|HDMU|SUDU|OOLU|APLU|WHLC|"
                 r"PCIU|SMLM|HAMU)([A-Z0-9]{6,12})(?![A-Za-z0-9])")
 PEDIDO = re.compile(r"(?<!\d)40(\d{6})(?!\d)")
@@ -404,8 +428,12 @@ def _datos(t, archivo, cuenta):
     for m in RESERVA_MAERSK.finditer(t):
         numero("número de reserva", m, m.group(1))
     for m in RESERVA_CON_ETIQUETA.finditer(t):
-        if not m.group(1).startswith("27"):         # los que empiezan con 27 ya los vio RESERVA_MAERSK
+        if not RESERVA_MAERSK.fullmatch(m.group(1)):    # los de MAERSK ya los vio RESERVA_MAERSK
             numero("número de reserva", m, m.group(1))
+    for m in RESERVA_CMA.finditer(t):
+        numero("número de reserva", m, m.group(1))
+    for m in RESERVA_COSCO.finditer(t):
+        numero("número de reserva", m, m.group(1))
     for m in BL.finditer(t):
         if re.search(r"\d{6}", m.group(1)):
             numero("BL", m, re.sub(r"\D", "", m.group(1)))
@@ -689,6 +717,32 @@ def muestras():
         ("EBKG" + "1234" + "5678", "número inventado a la vista"),
         ("EBKG" + "7777" + "7777", "número inventado a la vista"),
         ("bkg " + "27" + "7654321", "número inventado a la vista"),
+        # Encargo 77: MAERSK con 28 (con su etiqueta, una sola vez), CMA-CGM y COSCO.
+        ("bkg " + "28" + "3958164", "número de reserva"),
+        ("Booking number: " + "28" + "3958164", "número de reserva"),
+        ("bkg " + "28" + "1234567", "número inventado a la vista"),
+        ("Booking " + "QXZ" + "3958164", "número de reserva"),
+        ("Booking " + "QXZ" + "1234567", "número inventado a la vista"),
+        ("Booking " + "CD" + "3958164027", "número de reserva"),
+        ("Booking " + "CD" + "1234567890", "número inventado a la vista"),
+        # Sus bordes (revisiones del encargo 77): una cifra o una letra de más, pegada, ya no es la forma medida.
+        ("Booking " + "QXZ" + "3958164" + "7", "nada"),                # 8 cifras
+        ("Booking " + "QXZ" + "3958164" + "K", "nada"),                # una letra pegada después
+        ("Booking " + "1" + "QXZ" + "3958164", "nada"),                # una cifra pegada antes
+        ("Booking " + "CD" + "3958164027" + "5", "nada"),              # 11 cifras
+        ("Booking " + "X" + "CD" + "3958164027", "nada"),              # una letra pegada antes
+        # Y su forma ancha: otras dos letras, en minúscula, con un espacio o un guion antes de las cifras.
+        ("Booking " + "XD" + "3958164027", "número de reserva"),
+        ("booking " + "qxz" + "3958164", "número de reserva"),
+        ("Booking " + "QXZ-" + "3958164", "número de reserva"),
+        ("Booking " + "CD " + "3958164027", "número de reserva"),
+        # Detrás del escape de un literal («\n» escrito, con su barra), en las tres formas con letras.
+        ("Booking enviado" + "\\n" + "QXZ" + "3958164", "número de reserva"),
+        ("x" + "\\t" + "CD" + "3958164027", "número de reserva"),
+        ("x" + "\\n" + "SCLG" + "2794" + "6031", "número de reserva"),
+        # «Booking:» es una etiqueta: así escribe el programa el número de una EMITIDA, también con otro prefijo.
+        ("MAERSK emitida con éxito (Booking: " + "29" + "3958164" + ")", "número de reserva"),
+        ("MAERSK emitida con éxito (Booking: " + "123456789" + ")", "número inventado a la vista"),
         ("MAEU" + "246810" + "357", "BL"),
         ("pedido " + "40" + "871236", "pedido"),
         ("desde " + "200." + "45.17.9", "IP pública"),

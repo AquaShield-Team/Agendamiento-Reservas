@@ -13852,7 +13852,8 @@ def _extraer_bkg_limpio(r):
     # 2. HYUNDAI: SCLA...
     m = _re.search(r"\b(SCLA\d{6,10})\b", det)
     if m: return m.group(1).strip()
-    # 3. MAERSK: 9 dígitos iniciando en 27
+    # 3. MAERSK: 9 dígitos que empiezan con 27. Desde el 22-10 también empiezan con 28 (encargo 77): esos no los ve esta
+    #    regla, y los toma la 5 por su «Booking: …», que es como _resultado_envio escribe el detalle de una EMITIDA.
     m = _re.search(r"\b(27\d{7})\b", det)
     if m: return m.group(1).strip()
     # 4. MSC: EBKG...

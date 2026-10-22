@@ -90,16 +90,23 @@ HS. El nombre de Marcelo queda en «decisión de Marcelo» y, completo, en el pi
 (`0b47898`) portada a Python, con los datos de este programa.
 - **Qué busca:** una razón social (un nombre con una forma jurídica); un RUT o un contenedor con su dígito bien
   calculado; un correo; un teléfono chileno; un número de reserva con la forma con que el programa lo lee (SCLG, EBKG o
-  SCLA y 8 cifras, o 9 cifras que empiezan con 27 o que van detrás de «Booking number»); un BL; un pedido de AquaChile;
+  SCLA y 8 cifras, o 9 cifras que empiezan con 27 o 28 o que van detrás de «Booking number» o de «Booking:», como el
+  programa escribe una EMITIDA) y, desde el encargo 77, los de CMA-CGM (tres letras y 7 cifras) y COSCO (dos letras,
+  «CD» en la muestra, y 10 cifras), con la forma de su página tras el envío del 22-10, ensanchada: las letras en
+  cualquier caja, y un espacio o un guion antes de las cifras (`CICLO-guarda-y-estado-tras-el-envio.md`; una muestra de
+  cada una). Las formas con letras se ven también detrás del escape escrito de un literal (`\n`); un BL; un pedido de
+  AquaChile;
   una IP pública; y un nombre con su apellido. Dice el tipo, el archivo y la línea, nunca el valor: un archivo cuyo
   nombre trae un dato sale como «‹un nombre con un dato›». Frena también un archivo binario (una planilla comprimida,
   un PDF, una imagen), que no puede leer.
 - **Lo que pasa, por valor exacto y declarado en la guarda (`PERMITIDOS`; la suite fija la lista):** «AQUACHILE S.A.»,
   como el programa la escribe en los formularios, y el nombre del dueño (como autor de los commits, y completo, como en
   el pie del panel) y su correo noreply. Un nombre ajeno escrito delante del propio frena, y se reescribe el texto. Un
-  número inventado pasa solo con las cifras a la vista, todas iguales o seguidas (de MAERSK, las 7 que siguen al 27);
+  número inventado pasa solo con las cifras a la vista, todas iguales o seguidas (de MAERSK, las 7 que siguen al 27 o
+  al 28; de CMA-CGM, las 7 que siguen a sus letras; de COSCO, las 10 que siguen a sus letras);
   un correo, solo de un dominio reservado para ejemplos (`.invalid`, `.test`, `example.com`); una IP, solo si no es
-  pública.
+  pública. Tres letras y 7 cifras, o dos letras y 10 cifras, pegadas o con un espacio o un guion (un monto con el código
+  de su moneda), frenan como un número de CMA-CGM o de COSCO: van con las cifras a la vista o con sus puntos de miles.
 - **Dónde corre:** en la suite (`test_guarda_datos`, sobre lo que git versionaría, con lo que el índice guarda distinto
   del árbol) y en el hook pre-commit (`.githooks/pre-commit`, sobre el índice que se commitea; `pre-merge-commit`, sobre
   el de un merge). **El hook no viaja en el clon:** se activa una vez por clon, con

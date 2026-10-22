@@ -63,7 +63,7 @@ class TestNumeroTrasEnvio(soporte.CasoAQ):
                  "Created tentative booking number: SCLG01234567": "",              # otro prefijo
                  "Created tentative booking number: scla10000007": "",              # el número distingue mayúsculas
                  "Booking No: SCLA12345678": "",                                    # otra etiqueta
-                 "Service Contract CCL0000009 · SCLA98765432": ""}                  # sin la etiqueta
+                 "Service Contract CCL0000000 · SCLA98765432": ""}                  # sin la etiqueta
         for texto, esperado in casos.items():
             with self.subTest(texto=texto[:40]):
                 self.assertEqual(self.num(P(texto), "hyundai"), esperado)
@@ -132,6 +132,10 @@ class TestNumeroLimpio(soporte.CasoAQ):
         self.assertEqual(self.emitida(detalle="HYUNDAI SCLA76543210"), "SCLA76543210")
         self.assertEqual(self.emitida(detalle="MAERSK Bkg: 276789012"), "276789012")
         self.assertEqual(self.emitida(detalle="MAERSK 272345678 listo"), "272345678")   # solo «27…»
+        # Desde el 22-10 MAERSK da números que empiezan con 28 (encargo 77): suelto no lo ve la regla de los «27…», y
+        # como lo escribe _resultado_envio, «(Booking: …)», lo toma la regla de la etiqueta.
+        self.assertEqual(self.emitida(detalle="MAERSK 282345678 listo"), "")
+        self.assertEqual(self.emitida(detalle="MAERSK emitida con éxito (Booking: 282345678)"), "282345678")
         self.assertEqual(self.emitida(detalle="x EBKG0000003 y"), "EBKG0000003")
         self.assertEqual(self.emitida(detalle="Reference No: REFFALSO55"), "REFFALSO55")
 
