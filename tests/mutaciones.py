@@ -998,7 +998,7 @@ REMINDER_CO = ('    if campos and vio_reminder:\n'
                '        error_portal = "; ".join(campos + ([error_portal] if error_portal else []))\n'
                '        campos = []\n')
 DECIDE_CO = ('    return _resultado_envio(page, reg, "cosco", "COSCO", f"cosco_f{f}_6_confirmado", "Submit", pulsado, error,\n'
-             '                            campos=campos, error_portal=error_portal)\n')
+             '                            campos=campos, error_portal=error_portal, campos_en_duda=en_duda)\n')
 ERRORES_JS = "    const campos = [...new Set(visibles('.el-form-item__error'))];\n"
 ALCANCES_CO = ("    for alcance in (frame, page):\n        if not alcance:\n            continue\n        try:\n"
                "            r = alcance.evaluate(_JS_COSCO_ERRORES) or {}\n")
@@ -9046,9 +9046,10 @@ FALLA_CONTRADICE = ("        except Exception as e:\n"
                     "            reg.info(f\"no pude leer la pantalla para ver si dice que la reserva se envió: {_texto_error(e)}\")\n")
 RAMA_CONTRADICE = ("        if contradice:\n"
                    "            # NO ENVIADA invitaría a repetir una reserva que pudo crearse.\n")
+# Desde el encargo 79, detrás de la contradicción va la duda del Submit de COSCO (campos_en_duda), con el mismo aviso.
 AVISO_CONTRADICE = ("            reg.paso(f\"⚠ {ENVIADA_REVISAR} · {detalle}\")\n"
                     "            return (ENVIADA_REVISAR, detalle)\n"
-                    "        return _no_enviada(")
+                    "        if campos_en_duda:")
 LEE_CON_PLAZO = ("                texto = ((_evaluar_con_plazo(alcance, _JS_TEXTO_VISIBLE, plazo_ms) if plazo_ms\n"
                  "                          else alcance.evaluate(_JS_TEXTO_VISIBLE)) or \"\")\n")
 CMA_EN = EN + "test_cma_con_booking_enviado_es_emitida_por_correo"
@@ -9183,4 +9184,75 @@ MUTACIONES += [
          viejo=("puede ser la pantalla de esa reserva. {_REVISA_PORTAL}\")\n"
                 "            reg.paso(f\"⚠ {ENVIADA_REVISAR} · {detalle}\")\n"),
          nuevo="puede ser la pantalla de esa reserva. {_REVISA_PORTAL}\")\n"),
+]
+
+# --- Encargo 79 (CICLO-cosco-errores-y-submit.md), decisión de Marcelo: con errores de campo tras el Submit de COSCO,
+# NO ENVIADA solo si el Submit sigue a la vista; si ya no está, o la lectura falla, ENVIADA – REVISAR EN PORTAL, con un
+# motivo que dice que el envío pudo haber entrado. Los tres casos, en las dos direcciones; y de la revisión de código, la
+# ventana Reminder a la vista y la respuesta que no es True ni False, también como duda ---
+SUBMIT_DUDA = EN + "test_errores_de_campo_y_el_submit"
+RS_E79 = "test_envio.TestReservadores."                     # RS, más arriba, ya nombra otra clase
+JS_SUBMIT_E79 = CO_ + "test_js_submit_presente_solo_el_submit_a_la_vista"
+EN_DUDA_COSCO = '    en_duda = _cosco_submit_en_duda(frame, page, reg) if campos else ""\n'
+SIGUE_A_LA_VISTA = '    if sigue is True:\n        return ""\n'
+RARA = ('    reg.info(f"la lectura del Submit de COSCO no dijo si sigue a la vista: dio un {type(sigue).__name__}")\n'
+        '    return "no se pudo leer si «Submit» sigue a la vista"\n')
+REMINDER_E79 = ('    if _cosco_en_alguno(frame, page, _JS_COSCO_HAY_REMINDER):\n'
+                '        return "la ventana «Reminder» está a la vista"\n')
+AVISO_DUDA = ("            reg.paso(f\"⚠ {ENVIADA_REVISAR} · {detalle}\")\n"
+              "            return (ENVIADA_REVISAR, detalle)\n"
+              "        return _no_enviada(")
+
+MUTACIONES += [
+    # reservar_cosco: sin mirar el Submit, mirándolo también sin errores de campo (una lectura de más: el estado no
+    # cambia, porque la duda se lee solo con errores; la ve la foto de reservar_cosco), o sin pasar la duda.
+    dict(id="e79-cosco-no-mira-el-submit", pruebas=[RS_E79 + "test_cosco_decide_con_lo_que_vio"],
+         viejo=EN_DUDA_COSCO, nuevo='    en_duda = ""\n'),
+    dict(id="e79-cosco-mira-sin-errores", pruebas=[RS_E79 + "test_cosco_decide_con_lo_que_vio"],
+         viejo=EN_DUDA_COSCO, nuevo="    en_duda = _cosco_submit_en_duda(frame, page, reg)\n"),
+    dict(id="e79-cosco-sin-pasar-la-duda", pruebas=[RS_E79 + "test_cosco_decide_con_lo_que_vio"],
+         viejo=DECIDE_CO, nuevo=DECIDE_CO.replace(", campos_en_duda=en_duda", "")),
+    # El ayudante: el Submit a la vista como duda; ya no está, la lectura que falla o la respuesta rara, como NO
+    # ENVIADA; cualquier respuesta verdadera como «sigue»; la rara como «ya no está»; las fallas, calladas o sin atrapar.
+    dict(id="e79-a-la-vista-es-duda", pruebas=[SUBMIT_DUDA],
+         viejo=SIGUE_A_LA_VISTA, nuevo=SIGUE_A_LA_VISTA.replace(" is True:", " is None:")),
+    dict(id="e79-ya-no-esta-es-no-enviada", pruebas=[SUBMIT_DUDA],
+         viejo='        return "«Submit» ya no está a la vista"\n', nuevo='        return ""\n'),
+    dict(id="e79-lectura-que-falla-es-no-enviada", pruebas=[SUBMIT_DUDA],
+         viejo='        return "no se pudo leer si «Submit» sigue a la vista"\n', nuevo='        return ""\n'),
+    dict(id="e79-respuesta-rara-es-no-enviada", pruebas=[SUBMIT_DUDA],
+         viejo=RARA, nuevo=RARA.replace('    return "no se pudo leer si «Submit» sigue a la vista"\n',
+                                        '    return ""\n')),
+    dict(id="e79-cualquier-respuesta-es-que-sigue", pruebas=[SUBMIT_DUDA],
+         viejo=SIGUE_A_LA_VISTA, nuevo=SIGUE_A_LA_VISTA.replace(" is True:", ":")),
+    dict(id="e79-respuesta-rara-como-ausente", pruebas=[SUBMIT_DUDA],
+         viejo="    if sigue is False:\n", nuevo="    if not sigue:\n"),
+    dict(id="e79-respuesta-rara-callada", pruebas=[SUBMIT_DUDA],
+         viejo=RARA, nuevo=RARA.replace(RARA.splitlines(True)[0], "")),
+    dict(id="e79-lectura-que-falla-callada", pruebas=[SUBMIT_DUDA],
+         viejo='        reg.info(f"no pude leer si el Submit de COSCO sigue a la vista: {_texto_error(e)}")\n', nuevo=""),
+    dict(id="e79-lectura-que-falla-se-escapa", pruebas=[SUBMIT_DUDA],
+         viejo=('        reg.info(f"no pude leer si el Submit de COSCO sigue a la vista: {_texto_error(e)}")\n'),
+         nuevo=('        raise\n')),
+    # La ventana Reminder: sin mirarla, o solo en el marco.
+    dict(id="e79-reminder-no-se-mira", pruebas=[SUBMIT_DUDA],
+         viejo=REMINDER_E79, nuevo=""),
+    dict(id="e79-reminder-solo-en-el-marco", pruebas=[SUBMIT_DUDA],
+         viejo=REMINDER_E79, nuevo=REMINDER_E79.replace("(frame, page, _JS", "(frame, None, _JS")),
+    # El JavaScript: un Submit oculto, u otro texto que trae «submit».
+    dict(id="e79-js-submit-oculto-cuenta", pruebas=[JS_SUBMIT_E79],
+         viejo="find(e => e.offsetParent !== null && /^submit$/i", nuevo="find(e => /^submit$/i"),
+    dict(id="e79-js-submit-parcial", pruebas=[JS_SUBMIT_E79],
+         viejo="e.offsetParent !== null && /^submit$/i.test", nuevo="e.offsetParent !== null && /submit/i.test"),
+    # _resultado_envio: la duda como NO ENVIADA, callada en log.txt, sin errores de campo (el FRENA SI: el camino de
+    # EMITIDA – CONFIRMAR POR CORREO), o antes que la contradicción del encargo 78.
+    dict(id="e79-duda-es-no-enviada", pruebas=[SUBMIT_DUDA],
+         viejo="        if campos_en_duda:\n", nuevo="        if False:\n"),
+    dict(id="e79-duda-callada", pruebas=[SUBMIT_DUDA],
+         viejo=AVISO_DUDA, nuevo=AVISO_DUDA.replace("            reg.paso(f\"⚠ {ENVIADA_REVISAR} · {detalle}\")\n", "")),
+    dict(id="e79-duda-sin-errores-de-campo", pruebas=[SUBMIT_DUDA],
+         viejo="    if rechazo:\n        lista", nuevo="    if rechazo or campos_en_duda:\n        lista"),
+    dict(id="e79-duda-antes-que-la-contradiccion", pruebas=[SUBMIT_DUDA],
+         viejo=RAMA_CONTRADICE,
+         nuevo="        if campos_en_duda:\n            return (ENVIADA_REVISAR, campos_en_duda)\n" + RAMA_CONTRADICE),
 ]

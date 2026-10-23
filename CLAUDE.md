@@ -225,10 +225,31 @@ mismo botón de antes con `_pulsar_boton` (que dice si pulsó), guarda en `error
   reservador y la fila quedaba DETENIDO o ERROR con el envío ya hecho (revisión de seguridad).
   - **Desde el encargo 78, también con errores de campo y, a la vez, la confirmación o la frase de envío en la pantalla**
     (decisión de Marcelo): las dos señales se contradicen, y NO ENVIADA invitaría a repetir una reserva que pudo
-    crearse. Con errores de campo, la pantalla se lee una sola vez, sin espera (`espera=0`); si la lectura falla, como
-    antes, NO ENVIADA, y log.txt lo dice.
-- `NO ENVIADA`: el botón no estaba, o el portal marcó errores de validación (con los campos) y la pantalla no dice que la
-  reserva se envió.
+    crearse. Con errores de campo, la pantalla se lee una sola vez, sin espera (`espera=0`); si la lectura falla, NO
+    ENVIADA, como antes, salvo en COSCO con su Submit ya no a la vista (abajo), y log.txt lo dice.
+  - **Desde el encargo 79, también COSCO con errores de campo y su Submit ya no a la vista** (decisión de Marcelo,
+    `CICLO-cosco-errores-y-submit.md`): NO ENVIADA invita a reenviar la fila, y si COSCO aceptó el envío después, la
+    reserva queda duplicada. Con errores de campo, `reservar_cosco` mira una vez, sin clics ni esperas, si el Submit del
+    formulario sigue a la vista (`_cosco_submit_en_duda`):
+    - con la ventana «Reminder» a la vista, en el marco o en la página, no lo mira: su propio Submit se leería como el
+      del formulario (revisión de código del encargo 79);
+    - si `_JS_COSCO_SUBMIT_PRESENTE` da `True`, NO ENVIADA, como antes;
+    - si da `False`, si da otra cosa (se anota en log.txt) o si la lectura falla, ENVIADA – REVISAR EN PORTAL, con el
+      motivo «el portal marcó: …, pero «Submit» ya no está a la vista (o no se pudo leer si sigue, o la ventana
+      «Reminder» está a la vista): el envío pudo haber entrado», y qué hacer si la reserva no quedó creada
+      (`campos_en_duda` de `_resultado_envio`, que solo pasa COSCO).
+    - Sin errores de campo no lo mira: ese camino no cambió. `test_envio` corre el JavaScript en Node
+      (`test_js_submit_presente_solo_el_submit_a_la_vista`) y los casos en `test_errores_de_campo_y_el_submit`.
+    - Medido en el envío del 22-10, el único guardado: en la guarda el marco del formulario trae el Submit, y después del
+      envío que entró ningún documento lo trae (1 de 1; sin las hojas de estilo, lo que el HTML guardado da por «a la
+      vista» no es lo que vio el navegador).
+    - **No está medido** (revisión de código del encargo 79): que COSCO deje su Submit a la vista cuando rechaza (si no,
+      cada fila rechazada queda en REVISAR, el lado seguro); ni que lo quite enseguida cuando acepta. La espera ve los
+      errores a unos 3 s del Submit y el Submit se lee en ese instante; el 22-10 el Reminder llegó a los ~12 s y la frase
+      después. Si COSCO aceptara un envío con errores de campo y dejara su Submit hasta su respuesta, la fila quedaría NO
+      ENVIADA con la reserva creada. Cerrarlo sería esperar más antes de dar NO ENVIADA: lo decide Marcelo.
+- `NO ENVIADA`: el botón no estaba, o el portal marcó errores de validación (con los campos), la pantalla no dice que la
+  reserva se envió y, en COSCO, su Submit sigue a la vista.
 
 Antes de decidir, `_guardar_evidencia` deja la captura y el HTML completo de la página y de cada marco
 (con raíces shadow) en la carpeta de la corrida. No la llames antes de la guarda ni le agregues clics:
@@ -1302,7 +1323,9 @@ línea cambian). De arriba hacia abajo:
      leer los errores una vez (encargo 77), porque con la ventana o la carga hasta el final no se leyeron. Van como
      aviso del portal, nunca como errores de campo: al plazo no se sabe si COSCO creó la reserva, y NO ENVIADA invitaría
      a repetirla (ENVIADA – REVISAR EN PORTAL; revisión de seguridad);
-   - separa los errores de validación (`_JS_COSCO_ERRORES`) del aviso del portal.
+   - separa los errores de validación (`_JS_COSCO_ERRORES`) del aviso del portal. Con errores de campo, la reserva queda
+     NO ENVIADA solo si el Submit sigue a la vista; si no, ENVIADA – REVISAR EN PORTAL (encargo 79; ver «Después de la
+     guarda»).
    - **La ventana «Reminder» es un paso normal, no un error** (encargo 77): solo recuerda enviar los documentos antes
      de su plazo (`CICLO-cosco-campos-y-reminder.md`). log.txt dice a los cuántos segundos de esperar el resultado
      aparece, que no pulsa nada, y cuándo deja de verse. El 22-10, en el equipo de un colega, estaba a la vista unos

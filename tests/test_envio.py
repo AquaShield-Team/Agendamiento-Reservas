@@ -6,8 +6,10 @@ evidencia (CICLO-estado-tras-envio.md).
 - EMITIDA – CONFIRMAR POR CORREO (COSCO, desde el encargo 77, y CMA-CGM, desde el 78): se pulsó, sin errores ni
   fallas, y la pantalla dice que la reserva se envió (FORMA_ENVIADA), con su número; la confirmación llega por correo.
 - ENVIADA – REVISAR EN PORTAL: se pulsó (o el clic pudo salir) y no hubo confirmación; desde el encargo 78, también
-  con errores de validación y la confirmación o la frase de envío en la pantalla.
-- NO ENVIADA: el botón no se pulsó, o el portal marcó errores de validación (con los campos).
+  con errores de validación y la confirmación o la frase de envío en la pantalla; y desde el 79, COSCO con errores de
+  validación y su Submit ya no a la vista (o sin poder leerlo).
+- NO ENVIADA: el botón no se pulsó, o el portal marcó errores de validación (con los campos) y, en COSCO, su Submit
+  sigue a la vista.
 - La evidencia: la captura y el HTML de la página y de cada marco, en la carpeta de la corrida.
 - El panel lee cada estado con lecturaEstado (JavaScript, se corre en Node).
 
@@ -302,6 +304,83 @@ class TestResultadoEnvio(ConRegistro):
         r, _, _ = self.cosco(pagina, pulsado=False, campos=["Gross Weight is required"])
         self.assertEqual((r[0], pagina.lecturas), ("NO ENVIADA", 0))
 
+    def test_errores_de_campo_y_el_submit(self):
+        # Decisión de Marcelo, encargo 79: con errores de campo tras el Submit de COSCO, NO ENVIADA solo si el Submit
+        # sigue a la vista. Si ya no está, o no se pudo leer, el envío pudo haber entrado: ENVIADA – REVISAR EN PORTAL,
+        # con un motivo que lo dice (NO ENVIADA invita a reenviar la fila, y si COSCO aceptó el envío después, la
+        # reserva queda duplicada). Los tres casos, por el ayudante y por _resultado_envio, como los encadena
+        # reservar_cosco (test_cosco_decide_con_lo_que_vio).
+        mod = self.mod
+        SUBMIT, REMINDER = mod._JS_COSCO_SUBMIT_PRESENTE, mod._JS_COSCO_HAY_REMINDER
+
+        class Alcance:
+            """El marco del formulario o la página: contesta si la ventana «Reminder» está a la vista y, el marco, si el
+            Submit sigue a la vista; anota lo que se le pregunta. Cualquier otro JavaScript hace caer la prueba."""
+            def __init__(self, submit=None, reminder=False):
+                self.submit, self.reminder, self.preguntas = submit, reminder, []
+
+            def evaluate(self, js, *a):
+                self.preguntas.append("submit" if js == SUBMIT else "reminder" if js == REMINDER else "otro")
+                r = self.submit if js == SUBMIT else self.reminder
+                if isinstance(r, Exception):
+                    raise r
+                return r
+
+        def en_duda(submit, reminder=False):
+            marco, pagina = Alcance(submit=submit, reminder=reminder), Alcance()
+            carpeta, reg = self.corrida()
+            try:
+                motivo = mod._cosco_submit_en_duda(marco, pagina, reg)
+            finally:
+                reg.cerrar()
+            return motivo, marco.preguntas + pagina.preguntas, (carpeta / "log.txt").read_text(encoding="utf-8")
+
+        campos = ["Gross Weight is required"]
+        revisa = lambda porque: ("COSCO: se pulsó «Submit» y el portal marcó: «Gross Weight is required», pero " + porque
+                                 + ": el envío pudo haber entrado. " + REVISA + " Si no está, corrige esos datos y vuelve "
+                                 "a correrla.")
+        casos = {"a la vista": (True, "NO ENVIADA", "COSCO: el portal no aceptó el envío y marcó: «Gross Weight is "
+                                "required». La reserva no se envió; corrige esos datos y vuelve a correrla."),
+                 "ya no está": (False, "ENVIADA – REVISAR EN PORTAL", revisa("«Submit» ya no está a la vista")),
+                 "la lectura falla": (RuntimeError("marco cerrado"), "ENVIADA – REVISAR EN PORTAL",
+                                      revisa("no se pudo leer si «Submit» sigue a la vista"))}
+        for caso, (respuesta, estado, detalle) in casos.items():
+            with self.subTest(caso=caso):
+                motivo, preguntas, log_ayudante = en_duda(respuesta)
+                # Primero si la ventana «Reminder» está (el marco y la página), después el Submit (solo el marco).
+                self.assertEqual(preguntas, ["reminder", "submit", "reminder"])
+                r, _, log = self.cosco(Pantalla("Booking Details"), campos=campos, campos_en_duda=motivo)
+                self.assertEqual(r, (estado, detalle))
+                self.assertIn(("· ⚠ " if estado != "NO ENVIADA" else "· ✗ ") + f"{estado} · {detalle}", log)
+                if isinstance(respuesta, Exception):
+                    self.assertIn("no pude leer si el Submit de COSCO sigue a la vista: RuntimeError: marco cerrado",
+                                  log_ayudante)
+        # Una respuesta que no es True ni False (la lectura no dijo si sigue) tampoco basta para NO ENVIADA, y log.txt
+        # dice qué dio (revisión de código del encargo 79).
+        for x in (None, "true", 1):
+            with self.subTest(respuesta=x):
+                motivo, _, log_ayudante = en_duda(x)
+                self.assertEqual(motivo, "no se pudo leer si «Submit» sigue a la vista")
+                self.assertIn("la lectura del Submit de COSCO no dijo si sigue a la vista: dio un "
+                              + type(x).__name__, log_ayudante)
+        # Con la ventana «Reminder» a la vista, en el marco o en la página, no se mira el Submit: su propio Submit se
+        # leería como el del formulario (revisión de código del encargo 79).
+        motivo, preguntas, _ = en_duda(True, reminder=True)
+        self.assertEqual((motivo, preguntas), ("la ventana «Reminder» está a la vista", ["reminder"]))
+        marco, pagina = Alcance(submit=True), Alcance(reminder=True)
+        carpeta, reg = self.corrida()
+        try:
+            self.assertEqual(mod._cosco_submit_en_duda(marco, pagina, reg), "la ventana «Reminder» está a la vista")
+        finally:
+            reg.cerrar()
+        # Con la frase de envío a la vista, el motivo es la contradicción del encargo 78, que dice más.
+        r, _, _ = self.cosco(Pantalla(COSCO_ENVIADA), campos=campos, campos_en_duda="«Submit» ya no está a la vista")
+        self.assertEqual(r[0], "ENVIADA – REVISAR EN PORTAL")
+        self.assertIn("Las dos señales se contradicen", r[1])
+        # FRENA SI del encargo: sin errores de campo, nada cambia (EMITIDA – CONFIRMAR POR CORREO con la frase).
+        r, _, _ = self.cosco(Pantalla(COSCO_ENVIADA), campos_en_duda="«Submit» ya no está a la vista")
+        self.assertEqual(r[0], "EMITIDA – CONFIRMAR POR CORREO")
+
     def test_cosco_sin_su_frase_sigue_enviada(self):
         pagina = Pantalla("New Booking · Booking Details · Submit")
         r, _, log = self.cosco(pagina)
@@ -578,7 +657,7 @@ class TestReservadores(soporte.CasoAQ):
         post = self.envio("reservar_cosco",
                           """_pulsar_boton(frame, "button:has-text('Submit'), .btn:has-text('Submit')", _JS_COSCO_SUBMIT)""",
                           """_resultado_envio(page, reg, "cosco", "COSCO", f"cosco_f{f}_6_confirmado", "Submit", pulsado,
-                                              error, campos=campos, error_portal=error_portal)""")
+                                              error, campos=campos, error_portal=error_portal, campos_en_duda=en_duda)""")
         condicionales = [ast.unparse(n) for s in post for n in ast.walk(s) if isinstance(n, ast.If)]
         # Solo espera el resultado si pulsó; con la ventana Reminder ya vista, los errores de campo
         # no bastan para NO ENVIADA: van como error del portal (ENVIADA – REVISAR EN PORTAL).
@@ -587,6 +666,9 @@ class TestReservadores(soporte.CasoAQ):
         self.assertIn(normal("if campos and vio_reminder:\n"
                              "    error_portal = '; '.join(campos + ([error_portal] if error_portal else []))\n"
                              "    campos = []"), condicionales)
+        # Desde el encargo 79, con errores de campo mira si el Submit sigue a la vista, y solo entonces (el camino sin
+        # errores de campo no lo mira).
+        self.assertEqual(ast.unparse(post[-2]), "en_duda = _cosco_submit_en_duda(frame, page, reg) if campos else ''")
         self.assertNotIn("cosco", self.mod.FORMA_BOOKING)     # sin forma medida: nunca EMITIDA a secas (desde el
                                                               # encargo 77, EMITIDA – CONFIRMAR POR CORREO, con su frase)
 
@@ -683,6 +765,18 @@ class TestCosco(soporte.CasoAQ):
                  "console.log(JSON.stringify([correr([el('Save'), el(' Submit '), el('Submit booking')]), "
                  "correr([el('Save')])]));\n")
         self.assertEqual(correr_node(self, guion), [[True, [0, 1, 0]], [False, [0]]])
+
+    def test_js_submit_presente_solo_el_submit_a_la_vista(self):
+        # Desde el encargo 79 decide NO ENVIADA o ENVIADA – REVISAR EN PORTAL con errores de campo
+        # (_cosco_submit_en_duda): «Submit» entero, sin distinguir mayúsculas ni los espacios de los lados, y a la vista
+        # (offsetParent); oculto, otro texto o nada, false (revisión de código del encargo 79).
+        guion = ("const el = (t, v) => ({textContent: t, offsetParent: v ? {} : null});\n"
+                 "const correr = (els) => { global.document = {querySelectorAll: () => els};\n"
+                 "  const f = " + self.mod._JS_COSCO_SUBMIT_PRESENTE + ";\n  return f(); };\n"
+                 "console.log(JSON.stringify([correr([el('Save', true), el('Submit', true)]), "
+                 "correr([el(' submit ', true)]), correr([el('Submit', false)]), "
+                 "correr([el('Submit booking', true)]), correr([])]));\n")
+        self.assertEqual(correr_node(self, guion), [True, True, False, False, False])
 
     def test_js_errores_separa_campos_y_aviso(self):
         guion = ("const el = (t, v) => ({textContent: t, offsetParent: v ? {} : null});\n"
