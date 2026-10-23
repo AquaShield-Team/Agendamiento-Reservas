@@ -145,10 +145,11 @@ programa, y es la única copia del programa en las carpetas del usuario. Aun emi
 tiene forma medida (`FORMA_BOOKING`).
 - **Ocurrió el 2026-10-22, en el equipo de un colega,** en una corrida que también emitió una de COSCO (encargo 77,
   `CICLO-guarda-y-estado-tras-el-envio.md`). La fila de CMA-CGM quedó ENVIADA – REVISAR EN PORTAL. Su página tras el
-  envío mostró «Booking enviado», «aún no está confirmada» y un número de tres letras y 7 cifras (una sola muestra). Con
-  eso no se fija su forma: sigue en REVISAR (FRENO del encargo).
-- La de COSCO quedó creada, según Marcelo. Desde el encargo 77 esa reserva sale EMITIDA – CONFIRMAR POR CORREO
-  (abajo, «Después de la guarda»).
+  envío mostró «Booking enviado», «aún no está confirmada» y un número de tres letras y 7 cifras (una sola muestra).
+  Desde el encargo 78 esa reserva sale EMITIDA – CONFIRMAR POR CORREO, con su número (decisión de Marcelo, que vio el
+  mismo número en el portal; `CICLO-decisiones-tras-el-envio.md`; abajo, «Después de la guarda»).
+- La de COSCO quedó creada, según Marcelo. Desde el encargo 77 esa reserva sale EMITIDA – CONFIRMAR POR CORREO, y desde
+  el 78 con su número: la referencia «CD…» es el número de la reserva (Marcelo lo vio en su correo de confirmación).
 
 **Cada corrida dice al empezar con qué candado corre** (decisión de Marcelo, encargo 51, `CICLO-modo-y-lanzadores.md`):
 la de reservas, en el panel web o en la consola, y la de solo login anotan en log.txt y en su pantalla, justo después
@@ -183,28 +184,51 @@ explícitamente. Cualquier cambio en un `reservar_*` tiene que conservar la rama
 mismo botón de antes con `_pulsar_boton` (que dice si pulsó), guarda en `error` lo que falle y termina en
 `return _resultado_envio(...)`, que decide con lo que el programa vio:
 - `EMITIDA`: solo con la confirmación y un número con la forma medida de la naviera (`FORMA_BOOKING`).
-- `EMITIDA – CONFIRMAR POR CORREO` (`EMITIDA_POR_CORREO`, solo COSCO; decisión de Marcelo, encargo 77,
-  `CICLO-guarda-y-estado-tras-el-envio.md`). COSCO no muestra el número de la reserva: lo manda por correo, en un aviso
-  y en la confirmación. Sale con estas condiciones:
-  - se pulsó Submit (`pulsado` es True, no None) y el programa no falló después;
+- `EMITIDA – CONFIRMAR POR CORREO` (`EMITIDA_POR_CORREO`): COSCO, desde el encargo 77
+  (`CICLO-guarda-y-estado-tras-el-envio.md`), y CMA-CGM, desde el 78 (`CICLO-decisiones-tras-el-envio.md`); decisiones
+  de Marcelo. Ninguna de las dos muestra una confirmación con la forma de `FORMA_BOOKING`: COSCO manda la confirmación
+  por correo, y CMA-CGM dice que la reserva «aún no está confirmada». Sale con estas condiciones:
+  - se pulsó el botón final (`pulsado` es True, no None) y el programa no falló después;
   - el portal no mostró errores;
-  - la página, o uno de sus marcos, dice la frase de `FORMA_ENVIADA`: «Booking CD… has been submitted successfully»,
-    con «CD» y 10 cifras (`referencia_tras_envio`, con los mismos reintentos que el número). La frase va en ASCII
-    (cifras 0-9, sin el plegado de mayúsculas de Unicode), con «Booking» sin nada pegado delante («Rebooking») y sus
-    palabras en una misma línea (revisión de seguridad del encargo 77).
+  - la página, o uno de sus marcos, dice la frase de su naviera en `FORMA_ENVIADA` (`referencia_tras_envio`, con los
+    mismos reintentos que el número, y CMA-CGM con su plazo):
+    - COSCO: «Booking CD… has been submitted successfully», con «CD» y 10 cifras. La frase va en ASCII (cifras 0-9, sin
+      el plegado de mayúsculas de Unicode), con «Booking» sin nada pegado delante («Rebooking») y sus palabras en una
+      misma línea (revisión de seguridad del encargo 77).
+    - CMA-CGM: dos señales en el texto visible y en ese orden: la línea del título, que trae solo «Booking enviado» o,
+      como en la página medida, «Booking Booking enviado» (la primera que aparece), y después una línea que trae solo
+      «Booking» y la referencia, tres letras mayúsculas y 7 cifras. Una sola no basta; tampoco la referencia con otro
+      texto en su línea o antes del título, ni el título dentro de una frase (de las revisiones del encargo 78). Lineal:
+      con 3 a 6 millones de caracteres armados para el retroceso, de 0,1 a 0,5 s.
+  - **Una sola referencia** (revisión de seguridad del encargo 78): si la pantalla, en la página o en sus marcos, muestra
+    más de una referencia distinta con la forma de la naviera (`REFERENCIAS_ENVIADA`), no se sabe cuál es la de esta
+    reserva: ENVIADA – REVISAR EN PORTAL, con todas en el motivo (`ReferenciaAmbigua`). Y si la referencia ya dio una
+    EMITIDA – CONFIRMAR POR CORREO en esta corrida (`reg.referencias_enviadas`, una por `Registro`), puede ser la pantalla
+    de esa reserva: también ENVIADA – REVISAR EN PORTAL, con la evidencia de la anterior. Hasta ahí ganaba la primera, y
+    esa iba a la columna del número, que usa la agencia de aduana. El número de las navieras con forma medida
+    (`FORMA_BOOKING`) no mira ninguna de las dos cosas.
 
-  La frase se midió en el marco del formulario, en la única emisión de COSCO que guardó su HTML, la del 22-10 (1 de 1).
-  En los 1.347 HTML de `logs/` de este equipo no aparece (medido sin red con el JavaScript del programa). Con cualquier
-  duda queda ENVIADA – REVISAR EN PORTAL. La referencia va en el detalle, no en la columna del número, que dice
-  «confirmar por correo» (`CONFIRMAR_POR_CORREO`). El panel la pinta «emitida – confirmar por correo» y la cuenta como
-  emitida. Su texto es el mismo en el panel, en log.txt y en la planilla:
+  Cada frase se midió en la única emisión de su naviera que guardó su HTML, la del 22-10 (1 de 1; COSCO, en el marco del
+  formulario). En `logs/` de este equipo no aparece ninguna (medido sin red con el JavaScript del programa: la de COSCO,
+  en 1.347 HTML; la de CMA-CGM, en los 409 de CMA-CGM). Con cualquier duda queda ENVIADA – REVISAR EN PORTAL.
+  **La referencia es el número de la reserva** (decisión de Marcelo, encargo 78: el de COSCO lo vio en su correo de
+  confirmación, y el de CMA-CGM, en el portal): va en el detalle como «(Booking: …)», y de ahí a la columna «N° de
+  reserva emitida», en el panel y en la planilla (`_extraer_bkg_limpio`, solo de esa forma y solo con este estado). Un
+  detalle sin él, como los del encargo 77, deja «confirmar por correo» (`CONFIRMAR_POR_CORREO`). El panel la pinta
+  «emitida – confirmar por correo», con el número en su insignia, y la cuenta como emitida. Su texto es el mismo en el
+  panel, en log.txt y en la planilla:
   - el panel lo lee con `lecturaEstado`, que repite el texto y su prueba lo compara;
   - el detalle no trae «error» ni «revisar», para que el registro del panel no lo pinte como alerta (`clase`).
 - `ENVIADA – REVISAR EN PORTAL`: se pulsó (o el clic pudo salir) y no hubo confirmación reconocible, el
   portal mostró un error o el programa falló después de pulsar. Desde el encargo 77, también si falla la lectura del
   número o de la frase (el navegador que cierra «Detener» en medio de su espera): hasta ahí, la excepción salía del
   reservador y la fila quedaba DETENIDO o ERROR con el envío ya hecho (revisión de seguridad).
-- `NO ENVIADA`: el botón no estaba, o el portal marcó errores de validación (con los campos).
+  - **Desde el encargo 78, también con errores de campo y, a la vez, la confirmación o la frase de envío en la pantalla**
+    (decisión de Marcelo): las dos señales se contradicen, y NO ENVIADA invitaría a repetir una reserva que pudo
+    crearse. Con errores de campo, la pantalla se lee una sola vez, sin espera (`espera=0`); si la lectura falla, como
+    antes, NO ENVIADA, y log.txt lo dice.
+- `NO ENVIADA`: el botón no estaba, o el portal marcó errores de validación (con los campos) y la pantalla no dice que la
+  reserva se envió.
 
 Antes de decidir, `_guardar_evidencia` deja la captura y el HTML completo de la página y de cada marco
 (con raíces shadow) en la carpeta de la corrida. No la llames antes de la guarda ni le agregues clics:
@@ -1029,9 +1053,13 @@ línea cambian). De arriba hacia abajo:
      confirmación y el número con su prefijo y sus dígitos). `numero_tras_envio` la busca en la página, sus marcos
      y las raíces shadow, y reintenta hasta 15 s.
    - CMA y COSCO no tienen forma medida: sus capturas tras el envío no muestran confirmación
-     (`CICLO-numero-booking.md`). Por eso **nunca llegan a EMITIDA** hasta que se midan. COSCO, desde el encargo 77,
-     llega a EMITIDA – CONFIRMAR POR CORREO con la frase de `FORMA_ENVIADA` (ver el candado), que lee
-     `referencia_tras_envio` como el número (`_leer_tras_envio`).
+     (`CICLO-numero-booking.md`). Por eso **nunca llegan a EMITIDA** hasta que se midan. COSCO, desde el encargo 77, y
+     CMA-CGM, desde el 78, llegan a EMITIDA – CONFIRMAR POR CORREO con la frase de `FORMA_ENVIADA` (ver el candado),
+     que lee `referencia_tras_envio` como el número (`_leer_tras_envio`; con `plazo_ms`, cada lectura con plazo, como
+     lee todo CMA-CGM). Desde la revisión de código del encargo 78, un alcance que no contestó a su plazo no se vuelve a
+     leer, y el marco principal no se lee aparte de la página: con la página colgada, cada vuelta habría esperado el
+     plazo entero de cada uno, unos 16 minutos por fila. Una fila de CMA-CGM sin la frase espera ahora los 15 s de la
+     lectura, como COSCO desde el encargo 77.
    - El lector viejo, `extraer_numero_booking`, se borró (`CICLO-cola-nueve-items.md`).
    - Después viene `_resultado_envio` (ver el candado).
 2. **`Registro`**: log con marca de tiempo a `log.txt` + callback `on_log`; `captura()` guarda PNG en la
@@ -1260,26 +1288,30 @@ línea cambian). De arriba hacia abajo:
    misma justo antes del clic (encargo 67). `DETENIDO`, con «Detener»: en
    COSCO y, desde el encargo 56, en la espera del deslizador de CMA-CGM. `REVISAR`, entre otros (en MAERSK
    y en COSCO, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el motivo dice hasta qué fecha buscó (ver
-   «Ampliar la búsqueda»). Después: `EMITIDA`, `EMITIDA – CONFIRMAR POR CORREO` (COSCO, encargo 77),
+   «Ampliar la búsqueda»). Después: `EMITIDA`, `EMITIDA – CONFIRMAR POR CORREO` (COSCO, encargo 77; CMA-CGM, 78),
    `ENVIADA – REVISAR EN PORTAL`, `NO ENVIADA`. El panel los pinta con
    `lecturaEstado` (en `JS_INDEX`):
    un estado nuevo necesita su rama ahí. `OK-EJEMPLO` es «lista», no «emitida»: la columna «N° reserva emitida» dice
    «lista para emitir» y la píldora la cuenta aparte (`cuentaCorrida`); hasta el encargo 34 decía «✓ Confirmada».
    COSCO espera el resultado en `_cosco_esperar_resultado` (`CICLO-revision-corrida-completa.md`):
-   - pulsa **una sola vez** el «Submit» que está dentro de la ventana «Reminder», identificada por su título y su
-     texto (`_JS_COSCO_SUBMIT_DEL_REMINDER`). Nunca «el último Submit» de la página: las reservas se creaban igual;
-   - después solo espera, hasta `COSCO_ESPERA_CONFIRMACION_SEG` (180 s, hipótesis no medida); si se cumple, vuelve a
+   - **no pulsa nada** (decisión de Marcelo, encargo 78, `CICLO-decisiones-tras-el-envio.md`): tampoco el «Submit» de la
+     ventana «Reminder», que hasta ahí pulsaba una vez, identificada por su título y su texto
+     (`_JS_COSCO_SUBMIT_DEL_REMINDER`, que se quitó). Hasta `0f1507e` pulsaba «el último Submit» de la página, y las
+     reservas se creaban igual. El estado lo decide la frase de envío, como antes (`_resultado_envio`);
+   - solo espera, hasta `COSCO_ESPERA_CONFIRMACION_SEG` (180 s, hipótesis no medida); si se cumple, vuelve a
      leer los errores una vez (encargo 77), porque con la ventana o la carga hasta el final no se leyeron. Van como
      aviso del portal, nunca como errores de campo: al plazo no se sabe si COSCO creó la reserva, y NO ENVIADA invitaría
      a repetirla (ENVIADA – REVISAR EN PORTAL; revisión de seguridad);
    - separa los errores de validación (`_JS_COSCO_ERRORES`) del aviso del portal.
    - **La ventana «Reminder» es un paso normal, no un error** (encargo 77): solo recuerda enviar los documentos antes
      de su plazo (`CICLO-cosco-campos-y-reminder.md`). log.txt dice a los cuántos segundos de esperar el resultado
-     aparece y deja de verse, y si el programa pulsó su Submit. El 22-10, en el equipo de un colega, estaba a la vista
-     unos 12 s después del Submit. El programa no identificó su Submit («sin-ventana» en el marco y en la página; la
-     causa no se midió, porque de esa ventana no hay HTML) y no pulsó nada. Según Marcelo se cerró sola a los 33 s, y la
-     página dijo que la reserva se envió. Ningún botón hizo falta. El programa sigue intentando pulsar su Submit una
-     vez, como antes.
+     aparece, que no pulsa nada, y cuándo deja de verse. El 22-10, en el equipo de un colega, estaba a la vista unos
+     12 s después del Submit. El programa no identificó su Submit («sin-ventana» en el marco y en la página; la causa no
+     se midió, porque de esa ventana no hay HTML) y no pulsó nada. Según Marcelo se cerró sola a los 33 s, y la página
+     dijo que la reserva se envió. Ningún botón hizo falta. Desde el encargo 78 no se intenta pulsar: lo vigila
+     `test_envio.TestCosco`, cuya página falsa reconoce cada JavaScript de la espera por un pedazo de su texto, da por
+     desconocido cualquier otro (uno que pulse) y anota cada localizador. Uno que pulse y traiga uno de esos pedazos
+     pasaría por el suyo; la prueba cae igual, por las esperas (revisión de código del encargo 78).
 
    Antes de la guarda, COSCO:
    - Espera que el formulario de New Booking (su marco bkg2) muestre «Origin City», hasta 20 vueltas de 1,5 s. Sin el
@@ -1599,11 +1631,15 @@ Las capturas siguen el patrón `<nav>_f<fila>_<n>_<paso>.png`.
   en CONSOLIDADO, porque sus números de fila son otras reservas y ninguna columna las identifica
   (`CICLO-escritura-planilla.md`, `CICLO-consolidado-y-respaldos.md`). Lo que no puede escribir lo avisa
   `_avisar_descarga` en el registro del panel y en el `log.txt` de la última corrida. «N° de reserva
-  emitida» lleva el número solo con una EMITIDA: `_extraer_bkg_limpio` devuelve vacío con cualquier otro estado. Su
-  texto sale de `_texto_n_reserva`, la misma fuente de la columna del panel (`n_reserva` de `/api/estado`): el número,
-  «lista para emitir» en la OK-EJEMPLO (`LISTA_PARA_EMITIR`), «confirmar por correo» en la EMITIDA – CONFIRMAR POR
-  CORREO de COSCO (`CONFIRMAR_POR_CORREO`, encargo 77) y nada en los demás (encargo 34). La columna de estado de esa
-  reserva lleva el estado y su detalle, como cualquiera que no es una EMITIDA con número.
+  emitida» lleva el número solo con una EMITIDA y, desde el encargo 78, con una EMITIDA – CONFIRMAR POR CORREO, la de
+  COSCO o la de CMA-CGM (decisión de Marcelo): `_extraer_bkg_limpio` devuelve vacío con cualquier otro estado, y con
+  esta toma solo el número del «(Booking: …)» de su detalle. Su texto sale de `_texto_n_reserva`, la misma fuente de la
+  columna del panel (`n_reserva` de `/api/estado`): el número, «lista para emitir» en la OK-EJEMPLO
+  (`LISTA_PARA_EMITIR`), «confirmar por correo» en una EMITIDA – CONFIRMAR POR CORREO cuyo detalle no trae el número,
+  como las del encargo 77 (`CONFIRMAR_POR_CORREO`), y nada en los demás (encargo 34). La columna de estado de esa
+  reserva lleva el estado y su detalle, como cualquiera que no es una EMITIDA con número. Con su número, el número y el
+  estado van en verde, como en una EMITIDA y como la pinta el panel (revisión de código del encargo 78; hasta ahí,
+  ninguna de las dos lo llevaba).
 - Ningún lector lee el **valor** de la columna de estado (los dos la ubican y nada más); por eso los
   estados nuevos no cambian qué filas se leen (`test_planilla.TestEstadosNuevos`). Si un lector empieza a
   leerlo, antes decide con Marcelo qué hacer con las filas ENVIADA – REVISAR EN PORTAL.

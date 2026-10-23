@@ -350,16 +350,27 @@ class TestEscritura(ConPlanilla):
                                    ("ONE", "I7"): (None, "lista para emitir")})
 
     def test_web_descarga_de_emitida_por_correo(self):
-        # COSCO, desde el encargo 77: la columna de estado lleva el estado y su detalle, como en log.txt, y la del número
-        # dice «confirmar por correo», como el panel; la referencia que muestra COSCO no va a esa columna.
-        det = ("COSCO: se pulsó «Submit» y la página dijo «Booking CD1234567890 has been submitted successfully». COSCO "
-               "manda el número de la reserva por correo, en un aviso y en la confirmación: confírmalo ahí y anótalo en "
-               "la planilla.")
-        cambios = self._cambios_de_la_descarga(
-            "COSCO", {"5": {"estado": "EMITIDA – CONFIRMAR POR CORREO", "detalle": det, "booking": ""}})
+        # COSCO, desde el encargo 77: la columna de estado lleva el estado y su detalle, como en log.txt. Desde el 78, la
+        # del número lleva la referencia que mostró la página, que es el número de la reserva (decisión de Marcelo),
+        # como el panel; un detalle sin su «(Booking: …)», como el del encargo 77, sigue con «confirmar por correo».
+        det = ("COSCO: se pulsó «Submit» y la página dijo que la reserva se envió (Booking: CD1234567890). Falta su "
+               "confirmación: revisa que llegue por correo, con ese número.")
+        det77 = ("COSCO: se pulsó «Submit» y la página dijo «Booking CD1234567890 has been submitted successfully». COSCO "
+                 "manda el número de la reserva por correo, en un aviso y en la confirmación: confírmalo ahí y anótalo "
+                 "en la planilla.")
+        resultados = {"5": {"estado": "EMITIDA – CONFIRMAR POR CORREO", "detalle": det, "booking": "CD1234567890"},
+                      "6": {"estado": "EMITIDA – CONFIRMAR POR CORREO", "detalle": det77, "booking": ""}}
+        cambios = self._cambios_de_la_descarga("COSCO", resultados)
         self.assertEqual(cambios, {("COSCO", "I4"): (None, "N° de reserva emitida"),     # la hoja COSCO no la trae
                                    ("COSCO", "H5"): (None, f"EMITIDA – CONFIRMAR POR CORREO · {det}"),
-                                   ("COSCO", "I5"): (None, "confirmar por correo")})
+                                   ("COSCO", "I5"): (None, "CD1234567890"),
+                                   ("COSCO", "H6"): (None, f"EMITIDA – CONFIRMAR POR CORREO · {det77}"),
+                                   ("COSCO", "I6"): (None, "confirmar por correo")})
+        # Con su número, en verde, como una EMITIDA y como la pinta el panel; sin él, no (revisión de código del encargo
+        # 78: hasta ahí, ninguna).
+        datos = self.mod._planilla_con_resultados(str(self.planilla), "COSCO", resultados)
+        ws = openpyxl.load_workbook(BytesIO(datos))["COSCO"]
+        self.assertEqual([ws[c].fill.fgColor.rgb for c in ("I5", "I6")], ["00C6EFCE", "00000000"])
 
     def test_web_descarga_de_consolidado_solo_escribe_consolidado(self):
         # Al correr CONSOLIDADO, los números de fila son de CONSOLIDADO: no se reparten a las hojas.
@@ -435,8 +446,8 @@ class TestEstadosNuevos(ConPlanilla):
                 "confirmación con el número de reserva."),
                ("NO ENVIADA", "COSCO: el portal no aceptó el envío y marcó: «Gross Weight is required»."),
                ("EMITIDA", "MSC emitida con éxito (Booking: EBKG65432109)"),
-               ("EMITIDA – CONFIRMAR POR CORREO", "COSCO: se pulsó «Submit» y la página dijo «Booking CD1234567890 "
-                "has been submitted successfully».")]                                 # desde el encargo 77
+               ("EMITIDA – CONFIRMAR POR CORREO", "COSCO: se pulsó «Submit» y la página dijo que la reserva se envió "
+                "(Booking: CD1234567890).")]                            # desde el encargo 77; así, desde el 78
 
     def estado(self, i):
         return self.ESTADOS[i % len(self.ESTADOS)]

@@ -313,11 +313,10 @@ MUTACIONES += [
     dict(id="one-etiqueta-con-caja", pruebas=[TE + "test_forma_medida_de_one"],
          viejo=FORMA_ONE, nuevo=FORMA_ONE.replace(r"(?i:Booking\s+Reference\s+No\.?)", r"Booking\s+Reference\s+No\.?")),
     dict(id="lectura-naviera-sin-forma-igual-busca", pruebas=[TE + "test_naviera_sin_forma_medida_no_lee"],
-         viejo="    return _leer_tras_envio(page, FORMA_BOOKING.get(naviera), espera)\n",
-         nuevo='    return _leer_tras_envio(page, FORMA_BOOKING.get(naviera, r"(SCLG\\d{8})"), espera)\n'),
+         viejo="    return _leer_tras_envio(page, FORMA_BOOKING.get(naviera), espera, plazo_ms)\n",
+         nuevo='    return _leer_tras_envio(page, FORMA_BOOKING.get(naviera, r"(SCLG\\d{8})"), espera, plazo_ms)\n'),
     dict(id="lectura-solo-la-pagina", pruebas=[TE + "test_lee_los_marcos", TE + "test_un_marco_que_falla_no_tapa_a_los_demas"],
-         viejo='for alcance in [page] + [f for f in (getattr(page, "frames", None) or []) if f is not page]:',
-         nuevo="for alcance in [page]:"),
+         viejo="        for alcance in [page] + otros:\n", nuevo="        for alcance in [page]:\n"),
     dict(id="lectura-sin-reintentos", pruebas=[TE + "test_reintenta_hasta_que_aparece"],
          viejo="    for intento in range(espera + 1):", nuevo="    for intento in range(1):"),
     dict(id="lectura-otra-espera", pruebas=[TE + "test_sin_numero_espera_lo_justo"],
@@ -691,7 +690,7 @@ LP = "test_envio.TestLecturaDelPanel."
 EST = "test_planilla.TestEstadosNuevos."
 LEE_NUMERO = ("    if pulsado is not False and not rechazo and not error_portal:\n"
               "        try:\n"
-              "            bkg = numero_tras_envio(page, naviera)\n")
+              "            bkg = numero_tras_envio(page, naviera, plazo_ms=plazo_ms)\n")
 EVIDENCIA = "    _guardar_evidencia(page, reg, evidencia, plazo_ms=plazo_ms)\n    if pulsado is False:\n"
 AVISO_HTML = ("            reg.paso(f\"⚠ No pude guardar el HTML {'de la página' if i == 0 else f'del marco {i}'} \"\n"
               "                     f\"{momento}: {_texto_error(e)}\")")
@@ -717,14 +716,14 @@ MUTACIONES += [
     dict(id="envio-sin-evidencia", pruebas=[EN + "test_emitida_solo_con_la_forma_medida", EN + "test_no_pulsado_es_no_enviada"],
          viejo=EVIDENCIA, nuevo="    if pulsado is False:\n"),
     dict(id="envio-evidencia-antes-de-leer", pruebas=[EN + "test_evidencia_despues_de_leer"],
-         cambios=[('    rechazo = [str(c) for c in (campos or [])]\n    bkg = ref = ""\n',
+         cambios=[('    rechazo = [str(c) for c in (campos or [])]\n    bkg = ref = contradice = ""\n',
                    '    rechazo = [str(c) for c in (campos or [])]\n    _guardar_evidencia(page, reg, evidencia)\n'
-                   '    bkg = ref = ""\n'),
+                   '    bkg = ref = contradice = ""\n'),
                   (EVIDENCIA, "    if pulsado is False:\n")]),
     dict(id="envio-emitida-sin-log", pruebas=[EN + "test_emitida_solo_con_la_forma_medida"],
          viejo='        reg.paso(f"🎉 {nombre}: Reserva EMITIDA con éxito. Booking: {bkg}")\n'
-               '        return ("EMITIDA", f"{nombre} emitida con éxito (Booking: {bkg})")\n    if ref:',
-         nuevo='        return ("EMITIDA", f"{nombre} emitida con éxito (Booking: {bkg})")\n    if ref:'),
+               '        return ("EMITIDA", f"{nombre} emitida con éxito (Booking: {bkg})")\n    if ambiguas:',
+         nuevo='        return ("EMITIDA", f"{nombre} emitida con éxito (Booking: {bkg})")\n    if ambiguas:'),
     dict(id="envio-falla-al-pulsar-como-pulsado", pruebas=[EN + "test_falla_al_pulsar_pudo_salir"],
          viejo="    if pulsado is None:\n        que =", nuevo="    if False:\n        que ="),
     dict(id="envio-falla-tras-pulsar-callada", pruebas=[EN + "test_falla_del_programa_despues_de_pulsar"],
@@ -734,7 +733,8 @@ MUTACIONES += [
     dict(id="envio-sin-forma-como-medida", pruebas=[EN + "test_naviera_sin_forma_nunca_es_emitida"],
          viejo="    elif naviera in FORMA_BOOKING:\n        que =", nuevo="    elif True:\n        que ="),
     dict(id="envio-enviada-sin-log", pruebas=[EN + "test_pulsado_sin_confirmacion_es_enviada"],
-         viejo='    reg.paso(f"⚠ {ENVIADA_REVISAR} · {detalle}")', nuevo="    pass"),
+         viejo='{_REVISA_PORTAL}"\n    reg.paso(f"⚠ {ENVIADA_REVISAR} · {detalle}")',
+         nuevo='{_REVISA_PORTAL}"\n    pass'),
     dict(id="envio-no-enviada-sin-log",
          pruebas=[EN + "test_no_pulsado_es_no_enviada", EN + "test_validacion_es_no_enviada_con_los_campos"],
          viejo='    reg.paso(f"✗ {NO_ENVIADA} · {detalle}")', nuevo="    pass"),
@@ -760,7 +760,8 @@ MUTACIONES += [
          pruebas=[EV + "test_captura_y_html_de_la_pagina_y_los_marcos", EV + "test_un_html_que_falla_se_avisa_y_no_tapa_a_los_demas"],
          viejo="    for i, alcance in enumerate([page] + marcos):", nuevo="    for i, alcance in enumerate([page]):"),
     dict(id="evidencia-repite-el-principal", pruebas=[EV + "test_no_repite_el_marco_principal"],
-         viejo="if f is not page and f is not principal]", nuevo="if f is not page]"),
+         viejo="marcos = [f for f in (getattr(page, \"frames\", None) or []) if f is not page and f is not principal]",
+         nuevo="marcos = [f for f in (getattr(page, \"frames\", None) or []) if f is not page]"),
     dict(id="evidencia-sin-html-de-playwright", pruebas=[EV + "test_sin_javascript_usa_el_html_de_playwright"],
          viejo="            if not html:                   # sin JavaScript", nuevo="            if False:                   # sin JavaScript"),
     dict(id="evidencia-sin-contar-los-sin-shadow", pruebas=[EV + "test_sin_javascript_usa_el_html_de_playwright"],
@@ -815,7 +816,7 @@ MUTACIONES += [
     # Solo una EMITIDA tiene número; los lectores y la consola no cambian con los estados nuevos
     dict(id="limpio-de-cualquier-estado",
          pruebas=[LI + "test_solo_una_emitida_tiene_numero", CO + "test_corrida_con_estados_tras_el_envio"],
-         viejo='    if str((r or {}).get("estado") or "") != "EMITIDA":\n        return ""\n', nuevo=""),
+         viejo='    if estado != "EMITIDA":\n        return ""\n', nuevo=""),
     dict(id="lector-web-salta-las-enviadas", pruebas=[EST + "test_web_lee_lo_mismo"],
          viejo='        if pol.lower().startswith("pto") or nave.lower() == "nave":\n',
          nuevo='        if pol.lower().startswith("pto") or nave.lower() == "nave" or "ENVIADA" in val("estado"):\n'),
@@ -1048,12 +1049,12 @@ MUTACIONES += [
          pruebas=[CO_ + "test_espera_corta_con_errores_de_validacion", CO_ + "test_espera_corta_con_aviso_del_portal"],
          viejo="        if campos or error_portal:\n            break\n", nuevo="        if False:\n            break\n"),
     dict(id="cosco-espera-no-anota-el-reminder",
-         pruebas=[CO_ + "test_reminder_pulsa_su_submit_una_sola_vez", CO_ + "test_reminder_tardio_tambien_una_sola_vez",
-                  CO_ + "test_reminder_ambiguo_no_pulsa"],
+         pruebas=[CO_ + "test_reminder_no_se_pulsa", CO_ + "test_reminder_tardio_tampoco_se_pulsa",
+                  CO_ + "test_al_agotarse_lee_los_errores"],
          viejo="            vio_reminder = rem_abierta = True\n", nuevo="            rem_abierta = True\n"),
     dict(id="cosco-espera-otro-plazo",
-         pruebas=[CO_ + "test_espera_se_agota", CO_ + "test_reminder_tardio_tambien_una_sola_vez",
-                  CO_ + "test_reminder_ambiguo_no_pulsa"],
+         pruebas=[CO_ + "test_espera_se_agota", CO_ + "test_reminder_tardio_tampoco_se_pulsa",
+                  CO_ + "test_al_agotarse_lee_los_errores"],
          viejo="COSCO_ESPERA_CONFIRMACION_SEG = 180\n", nuevo="COSCO_ESPERA_CONFIRMACION_SEG = 150\n"),
 ]
 
@@ -1862,36 +1863,21 @@ MUTACIONES += [
                                        "        for selector in (\n            \"button:has-text('Reefer')\",\n")),
 ]
 
-# --- COSCO: la ventana «Reminder»: su Submit, una sola vez; después solo se espera (CICLO-revision-corrida-completa.md) ---
-SUBS_REM = "    const subs = [...ventana.querySelectorAll('button, a, span')]\n"
-UNO_REM = "    if (subs.length > 1) return 'ambiguo';\n    subs[0].click();\n"
-TITULO_REM = r"    const esVentana = e => /\bReminder\b/.test(e.textContent || '')" + "\n"
-VIS_REM = "    const vis = e => !!e && e.getClientRects().length > 0;\n"
-AVISO_REM = ('                    reg.info(f"Ventana \'Reminder\': no identifiqué su Submit sin ambigüedad ({motivo}); '
-             'no pulsé nada y "\n                             f"sigo esperando.")\n')
-PULSO_REM = ('                    reg.info("Ventana \'Reminder\': pulsé una vez su Submit, el de la ventana (por su título y '
-             'su texto).")\n')
-JS_REM = CO_ + "test_js_submit_del_reminder_solo_el_de_la_ventana"
+# --- COSCO: la ventana «Reminder»: solo se espera; de su Submit no se pulsa nada (hasta el encargo 78 se pulsaba una vez,
+# CICLO-revision-corrida-completa.md; desde el 78, CICLO-decisiones-tras-el-envio.md) ---
+REMINDER_ESPERA = "            vio_reminder = rem_abierta = True\n            continue\n"
+REMINDER_NO_PULSA = [CO_ + "test_reminder_no_se_pulsa", CO_ + "test_reminder_tardio_tampoco_se_pulsa"]
 
 MUTACIONES += [
-    dict(id="cosco-reminder-el-ultimo-submit", pruebas=[JS_REM],
-         cambios=[(SUBS_REM, SUBS_REM.replace("ventana.querySelectorAll", "document.querySelectorAll")),
-                  (UNO_REM, "    subs[subs.length - 1].click();\n")]),
-    dict(id="cosco-reminder-pulsa-lo-ambiguo", pruebas=[JS_REM],
-         viejo="    if (subs.length > 1) return 'ambiguo';\n", nuevo=""),
-    dict(id="cosco-reminder-sin-titulo", pruebas=[JS_REM],
-         viejo=TITULO_REM, nuevo="    const esVentana = e => true\n"),
-    dict(id="cosco-reminder-ve-ventanas-cerradas", pruebas=[JS_REM],
-         viejo=VIS_REM, nuevo="    const vis = e => !!e;\n"),
-    dict(id="cosco-reminder-vuelve-a-pulsar",
-         pruebas=[CO_ + "test_reminder_pulsa_su_submit_una_sola_vez", CO_ + "test_reminder_tardio_tambien_una_sola_vez"],
-         viejo="            if not rem_pulsado:\n", nuevo="            if True:\n"),
-    dict(id="cosco-reminder-no-dice-que-pulso", pruebas=[CO_ + "test_reminder_pulsa_su_submit_una_sola_vez"],
-         viejo=PULSO_REM, nuevo="                    pass\n"),
-    dict(id="cosco-reminder-calla-que-no-pulso", pruebas=[CO_ + "test_reminder_ambiguo_no_pulsa"],
-         viejo=AVISO_REM, nuevo="                    pass\n"),
-    dict(id="cosco-reminder-avisa-cada-vuelta", pruebas=[CO_ + "test_reminder_ambiguo_no_pulsa"],
-         viejo="                    rem_avisado = True\n", nuevo=""),
+    # Vuelve a pulsar un Submit con la ventana a la vista: por JavaScript, o buscándolo con un localizador.
+    dict(id="cosco-reminder-vuelve-a-pulsar", pruebas=REMINDER_NO_PULSA,
+         viejo=REMINDER_ESPERA,
+         nuevo=REMINDER_ESPERA.replace("            continue\n",
+                                       "            _cosco_en_alguno(frame, page, _JS_COSCO_SUBMIT)\n            continue\n")),
+    dict(id="cosco-reminder-busca-su-submit", pruebas=REMINDER_NO_PULSA,
+         viejo=REMINDER_ESPERA,
+         nuevo=REMINDER_ESPERA.replace("            continue\n",
+                                       "            frame.locator(\"button:has-text('Submit')\")\n            continue\n")),
     dict(id="cosco-espera-calla-el-plazo", pruebas=[CO_ + "test_espera_se_agota"],
          viejo='        reg.info(f"Se cumplió el plazo de {COSCO_ESPERA_CONFIRMACION_SEG} s sin confirmación de COSCO.")\n',
          nuevo="        pass\n"),
@@ -8937,14 +8923,14 @@ FORMA_ENVIADA_CO = r'''    "cosco": (r"(?a)(?<![\w-])(?i:Booking)[ \t\xa0]+(CD[0
 '''
 LEE_CON_FALLA = "        except Exception as e:\n            # Con el clic ya dado o a medio dar"
 LEE_REF = "        if not bkg and pulsado is True and error is None:\n"
-RAMA_REF = "    if ref:\n        # Sin «error» ni «revisar» en el texto"
+RAMA_REF = "    if ref:\n        vistas = getattr(reg, \"referencias_enviadas\", {})"
 NRES_CORREO = '    if str((r or {}).get("estado") or "") == EMITIDA_POR_CORREO:\n        return CONFIRMAR_POR_CORREO\n'
 LEE_CORREO_JS = '  if (est === "EMITIDA – CONFIRMAR POR CORREO") return "emitida-correo";\n'
 A_LA_VISTA = ("            if not vio_reminder:\n"
               "                reg.info(f\"Ventana 'Reminder' a la vista a los {esperado:.0f} s de esperar el resultado: es un paso \"\n"
-              "                         f\"normal de COSCO, que recuerda enviar los documentos antes de su plazo.\")\n")
-CIERRE = ("            reg.info(f\"La ventana 'Reminder' dejó de verse a los {esperado:.0f} s de esperar el resultado, \"\n"
-          "                     + (\"después de pulsar su Submit.\" if rem_pulsado else \"sin que el programa pulsara nada.\"))\n")
+              "                         f\"normal de COSCO, que recuerda enviar los documentos antes de su plazo. No pulso nada y sigo \"\n"
+              "                         f\"esperando.\")\n")
+CIERRE = "            reg.info(f\"La ventana 'Reminder' dejó de verse a los {esperado:.0f} s de esperar el resultado.\")\n"
 LEE_AL_PLAZO = ("        campos, error_portal = _cosco_errores(frame, page)\n"
                 "        if campos:\n"
                 "            error_portal = \"; \".join(campos + ([error_portal] if error_portal else []))\n"
@@ -8953,7 +8939,7 @@ LEE_AL_PLAZO = ("        campos, error_portal = _cosco_errores(frame, page)\n"
 COSCO_EN = EN + "test_cosco_enviada_con_su_frase_es_emitida_por_correo"
 COSCO_FORMA = [EN + "test_cosco_solo_con_la_forma_medida", TE + "test_frase_de_cosco_que_dice_que_se_envio"]
 LP_E77 = "test_envio.TestLecturaDelPanel."           # LP, más arriba, ya nombra otra clase
-CORREO_LP = LP_E77 + "test_emitida_por_correo_se_pinta_como_emitida_sin_numero"
+CORREO_LP = LP_E77 + "test_emitida_por_correo_se_pinta_como_emitida"
 
 MUTACIONES += [
     # La forma de la frase: la referencia con cualquier cantidad de cifras, sin distinguir mayúsculas, o la frase sin su
@@ -8983,15 +8969,11 @@ MUTACIONES += [
          viejo=LEE_REF, nuevo="        if not bkg and error is None:\n"),
     dict(id="e77-cosco-lee-tras-la-falla", pruebas=[EN + "test_cosco_con_cualquier_duda_sigue_enviada"],
          viejo=LEE_REF, nuevo="        if not bkg and pulsado is True:\n"),
-    # CMA-CGM con una frase de envío: su lectura, sin plazo, quedaría en lo que corre desde reservar_cma (FRENO del
-    # encargo: CMA sigue en REVISAR).
-    dict(id="e77-cma-con-frase-de-envio", pruebas=[FOTO_PLAZO],
-         viejo="FORMA_ENVIADA = {\n", nuevo='FORMA_ENVIADA = {\n    "cma": r"(?i:Booking)\\s+([A-Z]{3}\\d{7})",\n'),
     # La frase en cualquier naviera.
     dict(id="e77-la-frase-en-cualquier-naviera",
          pruebas=[EN + "test_la_frase_de_cosco_no_vale_en_otra_naviera", TE + "test_frase_de_cosco_que_dice_que_se_envio"],
-         viejo="    return _leer_tras_envio(page, FORMA_ENVIADA.get(naviera), espera)\n",
-         nuevo='    return _leer_tras_envio(page, FORMA_ENVIADA["cosco"], espera)\n'),
+         viejo="    return _leer_tras_envio(page, FORMA_ENVIADA.get(naviera), espera, plazo_ms, todas=",
+         nuevo='    return _leer_tras_envio(page, FORMA_ENVIADA["cosco"], espera, plazo_ms, todas='),
     # Sin el estado nuevo, o con el de antes, o callado en log.txt.
     dict(id="e77-cosco-sin-estado-nuevo", pruebas=[COSCO_EN], viejo=RAMA_REF,
          nuevo=RAMA_REF.replace("    if ref:", "    if False:")),
@@ -9003,7 +8985,7 @@ MUTACIONES += [
          viejo="    elif naviera in FORMA_ENVIADA:\n        que =", nuevo="    elif False:\n        que ="),
     # La columna del número, el panel y la planilla.
     dict(id="e77-numero-sin-confirmar-por-correo",
-         pruebas=[COSCO_EN, CORREO_LP, ESC + "test_web_descarga_de_emitida_por_correo", PL_NRES],
+         pruebas=[CORREO_LP, ESC + "test_web_descarga_de_emitida_por_correo", PL_NRES],
          viejo=NRES_CORREO, nuevo=""),
     dict(id="e77-panel-no-lee-el-estado-nuevo", pruebas=[LP_E77 + "test_lectura_de_cada_estado", CORREO_LP],
          viejo=LEE_CORREO_JS, nuevo=""),
@@ -9012,15 +8994,14 @@ MUTACIONES += [
          viejo='${esc(nres)}</span>`;', nuevo='—</span>`;'),
     dict(id="e77-panel-otro-texto", pruebas=[CORREO_LP],
          viejo='          chip(f, "ok", "emitida – confirmar por correo");\n', nuevo='          chip(f, "ok", "emitida");\n'),
-    # La ventana «Reminder»: callada al aparecer o al cerrarse, el cierre que siempre dice que pulsó, el cierre dicho
-    # cada vez, y el plazo que se cumple sin leer los errores.
-    dict(id="e77-reminder-callado-al-aparecer", pruebas=[CO_ + "test_reminder_pulsa_su_submit_una_sola_vez"],
+    # La ventana «Reminder»: callada al aparecer o al cerrarse, el cierre dicho cada vez, y el plazo que se cumple sin
+    # leer los errores. (Hasta el encargo 78, también el cierre que siempre decía que pulsó: ya no pulsa nada.)
+    dict(id="e77-reminder-callado-al-aparecer",
+         pruebas=[CO_ + "test_reminder_no_se_pulsa", CO_ + "test_reminder_que_vuelve_dice_una_vez_que_se_cerro"],
          viejo=A_LA_VISTA, nuevo=""),
     dict(id="e77-reminder-callado-al-cerrarse",
-         pruebas=[CO_ + "test_reminder_pulsa_su_submit_una_sola_vez", CO_ + "test_reminder_sin_su_submit_se_cierra_y_sigue"],
+         pruebas=[CO_ + "test_reminder_no_se_pulsa", CO_ + "test_reminder_que_vuelve_dice_una_vez_que_se_cerro"],
          viejo=CIERRE, nuevo=""),
-    dict(id="e77-reminder-cierre-siempre-pulso", pruebas=[CO_ + "test_reminder_sin_su_submit_se_cierra_y_sigue"],
-         viejo=CIERRE, nuevo=CIERRE.replace(" if rem_pulsado else ", " if True else ")),
     dict(id="e77-reminder-cierre-cada-vez", pruebas=[CO_ + "test_reminder_que_vuelve_dice_una_vez_que_se_cerro"],
          viejo="        if rem_abierta and not rem_cerrada:\n", nuevo="        if rem_abierta:\n"),
     dict(id="e77-plazo-sin-leer-errores", pruebas=[CO_ + "test_al_agotarse_lee_los_errores"],
@@ -9040,4 +9021,166 @@ MUTACIONES += [
          nuevo=FORMA_ENVIADA_CO.replace(r"(?i:Booking)[ \t\xa0]+(CD", r"(?i:Booking)[ \t\xa0]*(CD")),
     dict(id="e77-cosco-sin-borde-final", pruebas=[EN + "test_cosco_solo_con_la_forma_medida"],
          viejo=FORMA_ENVIADA_CO, nuevo=FORMA_ENVIADA_CO.replace(r"successfully)\b", "successfully)")),
+]
+
+
+# --- Encargo 78 (CICLO-decisiones-tras-el-envio.md), decisiones de Marcelo: (1) la referencia de la frase es el número
+# de la reserva, y va a la columna «N° de reserva emitida»; (2) CMA-CGM con «Booking enviado» queda EMITIDA – CONFIRMAR
+# POR CORREO, con su número; (3) del Submit del «Reminder» de COSCO no se pulsa nada; (4) errores de campo y, a la vez,
+# la frase o el número en la pantalla: ENVIADA – REVISAR EN PORTAL. Cada una, en las dos direcciones ---
+FORMA_ENVIADA_CMA = r'''    "cma": (r"(?a)(?ms)\A(?>.*?^[ \t\xa0]*(?:Booking[ \t\xa0]+)?Booking[ \t\xa0]+enviado[ \t\xa0]*$)"
+            r".*?^[ \t\xa0]*Booking[ \t\xa0]+([A-Z]{3}[0-9]{7})[ \t\xa0]*$"),
+'''
+# La de antes de la revisión de código del encargo 78: las dos señales sin atar (en cualquier orden, y «Booking enviado»
+# en cualquier lugar de su línea).
+CMA_SIN_ATAR = r'''    "cma": (r"(?a)(?ms)\A(?=.*?(?<![\w-])Booking[ \t\xa0]+enviado\b).*?"
+            r"^[ \t\xa0]*Booking[ \t\xa0]+([A-Z]{3}[0-9]{7})[ \t\xa0]*$"),
+'''
+NUMERO_CORREO = ('    if estado == EMITIDA_POR_CORREO:\n'
+                 '        m = _re.search(r"\\(Booking: ([A-Z0-9]{6,18})\\)", str((r or {}).get("detalle") or ""))\n'
+                 '        return m.group(1) if m else ""\n')
+CONTRADICE = ("    elif rechazo and pulsado is not False:\n")
+LEE_CONTRADICE = ("            contradice = (numero_tras_envio(page, naviera, espera=0, plazo_ms=plazo_ms)\n"
+                  "                          or referencia_tras_envio(page, naviera, espera=0, plazo_ms=plazo_ms))\n")
+FALLA_CONTRADICE = ("        except Exception as e:\n"
+                    "            reg.info(f\"no pude leer la pantalla para ver si dice que la reserva se envió: {_texto_error(e)}\")\n")
+RAMA_CONTRADICE = ("        if contradice:\n"
+                   "            # NO ENVIADA invitaría a repetir una reserva que pudo crearse.\n")
+AVISO_CONTRADICE = ("            reg.paso(f\"⚠ {ENVIADA_REVISAR} · {detalle}\")\n"
+                    "            return (ENVIADA_REVISAR, detalle)\n"
+                    "        return _no_enviada(")
+LEE_CON_PLAZO = ("                texto = ((_evaluar_con_plazo(alcance, _JS_TEXTO_VISIBLE, plazo_ms) if plazo_ms\n"
+                 "                          else alcance.evaluate(_JS_TEXTO_VISIBLE)) or \"\")\n")
+CMA_EN = EN + "test_cma_con_booking_enviado_es_emitida_por_correo"
+CMA_TE = TE + "test_frase_de_cma_que_dice_que_se_envio"
+CMA_PLAZO = "test_datadome.TestLecturasConPlazo.test_la_frase_de_envio_con_plazo"
+CMA_MARCOS = "test_datadome.TestLecturasConPlazo.test_la_frase_en_un_marco_y_un_marco_colgado"
+AMBIGUAS = EN + "test_dos_numeros_distintos_no_deciden"
+MISMO_NUMERO = EN + "test_el_mismo_numero_dos_veces_en_la_corrida"
+CAMPOS_FRASE = EN + "test_errores_de_campo_con_la_frase_son_enviada"
+PANEL_NUMERO = ('            tdBkg.innerHTML = bkg ? `<span class="badge-bkg">${esc(nres)}</span>`\n'
+                '              : `<span class="badge-bkg-vacio" style="color:var(--text-secondary)">${esc(nres)}</span>`;\n')
+
+MUTACIONES += [
+    # (1) La referencia no llega a la columna; o llega cualquier «Booking …» del detalle (como el del encargo 77); o la
+    # toma también otro estado; y el panel sin la insignia del número.
+    dict(id="e78-numero-correo-no-va-a-la-columna",
+         pruebas=[COSCO_EN, CMA_EN, CORREO_LP, ESC + "test_web_descarga_de_emitida_por_correo", PL_NRES],
+         viejo=NUMERO_CORREO, nuevo=NUMERO_CORREO.replace('        return m.group(1) if m else ""\n', '        return ""\n')),
+    dict(id="e78-numero-correo-sin-sus-parentesis",
+         pruebas=[CORREO_LP, ESC + "test_web_descarga_de_emitida_por_correo", PL_NRES],
+         viejo=NUMERO_CORREO,
+         nuevo=NUMERO_CORREO.replace(r'r"\(Booking: ([A-Z0-9]{6,18})\)"', r'r"Booking:? ([A-Z0-9]{6,18})"')),
+    dict(id="e78-numero-de-otro-estado", pruebas=[CORREO_LP],
+         viejo=NUMERO_CORREO,
+         nuevo=NUMERO_CORREO.replace("    if estado == EMITIDA_POR_CORREO:\n",
+                                     "    if estado in (EMITIDA_POR_CORREO, ENVIADA_REVISAR):\n")),
+    dict(id="e78-panel-numero-sin-insignia", pruebas=[CORREO_LP],
+         viejo=PANEL_NUMERO, nuevo=PANEL_NUMERO.replace("tdBkg.innerHTML = bkg ? ", "tdBkg.innerHTML = false ? ")),
+    # (2) CMA sin su frase; con una sola de las dos señales; con la referencia acompañada en su línea o detrás de otra
+    # palabra; «Booking enviado» partido en dos líneas o pegado a otra palabra; la referencia en minúsculas.
+    dict(id="e78-cma-sin-frase", pruebas=[CMA_EN, CMA_TE, CMA_PLAZO, FOTO_PLAZO],
+         viejo=FORMA_ENVIADA_CMA, nuevo=""),
+    dict(id="e78-cma-sin-booking-enviado", pruebas=[CMA_EN, CMA_TE],
+         viejo=FORMA_ENVIADA_CMA,
+         nuevo=FORMA_ENVIADA_CMA.replace(r"\A(?>.*?^[ \t\xa0]*(?:Booking[ \t\xa0]+)?Booking[ \t\xa0]+enviado[ \t\xa0]*$)", r"\A")),
+    dict(id="e78-cma-sin-la-linea-de-la-referencia", pruebas=[CMA_EN, CMA_TE],
+         viejo=FORMA_ENVIADA_CMA,
+         nuevo=FORMA_ENVIADA_CMA.replace(r"^[ \t\xa0]*Booking", r"(?<![\w-])Booking")
+                                .replace(r"[0-9]{7})[ \t\xa0]*$", r"[0-9]{7})\b")),
+    dict(id="e78-cma-enviado-en-otra-linea", pruebas=[CMA_TE],
+         viejo=FORMA_ENVIADA_CMA, nuevo=FORMA_ENVIADA_CMA.replace(r"Booking[ \t\xa0]+enviado", r"Booking\s+enviado")),
+    dict(id="e78-cma-booking-enviado-pegado", pruebas=[CMA_TE],
+         viejo=FORMA_ENVIADA_CMA, nuevo=FORMA_ENVIADA_CMA.replace(r"(?>.*?^[ \t\xa0]*(?:Booking[ \t\xa0]+)?Booking", r"(?>.*?Booking")),
+    dict(id="e78-cma-referencia-sin-caja", pruebas=[CMA_TE],
+         viejo=FORMA_ENVIADA_CMA, nuevo=FORMA_ENVIADA_CMA.replace(r"([A-Z]{3}[0-9]{7})", r"([A-Za-z]{3}[0-9]{7})")),
+    # CMA lee su frase sin plazo: la lectura, o _resultado_envio, que no le pasa el suyo.
+    dict(id="e78-lectura-sin-plazo", pruebas=[CMA_PLAZO],
+         viejo=LEE_CON_PLAZO, nuevo='                texto = alcance.evaluate(_JS_TEXTO_VISIBLE) or ""\n'),
+    dict(id="e78-referencia-sin-el-plazo-del-envio", pruebas=[CMA_PLAZO],
+         viejo="                ref = referencia_tras_envio(page, naviera, plazo_ms=plazo_ms)\n",
+         nuevo="                ref = referencia_tras_envio(page, naviera)\n"),
+    # (3) Los dos que vuelven a pulsar el Submit del Reminder están con la espera de COSCO, más arriba
+    # (cosco-reminder-vuelve-a-pulsar y cosco-reminder-busca-su-submit); y su aviso, sin decir que no pulsa.
+    dict(id="e78-reminder-no-dice-que-no-pulsa",
+         pruebas=[CO_ + "test_reminder_no_se_pulsa", CO_ + "test_reminder_tardio_tampoco_se_pulsa"],
+         viejo=A_LA_VISTA, nuevo=A_LA_VISTA.replace(" No pulso nada y sigo \"\n", "\"\n")
+                                           .replace('                         f\"esperando.\")\n', '                         f\"\")\n')),
+    # (4) Con errores de campo: sin mirar la frase; mirándola con espera; solo el número; también sin pulsar; como
+    # antes, NO ENVIADA; callado; con la lectura que falla otra vez fuera, o callada; y sin plazo en CMA.
+    dict(id="e78-campos-sin-mirar-la-frase", pruebas=[CAMPOS_FRASE, CMA_PLAZO],
+         viejo=CONTRADICE, nuevo="    elif False:\n"),
+    dict(id="e78-campos-numero-con-espera", pruebas=[EN + "test_validacion_es_no_enviada_con_los_campos"],
+         viejo=LEE_CONTRADICE, nuevo=LEE_CONTRADICE.replace("numero_tras_envio(page, naviera, espera=0, ",
+                                                            "numero_tras_envio(page, naviera, ")),
+    dict(id="e78-campos-frase-con-espera", pruebas=[CAMPOS_FRASE],
+         viejo=LEE_CONTRADICE, nuevo=LEE_CONTRADICE.replace("referencia_tras_envio(page, naviera, espera=0, ",
+                                                            "referencia_tras_envio(page, naviera, ")),
+    dict(id="e78-campos-solo-el-numero", pruebas=[CAMPOS_FRASE, CMA_PLAZO],
+         viejo=LEE_CONTRADICE,
+         nuevo="            contradice = numero_tras_envio(page, naviera, espera=0, plazo_ms=plazo_ms)\n"),
+    dict(id="e78-campos-lee-sin-pulsar", pruebas=[CAMPOS_FRASE],
+         viejo=CONTRADICE, nuevo="    elif rechazo:\n"),
+    dict(id="e78-campos-con-la-frase-no-enviada", pruebas=[CAMPOS_FRASE, CMA_PLAZO],
+         viejo=RAMA_CONTRADICE, nuevo=RAMA_CONTRADICE.replace("        if contradice:\n", "        if False:\n")),
+    dict(id="e78-campos-con-la-frase-callado", pruebas=[CAMPOS_FRASE],
+         viejo=AVISO_CONTRADICE, nuevo=AVISO_CONTRADICE.replace('            reg.paso(f"⚠ {ENVIADA_REVISAR} · {detalle}")\n', "")),
+    dict(id="e78-campos-lectura-que-falla-se-escapa", pruebas=[CAMPOS_FRASE],
+         viejo=FALLA_CONTRADICE, nuevo=FALLA_CONTRADICE.replace("except Exception as e:", "except ZeroDivisionError as e:")),
+    dict(id="e78-campos-lectura-que-falla-callada", pruebas=[CAMPOS_FRASE],
+         viejo=FALLA_CONTRADICE,
+         nuevo="        except Exception as e:\n            pass\n"),
+    dict(id="e78-campos-sin-plazo", pruebas=[CMA_PLAZO],
+         viejo=LEE_CONTRADICE, nuevo=LEE_CONTRADICE.replace(", espera=0, plazo_ms=plazo_ms))", ", espera=0))")),
+    # De la revisión de código del encargo 78. CMA-CGM: «Booking enviado» dentro de una frase, o las dos señales en
+    # cualquier orden (la regla de antes de la revisión).
+    dict(id="e78-cma-enviado-a-mitad-de-linea", pruebas=[CMA_TE],
+         viejo=FORMA_ENVIADA_CMA, nuevo=FORMA_ENVIADA_CMA.replace(r"enviado[ \t\xa0]*$)", r"enviado)")),
+    dict(id="e78-cma-en-cualquier-orden", pruebas=[CMA_EN, CMA_TE], viejo=FORMA_ENVIADA_CMA, nuevo=CMA_SIN_ATAR),
+    # La lectura con plazo: solo la página (los marcos, sin plazo); un alcance que no contestó, leído en cada vuelta; y
+    # el marco principal leído aparte de la página.
+    dict(id="e78-marcos-sin-plazo", pruebas=[CMA_MARCOS],
+         viejo=LEE_CON_PLAZO, nuevo=LEE_CON_PLAZO.replace("if plazo_ms\n", "if plazo_ms and alcance is page\n")),
+    dict(id="e78-alcance-mudo-se-vuelve-a-leer", pruebas=[CMA_MARCOS],
+         viejo="            if any(alcance is m for m in mudos):\n                continue\n", nuevo=""),
+    dict(id="e78-marco-principal-dos-veces", pruebas=[CMA_MARCOS],
+         viejo="        otros = [f for f in (getattr(page, \"frames\", None) or []) if f is not page and f is not principal]\n",
+         nuevo="        otros = [f for f in (getattr(page, \"frames\", None) or []) if f is not page]\n"),
+    # La contradicción con el clic a medio dar; y la planilla sin el verde de la reserva con su número.
+    dict(id="e78-campos-sin-el-clic-a-medio-dar", pruebas=[CAMPOS_FRASE],
+         viejo=CONTRADICE, nuevo="    elif rechazo and pulsado:\n"),
+    dict(id="e78-planilla-correo-sin-verde", pruebas=[ESC + "test_web_descarga_de_emitida_por_correo"],
+         viejo='                if bkg:\n                    c_n.fill = verde_fill\n',
+         nuevo='                if bkg and st == "EMITIDA":\n                    c_n.fill = verde_fill\n'),
+    # De la revisión de seguridad del encargo 78. CMA-CGM: el título en cualquier lugar de su línea (como antes de la
+    # revisión, con el borde de la izquierda), o sin el «Booking» de delante que trae la página medida.
+    dict(id="e78-cma-titulo-a-mitad-de-linea", pruebas=[CMA_TE],
+         viejo=FORMA_ENVIADA_CMA,
+         nuevo=FORMA_ENVIADA_CMA.replace(r"(?>.*?^[ \t\xa0]*(?:Booking[ \t\xa0]+)?Booking", r"(?>.*?(?<![\w-])Booking")),
+    dict(id="e78-cma-sin-el-booking-de-delante", pruebas=[CMA_TE],
+         viejo=FORMA_ENVIADA_CMA, nuevo=FORMA_ENVIADA_CMA.replace(r"(?:Booking[ \t\xa0]+)?", "")),
+    # Dos referencias distintas: gana la primera; la lectura no las busca; la duda, tomada por una falla del programa; o,
+    # con errores de campo, NO ENVIADA.
+    dict(id="e78-ambigua-gana-la-primera", pruebas=[AMBIGUAS, CMA_TE],
+         viejo="            if len(distintas) > 1:\n", nuevo="            if False:\n"),
+    dict(id="e78-ambigua-sin-buscarlas", pruebas=[AMBIGUAS, CMA_TE],
+         viejo=", todas=REFERENCIAS_ENVIADA.get(naviera))", nuevo=")"),
+    dict(id="e78-ambigua-como-falla", pruebas=[AMBIGUAS],
+         viejo="        except ReferenciaAmbigua as e:\n            ambiguas = e.referencias\n", nuevo=""),
+    dict(id="e78-ambigua-con-campos-no-enviada", pruebas=[AMBIGUAS],
+         viejo="        except ReferenciaAmbigua as e:\n            contradice = \", \".join(e.referencias)\n", nuevo=""),
+    dict(id="e78-ambigua-callada", pruebas=[AMBIGUAS],
+         viejo=("pero mostró {len(ambiguas)} \"\n                   f\"números distintos ({', '.join(ambiguas)}): no se "
+                "sabe cuál es el de esta reserva. {_REVISA_PORTAL}\")\n        reg.paso(f\"⚠ {ENVIADA_REVISAR} · {detalle}\")\n"),
+         nuevo=("pero mostró {len(ambiguas)} \"\n                   f\"números distintos ({', '.join(ambiguas)}): no se "
+                "sabe cuál es el de esta reserva. {_REVISA_PORTAL}\")\n")),
+    # La misma referencia en la corrida: sin mirar, sin recordarla, o sin decirlo en log.txt.
+    dict(id="e78-mismo-numero-sin-mirar", pruebas=[MISMO_NUMERO],
+         viejo="        if anterior:\n", nuevo="        if False:\n"),
+    dict(id="e78-mismo-numero-sin-recordar", pruebas=[MISMO_NUMERO],
+         viejo="        vistas[ref] = evidencia\n", nuevo=""),
+    dict(id="e78-mismo-numero-callado", pruebas=[MISMO_NUMERO],
+         viejo=("puede ser la pantalla de esa reserva. {_REVISA_PORTAL}\")\n"
+                "            reg.paso(f\"⚠ {ENVIADA_REVISAR} · {detalle}\")\n"),
+         nuevo="puede ser la pantalla de esa reserva. {_REVISA_PORTAL}\")\n"),
 ]

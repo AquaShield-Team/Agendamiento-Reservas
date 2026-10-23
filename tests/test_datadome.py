@@ -604,8 +604,9 @@ class TestLecturasConPlazo(ConCorrida):
         # La foto de las lecturas sin plazo de Playwright en lo que corre desde login_cma y reservar_cma: quedan solo
         # detrás de la pregunta con plazo (_cma_cuantos, _cma_se_ve y _pulsar_boton con plazo_ms) y en la rama sin plazo
         # de los ayudantes comunes, que CMA llama con plazo_ms; y _leer_tras_envio (lo que leen numero_tras_envio
-        # y, desde el encargo 77, referencia_tras_envio), que con CMA no lee: no tiene forma medida ni frase de
-        # envío. Un evaluate con timeout tiene plazo.
+        # y, desde el encargo 77, referencia_tras_envio), cuya rama sin plazo CMA no usa: no tiene forma medida, y su
+        # frase de envío (encargo 78) la lee con plazo (test_la_frase_de_envio_con_plazo). Un evaluate con timeout tiene
+        # plazo.
         _, funcs = arbol_y_funciones(self.mod)
         vistas = lo_que_corre_en_cma(funcs)
         sin = sorted({(n, c.func.attr) for n in vistas for c in ast.walk(funcs[n])
@@ -618,7 +619,7 @@ class TestLecturasConPlazo(ConCorrida):
                                ("_pulsar_boton", "count"), ("_pulsar_boton", "evaluate"),
                                ("_pulsar_boton", "is_visible"), ("click_si_existe", "evaluate")])
         self.assertNotIn("cma", self.mod.FORMA_BOOKING)
-        self.assertNotIn("cma", self.mod.FORMA_ENVIADA)
+        self.assertIn("cma", self.mod.FORMA_ENVIADA)
         self.assertNotIn("texto_pagina", vistas)
         # Cada llamada de CMA a esos ayudantes comunes, con plazo_ms.
         cma = {n for n in vistas if n in ("login_cma", "reservar_cma") or n.startswith("_cma_")}
@@ -667,6 +668,45 @@ class TestLecturasConPlazo(ConCorrida):
         self.assertEqual(r[0], "NO ENVIADA")
         self.assertEqual((pagina.sin_plazo, set(pagina.plazos)), ([], {self.mod.CMA_PLAZO_MS}))
         self.assertTrue((carpeta / "cma_f9_6_confirmado.html").exists())
+
+    def test_la_frase_de_envio_con_plazo(self):
+        # Desde el encargo 78, CMA tiene su frase de envío (FORMA_ENVIADA): _resultado_envio la lee con plazo
+        # (_leer_tras_envio con plazo_ms), y con ella la reserva queda EMITIDA – CONFIRMAR POR CORREO. El control: sin
+        # plazo_ms, la misma lectura va sin plazo.
+        texto = "Booking enviado\nSu reserva aún no está confirmada.\nBooking QXZ1234567\n"
+        del_texto = self.mod._JS_TEXTO_VISIBLE[:30]
+        for plazo, sin in ((self.mod.CMA_PLAZO_MS, False), (None, True)):
+            with self.subTest(plazo=plazo):
+                reg, _, _ = self.corrida(f"frase_{plazo}")
+                pagina = PaginaDataDome(self.mod, [estado(http=200, texto=texto)])
+                r = self.mod._resultado_envio(pagina, reg, "cma", "CMA", "cma_f9_6_confirmado", "Enviar el booking",
+                                              True, plazo_ms=plazo)
+                self.assertEqual(r, (self.mod.EMITIDA_POR_CORREO,
+                                     "CMA: se pulsó «Enviar el booking» y la página dijo que la reserva se envió (Booking: "
+                                     "QXZ1234567). Falta su confirmación: revisa que llegue por correo, con ese número."))
+                self.assertEqual(bool([x for x in pagina.sin_plazo if x[0] == "evaluate" and x[2] == del_texto]), sin)
+                if plazo:
+                    self.assertEqual((pagina.sin_plazo, set(pagina.plazos), pagina.esperas), ([], {plazo}, []))
+        # Con errores de campo, la lectura de una vez también va con plazo (y la frase la contradice: REVISAR).
+        reg, _, _ = self.corrida("frase_campos")
+        pagina = PaginaDataDome(self.mod, [estado(http=200, texto=texto)])
+        r = self.mod._resultado_envio(pagina, reg, "cma", "CMA", "cma_f9_6_confirmado", "Enviar el booking", True,
+                                      campos=["Peso requerido"], plazo_ms=self.mod.CMA_PLAZO_MS)
+        self.assertEqual((r[0], pagina.sin_plazo), (self.mod.ENVIADA_REVISAR, []))
+
+    def test_la_frase_en_un_marco_y_un_marco_colgado(self):
+        # De la revisión de código del encargo 78. La frase en un marco también se lee con plazo (los marcos son los que
+        # se cuelgan: encargo 54). Y un marco que no contesta a su plazo se lee una sola vez, y el marco principal no se
+        # lee aparte de la página: con 3 vueltas de espera, 4 lecturas de la página y 1 del marco colgado. Hasta ahí, 4
+        # de cada uno, y otras 4 del marco principal: con la página colgada, cada una esperaba su plazo entero.
+        otro = "https://otro.ejemplo.invalid/x"
+        frase = "Booking enviado\nBooking QXZ1234567\n"
+        pagina = PaginaDataDome(self.mod, [estado(http=200, texto="Click & Book", marcos=[(otro, frase, True)])])
+        self.assertEqual(self.mod.referencia_tras_envio(pagina, "cma", plazo_ms=self.mod.CMA_PLAZO_MS), "QXZ1234567")
+        self.assertEqual((pagina.sin_plazo, set(pagina.plazos)), ([], {self.mod.CMA_PLAZO_MS}))
+        pagina = PaginaDataDome(self.mod, [estado(http=200, texto="Click & Book", marcos=[(otro, frase, False)])])
+        self.assertEqual(self.mod.referencia_tras_envio(pagina, "cma", espera=3, plazo_ms=self.mod.CMA_PLAZO_MS), "")
+        self.assertEqual((len(pagina.plazos), len(pagina.esperas), pagina.sin_plazo), (5, 3, []))
 
     def test_el_login_mira_el_boton_con_plazo(self):
         # click_si_existe con plazo_ms (el botón de entrar de CMA): su consulta, con plazo. Si la página no la

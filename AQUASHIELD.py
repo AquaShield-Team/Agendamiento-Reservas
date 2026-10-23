@@ -173,14 +173,34 @@ FORMA_BOOKING = {
 # en el marco del formulario: «Booking CD… has been submitted successfully!» (1 de 1). Con ella, sin errores y sin una
 # falla del programa, la reserva queda EMITIDA – CONFIRMAR POR CORREO; sin ella, como antes.
 # Con ASCII (`(?a)`): solo cifras 0-9, y las mayúsculas sin el plegado de Unicode (la «ſ» o la «K» de los kelvin no
-# cuentan como «s» o «k»); «Booking» sin una letra, una cifra o un guion pegados delante («Rebooking», «Pre-Booking»);
-# y entre las palabras, espacios en la misma línea (revisión de seguridad del encargo 77).
+# cuentan como «s» o «k»); «Booking» sin una letra ASCII, una cifra o un guion pegados delante («Rebooking»,
+# «Pre-Booking»; una letra con tilde no cuenta, porque `\w` es ASCII: revisión de seguridad del encargo 78); y entre las
+# palabras, espacios en la misma línea (revisión de seguridad del encargo 77).
+# CMA-CGM, desde el encargo 78 (decisión de Marcelo, CICLO-decisiones-tras-el-envio.md): su página tras el envío dice
+# «Booking enviado» y que la reserva «aún no está confirmada», y trae una línea con «Booking» y la referencia sola (tres
+# letras y 7 cifras), el número que Marcelo vio en el portal. Las dos señales, en el texto visible de la página y en ese
+# orden: la línea del título, «Booking enviado» o, como en la página medida, «Booking Booking enviado» (la primera que
+# aparece; el grupo atómico no prueba las siguientes), y después, la línea de la referencia. Medidas con el JavaScript
+# del programa en el HTML de la única emisión que lo guardó, la del 22-10 (1 de 1), y en 0 de los 409 HTML de CMA-CGM de
+# logs/ de este equipo. Lineal: con 3 a 6 millones de caracteres armados para el retroceso, de 0,1 a 0,5 s (revisiones
+# del encargo 78).
 FORMA_ENVIADA = {
     "cosco": (r"(?a)(?<![\w-])(?i:Booking)[ \t\xa0]+(CD[0-9]{10})[ \t\xa0]+"
               r"(?i:has[ \t\xa0]+been[ \t\xa0]+submitted[ \t\xa0]+successfully)\b"),
+    "cma": (r"(?a)(?ms)\A(?>.*?^[ \t\xa0]*(?:Booking[ \t\xa0]+)?Booking[ \t\xa0]+enviado[ \t\xa0]*$)"
+            r".*?^[ \t\xa0]*Booking[ \t\xa0]+([A-Z]{3}[0-9]{7})[ \t\xa0]*$"),
 }
+# Cada referencia con la forma de la naviera que muestra la pantalla, esté o no en su frase. Si son más de una distinta,
+# no se sabe cuál es la de esta reserva: la lectura no decide (ReferenciaAmbigua; revisión de seguridad del encargo 78).
+REFERENCIAS_ENVIADA = {
+    "cosco": FORMA_ENVIADA["cosco"],
+    "cma": r"(?am)^[ \t\xa0]*Booking[ \t\xa0]+([A-Z]{3}[0-9]{7})[ \t\xa0]*$",
+}
+# La referencia de la frase es el número de la reserva: COSCO lo confirma en su correo y CMA-CGM en su portal (decisión
+# de Marcelo, encargo 78). Va en el detalle como «(Booking: …)», y de ahí a la columna «N° de reserva emitida»
+# (_extraer_bkg_limpio). El estado sigue diciendo que la confirmación llega por correo.
 EMITIDA_POR_CORREO = "EMITIDA – CONFIRMAR POR CORREO"
-# Lo que dice su columna «N° de reserva emitida», en el panel y en la planilla (_texto_n_reserva).
+# Lo que dice su columna «N° de reserva emitida» si el detalle no trae el número (_texto_n_reserva).
 CONFIRMAR_POR_CORREO = "confirmar por correo"
 # Segundos que se reintenta la lectura: la confirmación puede tardar en pintarse.
 BKG_ESPERA_SEG = 15
@@ -201,35 +221,69 @@ _JS_TEXTO_VISIBLE = """() => {
 }"""
 
 
-def numero_tras_envio(page, naviera, espera=None):
+def numero_tras_envio(page, naviera, espera=None, plazo_ms=None):
     """Número de reserva de la pantalla de confirmación, SOLO si calza con la forma medida
     de la naviera (FORMA_BOOKING); si no, ''. Lee la página y cada uno de sus marcos, con las
     raíces shadow, y reintenta cada segundo hasta 'espera' s. Sin clics ni navegación."""
-    return _leer_tras_envio(page, FORMA_BOOKING.get(naviera), espera)
+    return _leer_tras_envio(page, FORMA_BOOKING.get(naviera), espera, plazo_ms)
 
 
-def referencia_tras_envio(page, naviera, espera=None):
+def referencia_tras_envio(page, naviera, espera=None, plazo_ms=None):
     """La referencia de la frase con que la naviera dice que la reserva se envió, SOLO si calza con su forma medida
-    (FORMA_ENVIADA: COSCO); si no, ''. Se lee como el número (_leer_tras_envio). Sin clics ni navegación."""
-    return _leer_tras_envio(page, FORMA_ENVIADA.get(naviera), espera)
+    (FORMA_ENVIADA: COSCO y, desde el encargo 78, CMA-CGM); si no, ''. Se lee como el número (_leer_tras_envio). Si la
+    pantalla muestra más de una referencia distinta con esa forma (REFERENCIAS_ENVIADA), levanta ReferenciaAmbigua. Sin
+    clics ni navegación."""
+    return _leer_tras_envio(page, FORMA_ENVIADA.get(naviera), espera, plazo_ms, todas=REFERENCIAS_ENVIADA.get(naviera))
 
 
-def _leer_tras_envio(page, patron, espera=None):
+class ReferenciaAmbigua(Exception):
+    """La pantalla tras el envío dice que la reserva se envió, pero muestra más de una referencia distinta con la forma
+    de la naviera: no se sabe cuál es la de esta reserva (revisión de seguridad del encargo 78). Hasta ahí ganaba la
+    primera, y esa iba a la columna del número, que usa después la agencia de aduana."""
+
+    def __init__(self, referencias):
+        super().__init__(", ".join(referencias))
+        self.referencias = referencias
+
+
+def _leer_tras_envio(page, patron, espera=None, plazo_ms=None, todas=None):
     """Lo que captura 'patron' en el texto visible de la página o de uno de sus marcos, con las raíces shadow; '' si no
-    calza o si no hay 'patron'. Reintenta cada segundo hasta 'espera' s (BKG_ESPERA_SEG)."""
+    calza o si no hay 'patron'. Reintenta cada segundo hasta 'espera' s (BKG_ESPERA_SEG). Con 'plazo_ms', cada lectura se
+    rinde a ese plazo (_evaluar_con_plazo): CMA-CGM lee todo con plazo (encargo 55), y desde el encargo 78 tiene frase.
+    Desde la revisión de código del encargo 78, un alcance que no contestó a su plazo no se vuelve a leer, y el marco
+    principal no se lee aparte de la página, que es el mismo documento: con la página colgada, cada vuelta habría
+    esperado el plazo entero de cada uno (unos 16 minutos con 30 s de plazo y 15 vueltas). Con 'todas', lee la página y
+    todos sus marcos antes de decidir, y si 'todas' encuentra más de una referencia distinta, levanta ReferenciaAmbigua."""
     import re
     if not patron:
         return ""
     espera = BKG_ESPERA_SEG if espera is None else espera
+    principal = getattr(page, "main_frame", None)
+    mudos = []                             # los que no contestaron a su plazo
     for intento in range(espera + 1):
-        for alcance in [page] + [f for f in (getattr(page, "frames", None) or []) if f is not page]:
+        leidos = []
+        otros = [f for f in (getattr(page, "frames", None) or []) if f is not page and f is not principal]
+        for alcance in [page] + otros:
+            if any(alcance is m for m in mudos):
+                continue
             try:
-                texto = alcance.evaluate(_JS_TEXTO_VISIBLE) or ""
+                texto = ((_evaluar_con_plazo(alcance, _JS_TEXTO_VISIBLE, plazo_ms) if plazo_ms
+                          else alcance.evaluate(_JS_TEXTO_VISIBLE)) or "")
+            except PWTimeout:
+                mudos.append(alcance)
+                continue
             except Exception:
                 continue                   # un marco que no se deja leer no tapa a los demás
             m = re.search(patron, str(texto))
-            if m:
+            if m and not todas:
                 return m.group(1)
+            leidos.append((m, str(texto)))
+        hallada = next((m.group(1) for m, _ in leidos if m), "")
+        if hallada:
+            distintas = sorted({r for _, texto in leidos for r in re.findall(todas, texto)})
+            if len(distintas) > 1:
+                raise ReferenciaAmbigua(distintas)
+            return hallada
         if intento < espera:
             page.wait_for_timeout(1000)
     return ""
@@ -239,7 +293,8 @@ def _leer_tras_envio(page, patron, espera=None):
 # EMITIDA solo con la confirmación y un número con la forma medida de la naviera; si se pulsó
 # y no hubo confirmación, ENVIADA – REVISAR EN PORTAL; si no se pulsó o el portal marcó errores
 # de validación, NO ENVIADA. Desde el encargo 77, COSCO queda EMITIDA – CONFIRMAR POR CORREO con la frase de
-# FORMA_ENVIADA (EMITIDA_POR_CORREO).
+# FORMA_ENVIADA (EMITIDA_POR_CORREO), y CMA-CGM desde el 78; y con errores de validación y, a la vez, esa frase o el
+# número en la pantalla, ENVIADA – REVISAR EN PORTAL (encargo 78).
 ENVIADA_REVISAR = "ENVIADA – REVISAR EN PORTAL"
 NO_ENVIADA = "NO ENVIADA"
 _REVISA_PORTAL = "Revisa en el portal si la reserva quedó creada y, si está, anota su número en la planilla."
@@ -521,18 +576,25 @@ def _resultado_envio(page, reg, naviera, nombre, evidencia, boton, pulsado, erro
     el clic pudo haber salido). campos: errores de validación que marcó el portal. Antes de
     decidir guarda la captura y el HTML de la pantalla (_guardar_evidencia; con 'plazo_ms', con ese plazo: encargo 55,
     CMA-CGM).
-    Una naviera que manda el número por correo (FORMA_ENVIADA: COSCO) queda EMITIDA – CONFIRMAR POR CORREO solo si se
-    pulsó (no None: el clic pudo no salir), el programa no falló después, el portal no mostró errores y la pantalla
-    dice que la reserva se envió; ante cualquier duda, ENVIADA – REVISAR EN PORTAL (decisión de Marcelo, encargo 77)."""
+    Una naviera que confirma por correo (FORMA_ENVIADA: COSCO y, desde el encargo 78, CMA-CGM) queda EMITIDA – CONFIRMAR
+    POR CORREO solo si se pulsó (no None: el clic pudo no salir), el programa no falló después, el portal no mostró
+    errores y la pantalla dice que la reserva se envió; ante cualquier duda, ENVIADA – REVISAR EN PORTAL (decisiones de
+    Marcelo, encargos 77 y 78). Con errores de campo y, a la vez, la confirmación o esa frase en la pantalla, las dos
+    señales se contradicen: ENVIADA – REVISAR EN PORTAL, no NO ENVIADA (encargo 78). Y desde la revisión de seguridad del
+    encargo 78, también ENVIADA – REVISAR EN PORTAL si la pantalla muestra más de una referencia distinta, o la misma que
+    ya dio otra reserva de esta corrida (reg.referencias_enviadas): puede ser la pantalla de una reserva anterior."""
     if error is not None:
         reg.info(f"falla del programa durante el envío: {_texto_error(error)}")
     rechazo = [str(c) for c in (campos or [])]
-    bkg = ref = ""
+    bkg = ref = contradice = ""
+    ambiguas = []
     if pulsado is not False and not rechazo and not error_portal:
         try:
-            bkg = numero_tras_envio(page, naviera)
+            bkg = numero_tras_envio(page, naviera, plazo_ms=plazo_ms)
             if not bkg and pulsado is True and error is None:
-                ref = referencia_tras_envio(page, naviera)
+                ref = referencia_tras_envio(page, naviera, plazo_ms=plazo_ms)
+        except ReferenciaAmbigua as e:
+            ambiguas = e.referencias
         except Exception as e:
             # Con el clic ya dado o a medio dar, una lectura que falla (el navegador que cierra «Detener», en medio de
             # la espera) no dice que la reserva no salió: queda como una falla del programa después de pulsar, ENVIADA –
@@ -541,22 +603,53 @@ def _resultado_envio(page, reg, naviera, nombre, evidencia, boton, pulsado, erro
             if error is None:
                 error = e
                 reg.info(f"falla del programa al leer la pantalla después del envío: {_texto_error(error)}")
+    elif rechazo and pulsado is not False:
+        # Con errores de campo, una sola lectura, sin espera, de la confirmación o de la frase de envío: si está, las dos
+        # señales se contradicen (decisión de Marcelo, encargo 78). Si la lectura falla, como antes: NO ENVIADA.
+        try:
+            contradice = (numero_tras_envio(page, naviera, espera=0, plazo_ms=plazo_ms)
+                          or referencia_tras_envio(page, naviera, espera=0, plazo_ms=plazo_ms))
+        except ReferenciaAmbigua as e:
+            contradice = ", ".join(e.referencias)
+        except Exception as e:
+            reg.info(f"no pude leer la pantalla para ver si dice que la reserva se envió: {_texto_error(e)}")
     _guardar_evidencia(page, reg, evidencia, plazo_ms=plazo_ms)
     if pulsado is False:
         return _no_enviada(reg, f"{nombre}: no se pulsó «{boton}» porque no estaba en la pantalla. "
                                 f"La reserva no se envió.")
     if rechazo:
         lista = "; ".join(f"«{c}»" for c in rechazo[:10]) + (f" y {len(rechazo) - 10} más" if len(rechazo) > 10 else "")
+        if contradice:
+            # NO ENVIADA invitaría a repetir una reserva que pudo crearse.
+            detalle = (f"{nombre}: se pulsó «{boton}»; el portal marcó: {lista}, y la página dijo que la reserva se "
+                       f"envió (Booking: {contradice}). Las dos señales se contradicen. {_REVISA_PORTAL}")
+            reg.paso(f"⚠ {ENVIADA_REVISAR} · {detalle}")
+            return (ENVIADA_REVISAR, detalle)
         return _no_enviada(reg, f"{nombre}: el portal no aceptó el envío y marcó: {lista}. "
                                 f"La reserva no se envió; corrige esos datos y vuelve a correrla.")
     if bkg:
         reg.paso(f"🎉 {nombre}: Reserva EMITIDA con éxito. Booking: {bkg}")
         return ("EMITIDA", f"{nombre} emitida con éxito (Booking: {bkg})")
+    if ambiguas:
+        detalle = (f"{nombre}: se pulsó «{boton}» y la página dijo que la reserva se envió, pero mostró {len(ambiguas)} "
+                   f"números distintos ({', '.join(ambiguas)}): no se sabe cuál es el de esta reserva. {_REVISA_PORTAL}")
+        reg.paso(f"⚠ {ENVIADA_REVISAR} · {detalle}")
+        return (ENVIADA_REVISAR, detalle)
     if ref:
-        # Sin «error» ni «revisar» en el texto: el registro del panel pintaría la línea como una alerta (clase).
-        detalle = (f"{nombre}: se pulsó «{boton}» y la página dijo «Booking {ref} has been submitted successfully». "
-                   f"{nombre} manda el número de la reserva por correo, en un aviso y en la confirmación: "
-                   f"confírmalo ahí y anótalo en la planilla.")
+        vistas = getattr(reg, "referencias_enviadas", {})
+        anterior = vistas.get(ref)
+        if anterior:
+            # La misma pantalla de una reserva anterior daría el mismo número a esta (revisión de seguridad).
+            detalle = (f"{nombre}: se pulsó «{boton}» y la página mostró el mismo número que otra reserva de esta "
+                       f"corrida (Booking: {ref}, en {anterior}): puede ser la pantalla de esa reserva. {_REVISA_PORTAL}")
+            reg.paso(f"⚠ {ENVIADA_REVISAR} · {detalle}")
+            return (ENVIADA_REVISAR, detalle)
+        vistas[ref] = evidencia
+        # Sin «error» ni «revisar» en el texto: el registro del panel pintaría la línea como una alerta (clase). El
+        # número va como «(Booking: …)», de donde lo toma la columna del número (_extraer_bkg_limpio; encargo 78).
+        # La confirmación por correo es la del nombre del estado, que decidió Marcelo: de CMA-CGM no está medida.
+        detalle = (f"{nombre}: se pulsó «{boton}» y la página dijo que la reserva se envió (Booking: {ref}). Falta su "
+                   f"confirmación: revisa que llegue por correo, con ese número.")
         reg.paso(f"✅ {EMITIDA_POR_CORREO} · {detalle}")
         return (EMITIDA_POR_CORREO, detalle)
     if pulsado is None:
@@ -901,6 +994,9 @@ class Registro:
         self.t0 = time.time()
         self._f = open(self.ruta, "a", encoding="utf-8")
         self.dir_capturas = self.ruta.parent
+        # Las referencias que ya dieron una EMITIDA – CONFIRMAR POR CORREO en esta corrida, con su evidencia
+        # (_resultado_envio; revisión de seguridad del encargo 78).
+        self.referencias_enviadas = {}
         _REGISTROS_ABIERTOS.add(self)
 
     def _emit(self, linea):
@@ -7259,8 +7355,8 @@ def reservar_cosco(page, reserva, creds, reg, on_pausa=None):
         # Con la ventana Reminder ya vista no está medido si esos errores frenaron el envío.
         error_portal = "; ".join(campos + ([error_portal] if error_portal else []))
         campos = []
-    # COSCO no muestra el número de la reserva: lo manda por correo. Con la frase que dice que la reserva se envió
-    # (FORMA_ENVIADA), sin errores, queda EMITIDA – CONFIRMAR POR CORREO; nunca EMITIDA (encargo 77).
+    # Con la frase que dice que la reserva se envió (FORMA_ENVIADA), sin errores, queda EMITIDA – CONFIRMAR POR CORREO,
+    # con su número; nunca EMITIDA a secas (encargos 77 y 78).
     return _resultado_envio(page, reg, "cosco", "COSCO", f"cosco_f{f}_6_confirmado", "Submit", pulsado, error,
                             campos=campos, error_portal=error_portal)
 
@@ -7321,26 +7417,9 @@ _JS_COSCO_HAY_REMINDER = """() => {
     return b.includes('To complete your booking request') || (b.includes('Reminder') && b.includes('submit below document'));
 }"""
 
-# Pulsa el «Submit» que está DENTRO de la ventana «Reminder», medida en las capturas: el título «Reminder», el texto
-# «To complete your booking request, please submit below document(s) before deadline» y los botones «Submit» y
-# «Back». La ventana es el elemento visible más interno que tiene el título y el texto, y dentro de ella tiene que
-# haber un solo «Submit». Nunca «el último Submit» de la página. Devuelve 'pulsado', 'sin-ventana', 'sin-boton' o
-# 'ambiguo' (más de un «Submit» en la ventana): solo con 'pulsado' hubo clic.
-_JS_COSCO_SUBMIT_DEL_REMINDER = r"""() => {
-    const vis = e => !!e && e.getClientRects().length > 0;
-    const esVentana = e => /\bReminder\b/.test(e.textContent || '')
-        && /To complete your booking request/i.test(e.textContent || '');
-    const ventana = [...document.querySelectorAll('body *')]
-        .find(e => vis(e) && esVentana(e) && ![...e.children].some(c => vis(c) && esVentana(c)));
-    if (!ventana) return 'sin-ventana';
-    const esSubmit = e => /^\s*submit\s*$/i.test(e.textContent || '');
-    const subs = [...ventana.querySelectorAll('button, a, span')]
-        .filter(b => vis(b) && esSubmit(b) && ![...b.children].some(esSubmit));
-    if (!subs.length) return 'sin-boton';
-    if (subs.length > 1) return 'ambiguo';
-    subs[0].click();
-    return 'pulsado';
-}"""
+# Del «Submit» de la ventana «Reminder» no se pulsa nada: hasta el encargo 78 se pulsaba una vez, por su título y su
+# texto (_JS_COSCO_SUBMIT_DEL_REMINDER, que se quitó). El 22-10 el programa no lo identificó, no pulsó, y la reserva
+# quedó creada (decisión de Marcelo, encargo 78, CICLO-decisiones-tras-el-envio.md).
 
 # ¿COSCO sigue procesando? Su máscara de carga (el barco).
 _JS_COSCO_EN_CARGA = """() => {
@@ -7411,65 +7490,38 @@ def _cosco_hay_numero(frame, page):
     return False
 
 
-def _cosco_pulsar_reminder(frame, page):
-    """Pulsa UNA vez el «Submit» de la ventana «Reminder» (_JS_COSCO_SUBMIT_DEL_REMINDER), en el marco del
-    formulario o en la página. Devuelve (pulsó, motivo): si no lo identifica sin ambigüedad, no pulsa nada."""
-    motivos = []
-    for alcance in (frame, page):
-        if not alcance:
-            continue
-        try:
-            r = alcance.evaluate(_JS_COSCO_SUBMIT_DEL_REMINDER)
-        except Exception as e:
-            r = _texto_error(e)
-        if r == "pulsado":
-            return True, r
-        motivos.append(str(r or "sin respuesta"))
-    return False, ", ".join(motivos)
-
-
 def _cosco_esperar_resultado(page, frame, reg):
-    """Después de pulsar Submit en COSCO, espera el resultado (decisión de Marcelo,
-    CICLO-revision-corrida-completa.md):
-    - si aparece la ventana «Reminder», pulsa UNA sola vez el «Submit» que está dentro de ella (por su título y su
-      texto, medidos en las capturas), nunca «el último Submit» de la página;
-    - después solo espera, sin volver a pulsar nada, hasta ver errores o una señal de envío, o hasta
-      COSCO_ESPERA_CONFIRMACION_SEG; si se cumple el plazo, vuelve a leer los errores una vez.
+    """Después de pulsar Submit en COSCO, espera el resultado sin pulsar nada más (decisiones de Marcelo,
+    CICLO-revision-corrida-completa.md y, desde el encargo 78, CICLO-decisiones-tras-el-envio.md), hasta ver errores o
+    una señal de envío, o hasta COSCO_ESPERA_CONFIRMACION_SEG; si se cumple el plazo, vuelve a leer los errores una vez.
     La ventana «Reminder» es un paso normal de COSCO, no un error: solo recuerda enviar los documentos antes de su plazo
-    (CICLO-cosco-campos-y-reminder.md). El 22-10 estaba a la vista unos 12 s después del Submit, el programa no
-    identificó su Submit y no pulsó nada, se cerró, y la página dijo que la reserva se envió (encargo 77). Desde
-    entonces, log.txt dice cuándo aparece y cuándo deja de verse, contados desde que empieza a esperar.
+    (CICLO-cosco-campos-y-reminder.md). Mientras está a la vista solo se espera: de su «Submit» no se pulsa nada (hasta
+    el encargo 78, se pulsaba una vez). El 22-10 estaba a la vista unos 12 s después del Submit, el programa no pulsó
+    nada, se cerró, y la página dijo que la reserva se envió (encargo 77). log.txt dice cuándo aparece y cuándo deja de
+    verse, contados desde que empieza a esperar.
     Devuelve (campos, error_portal, vio_reminder). No decide el estado: sin errores, _resultado_envio da EMITIDA –
     CONFIRMAR POR CORREO si la pantalla dice que la reserva se envió (FORMA_ENVIADA), y si no, ENVIADA – REVISAR EN
     PORTAL. Hasta 0f1507e pulsaba «el último Submit» y lo repetía durante unos 70 s, y las reservas se creaban igual
     (CICLO-cosco-campos-y-reminder.md)."""
     reg.info("Esperando el resultado de COSCO (la ventana 'Reminder' o la confirmación)...")
     campos, error_portal = [], ""
-    vio_reminder = rem_pulsado = rem_avisado = vio_carga = rem_abierta = rem_cerrada = False
+    vio_reminder = vio_carga = rem_abierta = rem_cerrada = False
     esperado = 0.0
     while esperado < COSCO_ESPERA_CONFIRMACION_SEG:
         esperar(page, _COSCO_PASO_SEG)
         esperado += _COSCO_PASO_SEG
-        # La ventana «Reminder»: su Submit se pulsa una sola vez; mientras siga abierta, solo se espera.
+        # La ventana «Reminder»: mientras siga abierta, solo se espera, sin pulsar nada.
         if _cosco_en_alguno(frame, page, _JS_COSCO_HAY_REMINDER):
             if not vio_reminder:
                 reg.info(f"Ventana 'Reminder' a la vista a los {esperado:.0f} s de esperar el resultado: es un paso "
-                         f"normal de COSCO, que recuerda enviar los documentos antes de su plazo.")
+                         f"normal de COSCO, que recuerda enviar los documentos antes de su plazo. No pulso nada y sigo "
+                         f"esperando.")
             vio_reminder = rem_abierta = True
-            if not rem_pulsado:
-                rem_pulsado, motivo = _cosco_pulsar_reminder(frame, page)
-                if rem_pulsado:
-                    reg.info("Ventana 'Reminder': pulsé una vez su Submit, el de la ventana (por su título y su texto).")
-                elif not rem_avisado:
-                    reg.info(f"Ventana 'Reminder': no identifiqué su Submit sin ambigüedad ({motivo}); no pulsé nada y "
-                             f"sigo esperando.")
-                    rem_avisado = True
             continue
         # «Dejó de verse», y no «se cerró»: si las dos lecturas fallan, tampoco se ve (revisión del encargo 77).
         if rem_abierta and not rem_cerrada:
             rem_abierta = rem_cerrada = True
-            reg.info(f"La ventana 'Reminder' dejó de verse a los {esperado:.0f} s de esperar el resultado, "
-                     + ("después de pulsar su Submit." if rem_pulsado else "sin que el programa pulsara nada."))
+            reg.info(f"La ventana 'Reminder' dejó de verse a los {esperado:.0f} s de esperar el resultado.")
         # La máscara de carga: COSCO sigue procesando.
         if _cosco_en_alguno(frame, page, _JS_COSCO_EN_CARGA):
             vio_carga = True
@@ -12899,8 +12951,8 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
                 esperar(page, 5.0)
             except Exception as e:
                 error = e
-            # CMA no tiene forma medida (sus capturas tras el envío no muestran confirmación): no
-            # llega a EMITIDA hasta que se mida (CICLO-numero-booking.md).
+            # CMA no tiene forma medida de una confirmación: no llega a EMITIDA a secas. Desde el encargo 78, con
+            # «Booking enviado» y su referencia en la página (FORMA_ENVIADA), queda EMITIDA – CONFIRMAR POR CORREO.
             return _resultado_envio(page, reg, "cma", "CMA", f"cma_f{f}_6_confirmado", "Enviar el booking", pulsado,
                                     error, plazo_ms=CMA_PLAZO_MS)
 
@@ -13911,7 +13963,14 @@ def _extraer_bkg_limpio(r):
     """Extrae el código limpio de la reserva emitida."""
     # Solo una EMITIDA tiene número: ENVIADA – REVISAR EN PORTAL, NO ENVIADA y los demás estados
     # van sin él aunque su detalle traiga un código (hasta f03bb75 se tomaba de cualquier estado).
-    if str((r or {}).get("estado") or "") != "EMITIDA":
+    # Y desde el encargo 78, la EMITIDA – CONFIRMAR POR CORREO, con el número que mostró la página: COSCO lo confirma en
+    # su correo y CMA-CGM en su portal (decisión de Marcelo). Solo el de su «(Booking: …)», como lo escribe
+    # _resultado_envio, sin las reglas sueltas de abajo.
+    estado = str((r or {}).get("estado") or "")
+    if estado == EMITIDA_POR_CORREO:
+        m = _re.search(r"\(Booking: ([A-Z0-9]{6,18})\)", str((r or {}).get("detalle") or ""))
+        return m.group(1) if m else ""
+    if estado != "EMITIDA":
         return ""
     bkg = str((r or {}).get("booking") or "").strip()
     if bkg and bkg.upper() not in ("EN PROCESO", "COPYRIGHT", "CONSULTAR", "VER CAPTURA", "PENDIENTE", "NUMBER", "DETAILS", "SUMMARY", "REQUEST", "SERVICE"):
@@ -13947,10 +14006,11 @@ LISTA_PARA_EMITIR = "lista para emitir"
 
 
 def _texto_n_reserva(r):
-    """El texto de la columna «N° de reserva emitida» para un resultado: el número de una EMITIDA (_extraer_bkg_limpio),
-    LISTA_PARA_EMITIR si quedó en OK-EJEMPLO, CONFIRMAR_POR_CORREO en una EMITIDA – CONFIRMAR POR CORREO (COSCO, que
-    manda el número por correo: encargo 77), y vacío en los demás estados. «Confirmada» no lo dice nunca: solo el
-    número de una reserva real dice que se emitió."""
+    """El texto de la columna «N° de reserva emitida» para un resultado: el número de una EMITIDA o de una EMITIDA –
+    CONFIRMAR POR CORREO (_extraer_bkg_limpio; la segunda, desde el encargo 78), LISTA_PARA_EMITIR si quedó en
+    OK-EJEMPLO, CONFIRMAR_POR_CORREO en una EMITIDA – CONFIRMAR POR CORREO sin su número en el detalle (como las del
+    encargo 77), y vacío en los demás estados. «Confirmada» no lo dice nunca: solo el número de una reserva real dice
+    que se emitió."""
     bkg = _extraer_bkg_limpio(r)
     if bkg:
         return bkg
@@ -14026,6 +14086,8 @@ def _planilla_con_resultados(ruta, hoja, resultados):
                 c_n = ws.cell(f_idx, col_num, _texto_n_reserva(r))
                 c_n.border = thin_border
                 c_n.alignment = align_center
+                # En verde, toda reserva con su número: la EMITIDA y, desde el encargo 78, la EMITIDA – CONFIRMAR POR
+                # CORREO, que el panel también pinta como emitida (revisión de código del encargo 78).
                 if bkg:
                     c_n.fill = verde_fill
                     c_n.font = verde_font
@@ -15734,11 +15796,15 @@ setInterval(async () => {
               : `<span class="badge-bkg-vacio" style="color:var(--text-secondary)">${esc(nres || "—")}</span>`;
           }
         } else if (lectura === "emitida-correo") {
-          // Se cuenta como emitida; su columna dice lo que dice la planilla (n_reserva): «confirmar por correo».
+          // Se cuenta como emitida; su columna dice lo que dice la planilla (n_reserva): su número, desde el encargo 78,
+          // o «confirmar por correo» si el detalle no lo trae.
           chip(f, "ok", "emitida – confirmar por correo");
           totalEmitidas++;
           if (tr) { tr.classList.remove("fila-activa"); tr.classList.add("fila-emitida"); }
-          if (tdBkg) tdBkg.innerHTML = `<span class="badge-bkg-vacio" style="color:var(--text-secondary)">${esc(nres)}</span>`;
+          if (tdBkg) {
+            tdBkg.innerHTML = bkg ? `<span class="badge-bkg">${esc(nres)}</span>`
+              : `<span class="badge-bkg-vacio" style="color:var(--text-secondary)">${esc(nres)}</span>`;
+          }
         } else if (lectura === "detenido") {
           chip(f, "f-neutro", "detenido");
           if (tr) tr.classList.remove("fila-activa", "fila-emitida");
@@ -15840,8 +15906,8 @@ function clase(l) {
 // en «procesando…»). «OK-EJEMPLO» es «lista»: la reserva quedó armada hasta la guarda y no se emitió (hasta el encargo 34
 // era «emitida», y el panel la contaba como emitida). «SIN-CUPO» (MAERSK, sin salidas) es «sin-cupo»: hasta el encargo
 // 40 caía en «otro» y la fila quedaba en «procesando…», como NO ENVIADA hasta f03bb75 (CICLO-maersk-busqueda-vacia.md).
-// «EMITIDA – CONFIRMAR POR CORREO» (COSCO, que manda el número por correo; EMITIDA_POR_CORREO del programa, encargo 77)
-// va antes que «EMIT»: es emitida, pero sin número en la columna.
+// «EMITIDA – CONFIRMAR POR CORREO» (COSCO y, desde el encargo 78, CMA-CGM, que confirman por correo; EMITIDA_POR_CORREO
+// del programa, encargo 77) va antes que «EMIT»: es emitida, y su columna dice el número que mostró la página (n_reserva).
 function lecturaEstado(est) {
   est = est || "";
   if (est === "EN CURSO") return "curso";

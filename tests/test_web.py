@@ -485,10 +485,15 @@ class TestPanelPlanilla(PanelBase):
         resultados = {"5": {"estado": "EMITIDA", "detalle": "ONE emitida con éxito (Booking: BKGFALSO11)", "booking": ""},
                       "6": {"estado": "OK-EJEMPLO", "detalle": "armada hasta Review; SIN emitir", "booking": ""},
                       "7": {"estado": "NO ENVIADA", "detalle": "ONE: no elegí salida", "booking": ""},
-                      # COSCO, desde el encargo 77: el estado, igual en el panel y en la planilla; el número, por correo.
+                      # COSCO, desde el encargo 77: el estado, igual en el panel y en la planilla. Desde el 78, el número
+                      # que mostró la página (el de su «(Booking: …)»); sin él, como en el 77, «confirmar por correo».
                       "8": {"estado": "EMITIDA – CONFIRMAR POR CORREO", "booking": "",
                             "detalle": "COSCO: se pulsó «Submit» y la página dijo «Booking CD1234567890 has been "
-                                       "submitted successfully»."}}
+                                       "submitted successfully»."},
+                      "9": {"estado": "EMITIDA – CONFIRMAR POR CORREO", "booking": "CD1234567890",
+                            "detalle": "COSCO: se pulsó «Submit» y la página dijo que la reserva se envió (Booking: "
+                                       "CD1234567890). Falta su confirmación: revisa que llegue por correo, con ese "
+                                       "número."}}
         with self.mod._LOCK:
             self.mod._WEB.update({"hoja": "ONE", "resultados": resultados})
         try:
@@ -500,7 +505,8 @@ class TestPanelPlanilla(PanelBase):
         ws = openpyxl.load_workbook(BytesIO(cuerpo))["ONE"]
         planilla = {f: ws[f"I{f}"].value or "" for f in resultados}
         panel = {f: estado["resultados"][f]["n_reserva"] for f in resultados}
-        self.assertEqual(planilla, {"5": "BKGFALSO11", "6": "lista para emitir", "7": "", "8": "confirmar por correo"})
+        self.assertEqual(planilla, {"5": "BKGFALSO11", "6": "lista para emitir", "7": "", "8": "confirmar por correo",
+                                    "9": "CD1234567890"})
         self.assertEqual(panel, planilla)
         self.assertEqual(self.mod.LISTA_PARA_EMITIR, "lista para emitir")
         self.assertEqual((ws["H8"].value.split(" · ")[0], estado["resultados"]["8"]["estado"]),

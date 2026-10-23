@@ -115,9 +115,10 @@ class TestNumeroTrasEnvio(soporte.CasoAQ):
         self.assertEqual((self.num(pagina, "cma"), self.num(pagina, "cosco"), pagina.esperas), ("", "", 0))
 
     def test_frase_de_cosco_que_dice_que_se_envio(self):
-        # COSCO no muestra el número: dice que la reserva se envió, con una referencia (encargo 77; la forma, medida en
-        # el marco del formulario el 22-10). referencia_tras_envio la lee como el número: la página, sus marcos y sus
-        # raíces shadow, con reintentos. Referencias inventadas, con las cifras a la vista.
+        # COSCO no muestra una confirmación con número: dice que la reserva se envió, con una referencia (encargo 77; la
+        # forma, medida en el marco del formulario el 22-10), que es el número de la reserva (decisión de Marcelo,
+        # encargo 78). referencia_tras_envio la lee como el número: la página, sus marcos y sus raíces shadow, con
+        # reintentos. Referencias inventadas, con las cifras a la vista.
         ref = lambda pagina, nav="cosco": self.mod.referencia_tras_envio(pagina, nav)
         envio = 'Booking CD1234567890 has been submitted successfully! Please check booking status in the "To do list".'
         self.assertEqual(ref(P("New Booking", frames=[Marco("nada"), Marco(envio)])), "CD1234567890")
@@ -127,16 +128,62 @@ class TestNumeroTrasEnvio(soporte.CasoAQ):
                      "booking CD0000000000\nhas been submitted successfully"):    # partida en dos líneas
             with self.subTest(otra=otra):
                 self.assertEqual(ref(P(otra)), "")
-        # Solo COSCO: ni ONE ni CMA leen la frase, y sin forma no espera.
+        # La frase es de COSCO: ONE no la lee, y sin forma no espera; CMA tiene la suya (encargo 78), que no es esta.
         pagina = P(envio)
-        self.assertEqual((ref(pagina, "one"), ref(pagina, "cma"), pagina.esperas), ("", "", 0))
+        self.assertEqual((ref(pagina, "one"), pagina.esperas), ("", 0))
+        self.assertEqual(self.mod.referencia_tras_envio(pagina, "cma", espera=0), "")
         # Sin la frase, espera lo mismo que el número.
         pagina = P("New Booking")
         self.assertEqual((ref(pagina), pagina.esperas), ("", self.mod.BKG_ESPERA_SEG))
 
+    def test_frase_de_cma_que_dice_que_se_envio(self):
+        # Desde el encargo 78 (decisión de Marcelo), CMA-CGM: su página tras el envío dice «Booking enviado» y trae una
+        # línea con «Booking» y la referencia sola, tres letras y 7 cifras, como se leyó el 22-10. Las dos señales y en ese
+        # orden: «Booking enviado» al final de su línea (como en la página medida, después de otro «Booking»), y la
+        # referencia después; una sola no basta. Se lee como la de COSCO: la página y sus marcos. Referencias inventadas,
+        # con las cifras a la vista.
+        ref = lambda pagina: self.mod.referencia_tras_envio(pagina, "cma", espera=0)
+        envio = ("Booking Booking enviado\nSu reserva aún no está confirmada.\n"
+                 "Booking QXZ1234567\nBuque\n")
+        self.assertEqual(ref(P("Click & Book", frames=[Marco("nada"), Marco(envio)])), "QXZ1234567")
+        self.assertEqual(ref(P("Booking  enviado \nnada\n \tBooking\xa0ABC0000000 \n")), "ABC0000000")
+        for caso, otra in {"sin «Booking enviado»": "Su reserva aún no está confirmada.\nBooking QXZ1234567\n",
+                           # De la revisión de código del encargo 78: las dos señales, atadas.
+                           "la referencia antes del título": "Booking ABC0000000\nBooking enviado\n",
+                           "«Booking enviado» en una frase": "Su Booking enviado ayer\nBooking QXZ1234567\n",
+                           # De la revisión de seguridad: el título, al principio de su línea.
+                           "texto antes del título": "Error: Booking enviado\nBooking QXZ1234567\n",
+                           "una letra con tilde pegada": "éBooking enviado\nBooking QXZ1234567\n",
+                           "otra palabra antes del título": "Pre Booking enviado\nBooking QXZ1234567\n",
+                           "«enviados»": "Booking enviados\nBooking QXZ1234567\n",
+                           "«enviado» en otra línea": "Booking\nenviado\nBooking QXZ1234567\n",
+                           "«Booking enviado» pegado": "PreBooking enviado\nBooking QXZ1234567\n",
+                           "sin la línea de la referencia": "Booking enviado\nSu reserva aún no está confirmada.\n",
+                           "la referencia con más texto": "Booking enviado\nBooking QXZ1234567 Submitted\n",
+                           "texto antes de «Booking»": "Booking enviado\nTu Booking QXZ1234567\n",
+                           "dos letras": "Booking enviado\nBooking QX1234567\n",
+                           "8 cifras": "Booking enviado\nBooking QXZ12345678\n",
+                           "en minúsculas": "Booking enviado\nBooking qxz1234567\n",
+                           "«booking enviado» en minúsculas": "booking enviado\nBooking QXZ1234567\n"}.items():
+            with self.subTest(caso=caso):
+                self.assertEqual(ref(P(otra)), "")
+        # La frase es de CMA: COSCO no la lee.
+        self.assertEqual(self.mod.referencia_tras_envio(P(envio), "cosco", espera=0), "")
+        # De la revisión de seguridad: con dos referencias distintas en la pantalla (en la página o en un marco), no se
+        # sabe cuál es la de esta reserva; la misma dos veces, sí.
+        for pagina in (P(envio + "Booking ABC0000000\n"), P(envio, frames=[Marco("Booking ABC0000000")])):
+            with self.subTest(pagina=pagina.texto):
+                with self.assertRaises(self.mod.ReferenciaAmbigua) as e:
+                    ref(pagina)
+                self.assertEqual(e.exception.referencias, ["ABC0000000", "QXZ1234567"])
+        self.assertEqual(ref(P(envio, frames=[Marco(envio)])), "QXZ1234567")
+        # El número de las navieras con forma medida no mira eso: como antes, el primero.
+        self.assertEqual(self.num(P(self.CONFIRMA_ONE + "Booking Reference No. SCLG34567890")), "SCLG23456789")
+
 
 class TestNumeroLimpio(soporte.CasoAQ):
-    """Los patrones se prueban con estado EMITIDA: desde f03bb75 solo una EMITIDA tiene número."""
+    """Los patrones se prueban con estado EMITIDA: desde f03bb75 solo una EMITIDA tiene número, y desde el encargo 78
+    también una EMITIDA – CONFIRMAR POR CORREO, solo con el de su «(Booking: …)» (test_envio)."""
 
     def limpio(self, r):
         return self.mod._extraer_bkg_limpio(r)
