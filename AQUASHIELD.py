@@ -584,8 +584,9 @@ def _resultado_envio(page, reg, naviera, nombre, evidencia, boton, pulsado, erro
     encargo 78, también ENVIADA – REVISAR EN PORTAL si la pantalla muestra más de una referencia distinta, o la misma que
     ya dio otra reserva de esta corrida (reg.referencias_enviadas): puede ser la pantalla de una reserva anterior.
     campos_en_duda: con errores de campo, por qué esos errores no dicen que el envío no entró (solo COSCO, desde el
-    encargo 79: su Submit ya no está a la vista, o no se pudo leer; _cosco_submit_en_duda). Con él, ENVIADA – REVISAR EN
-    PORTAL y no NO ENVIADA, que invitaría a reenviar una reserva que pudo crearse."""
+    encargo 79: la ventana «Reminder» a la vista, su Submit ya no a la vista o sin poder leerlo y, desde el 81, la máscara
+    de carga a la vista; _cosco_submit_en_duda). Con él, ENVIADA – REVISAR EN PORTAL y no NO ENVIADA, que invitaría a
+    reenviar una reserva que pudo crearse."""
     if error is not None:
         reg.info(f"falla del programa durante el envío: {_texto_error(error)}")
     rechazo = [str(c) for c in (campos or [])]
@@ -7364,8 +7365,9 @@ def reservar_cosco(page, reserva, creds, reg, on_pausa=None):
         # Con la ventana Reminder ya vista no está medido si esos errores frenaron el envío.
         error_portal = "; ".join(campos + ([error_portal] if error_portal else []))
         campos = []
-    # Con errores de campo, NO ENVIADA solo si el Submit sigue a la vista; si ya no está, o no se puede leer, el envío
-    # pudo haber entrado: ENVIADA – REVISAR EN PORTAL (decisión de Marcelo, encargo 79).
+    # Con errores de campo, NO ENVIADA solo si el Submit sigue a la vista; si ya no está, o no se puede leer, o si la
+    # ventana «Reminder» o la máscara de carga están a la vista, el envío pudo haber entrado: ENVIADA – REVISAR EN PORTAL
+    # (decisiones de Marcelo, encargos 79 y 81).
     en_duda = _cosco_submit_en_duda(frame, page, reg) if campos else ""
     # Con la frase que dice que la reserva se envió (FORMA_ENVIADA), sin errores, queda EMITIDA – CONFIRMAR POR CORREO,
     # con su número; nunca EMITIDA a secas (encargos 77 y 78).
@@ -7502,12 +7504,16 @@ def _cosco_submit_en_duda(frame, page, reg):
     queda duplicada):
     - la ventana «Reminder», que COSCO muestra después del envío, está a la vista: su Submit, si está en el marco del
       formulario, se leería como el del formulario (revisión de código del encargo 79);
+    - la máscara de carga sigue a la vista: COSCO sigue procesando (decisión de Marcelo, encargo 81,
+      CICLO-cosco-carga-y-confirmacion.md). Es la de la espera (_JS_COSCO_EN_CARGA), en el marco o en la página;
     - el Submit ya no está a la vista (la lectura da False);
     - la lectura falla, o da otra cosa que True o False (se anota en log.txt).
     Medido en el envío del 22-10, el único guardado: en la guarda el marco del formulario trae el Submit, y después del
     envío que entró, ningún documento lo trae. Solo lee: ni clics ni esperas."""
     if _cosco_en_alguno(frame, page, _JS_COSCO_HAY_REMINDER):
         return "la ventana «Reminder» está a la vista"
+    if _cosco_en_alguno(frame, page, _JS_COSCO_EN_CARGA):
+        return "la máscara de carga sigue a la vista"
     try:
         sigue = frame.evaluate(_JS_COSCO_SUBMIT_PRESENTE)
     except Exception as e:

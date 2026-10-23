@@ -233,10 +233,13 @@ mismo botón de antes con `_pulsar_boton` (que dice si pulsó), guarda en `error
     formulario sigue a la vista (`_cosco_submit_en_duda`):
     - con la ventana «Reminder» a la vista, en el marco o en la página, no lo mira: su propio Submit se leería como el
       del formulario (revisión de código del encargo 79);
+    - desde el encargo 81, con la máscara de carga a la vista, en el marco o en la página, tampoco: COSCO sigue
+      procesando (ver la máscara, abajo);
     - si `_JS_COSCO_SUBMIT_PRESENTE` da `True`, NO ENVIADA, como antes;
     - si da `False`, si da otra cosa (se anota en log.txt) o si la lectura falla, ENVIADA – REVISAR EN PORTAL, con el
       motivo «el portal marcó: …, pero «Submit» ya no está a la vista (o no se pudo leer si sigue, o la ventana
-      «Reminder» está a la vista): el envío pudo haber entrado», y qué hacer si la reserva no quedó creada
+      «Reminder» está a la vista, o la máscara de carga sigue a la vista): el envío pudo haber entrado», y qué hacer si
+      la reserva no quedó creada
       (`campos_en_duda` de `_resultado_envio`, que solo pasa COSCO).
     - Sin errores de campo no lo mira: ese camino no cambió. `test_envio` corre el JavaScript en Node
       (`test_js_submit_presente_solo_el_submit_a_la_vista`) y los casos en `test_errores_de_campo_y_el_submit`.
@@ -257,7 +260,8 @@ mismo botón de antes con `_pulsar_boton` (que dice si pulsó), guarda en `error
       PORTAL). Con la página de envío, también enseguida: vuelve a leer los errores y decide con lo que ve (EMITIDA –
       CONFIRMAR POR CORREO sin errores; ENVIADA – REVISAR EN PORTAL con ellos, por la contradicción del encargo 78).
     - Al tope, sin ninguna de las dos, vuelve a leer los errores y decide como en el encargo 79: NO ENVIADA solo si el
-      Submit sigue a la vista. Los errores que aparecen después del tope no esperan más.
+      Submit sigue a la vista y, desde el encargo 81, sin la máscara de carga a la vista (abajo). Los errores que
+      aparecen después del tope no esperan más.
     - **La página de envío es la frase de `FORMA_ENVIADA`** (`_cosco_pagina_de_envio`, una lectura sin espera), la misma
       con que decide el estado. No es `_JS_COSCO_EXITO`: su «booking confirmation sent to» es la etiqueta de un campo del
       formulario, y lo da también antes del clic. Medido sin red con el JavaScript del programa: la etiqueta, en el marco
@@ -267,12 +271,22 @@ mismo botón de antes con `_pulsar_boton` (que dice si pulsó), guarda en `error
       `test_envio.TestCoscoTrasLosErrores.test_sin_errores_de_campo_no_hay_tramo`), ni con solo un aviso del portal
       (`TestCosco.test_espera_corta_con_aviso_del_portal`). Los tres casos, de punta a punta (el código real de después
       de la guarda, del clic al estado, con un reloj falso), en `TestCoscoTrasLosErrores`.
-    - **La máscara de carga no cuenta en el tramo** (revisión de código del encargo 80): con errores de campo, la máscara
-      a la vista y el Submit a la vista a los 20 s, queda NO ENVIADA. No está medido que COSCO muestre los errores y la
-      máscara a la vez.
+    - **La máscara de carga a la vista al decidir cuenta como duda** (decisión de Marcelo, encargo 81,
+      `CICLO-cosco-carga-y-confirmacion.md`): con errores de campo, si a los 20 s la máscara sigue a la vista, en el marco
+      o en la página, COSCO sigue procesando: ENVIADA – REVISAR EN PORTAL, nunca NO ENVIADA. La mira
+      `_cosco_submit_en_duda`, después de la ventana y antes del Submit, con la misma definición de la espera
+      (`_JS_COSCO_EN_CARGA`). El tramo no la mira. Hasta ahí (revisión de código del encargo 80) quedaba NO ENVIADA. No
+      está medido que COSCO muestre los errores y la máscara a la vez.
+    - **`_JS_COSCO_EN_CARGA` calza también con el formulario** (medido en el encargo 81, sin red y sin las hojas del
+      portal): con el `div` vacío `partial-shipment`, por su «ship», en el marco del formulario de la guarda (el del
+      22-10 y 10 de los 120 HTML de COSCO de `logs/`, los mismos donde la etiqueta da `_JS_COSCO_EXITO`). La máscara
+      misma (`.el-loading-mask` y las de su clase) no está en ninguno de los 140. Si el portal muestra ese `div`, mientras
+      el formulario esté a la vista la espera lo toma por la carga y sigue esperando sin leer los errores: así se
+      explica que el 22-10 no se cortara a los 3 s por la etiqueta, y un rechazo esperaría el plazo de 180 s y quedaría
+      ENVIADA – REVISAR EN PORTAL. No se cambió: la espera del 22-10 depende de eso (no medido con las hojas del portal).
 - `NO ENVIADA`: el botón no estaba, o el portal marcó errores de validación (con los campos), la pantalla no dice que la
   reserva se envió y, en COSCO, su Submit sigue a la vista a los 20 s del clic, sin que haya aparecido la ventana
-  «Reminder» ni la página de envío (encargo 80).
+  «Reminder» ni la página de envío (encargo 80), y sin la máscara de carga a la vista (encargo 81).
 
 Antes de decidir, `_guardar_evidencia` deja la captura y el HTML completo de la página y de cada marco
 (con raíces shadow) en la carpeta de la corrida. No la llames antes de la guarda ni le agregues clics:

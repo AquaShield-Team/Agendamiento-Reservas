@@ -9364,3 +9364,21 @@ MUTACIONES += [
     dict(id="e80-reminder-del-tramo-solo-en-el-marco", pruebas=[REMINDER_E80],
          viejo=VE_REMINDER_E80, nuevo=VE_REMINDER_E80.replace("(frame, page,", "(frame, None,")),
 ]
+
+# --- Encargo 81 (CICLO-cosco-carga-y-confirmacion.md), ítem 1, decisión de Marcelo: con errores de campo, si al decidir
+# (a los 20 s) la máscara de carga sigue a la vista, en el marco o en la página, COSCO sigue procesando: ENVIADA –
+# REVISAR EN PORTAL, nunca NO ENVIADA (_cosco_submit_en_duda). Sin mirarla, solo en un alcance, o sin decirlo ---
+MASCARA_E81 = TE80 + "test_mascara_de_carga_al_tope"
+CARGA_E81 = ('    if _cosco_en_alguno(frame, page, _JS_COSCO_EN_CARGA):\n'
+             '        return "la máscara de carga sigue a la vista"\n')
+
+MUTACIONES += [
+    dict(id="e81-carga-no-se-mira", pruebas=[MASCARA_E81, SUBMIT_DUDA],
+         viejo=CARGA_E81, nuevo=""),
+    dict(id="e81-carga-solo-en-el-marco", pruebas=[MASCARA_E81],
+         viejo=CARGA_E81, nuevo=CARGA_E81.replace("(frame, page,", "(frame, None,")),
+    dict(id="e81-carga-solo-en-la-pagina", pruebas=[MASCARA_E81, SUBMIT_DUDA],
+         viejo=CARGA_E81, nuevo=CARGA_E81.replace("(frame, page,", "(None, page,")),
+    dict(id="e81-carga-sin-motivo", pruebas=[MASCARA_E81, SUBMIT_DUDA],
+         viejo=CARGA_E81, nuevo=CARGA_E81.replace('return "la máscara de carga sigue a la vista"', 'return ""')),
+]
