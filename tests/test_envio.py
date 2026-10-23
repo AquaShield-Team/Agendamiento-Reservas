@@ -9,7 +9,8 @@ evidencia (CICLO-estado-tras-envio.md).
   con errores de validación y la confirmación o la frase de envío en la pantalla; y desde el 79, COSCO con errores de
   validación y su Submit ya no a la vista (o sin poder leerlo).
 - NO ENVIADA: el botón no se pulsó, o el portal marcó errores de validación (con los campos) y, en COSCO, su Submit
-  sigue a la vista.
+  sigue a la vista; desde el encargo 80, a los 20 s del clic, sin que haya aparecido la ventana «Reminder» ni la
+  página que dice que la reserva se envió.
 - La evidencia: la captura y el HTML de la página y de cada marco, en la carpeta de la corrida.
 - El panel lee cada estado con lecturaEstado (JavaScript, se corre en Node).
 
@@ -594,6 +595,19 @@ def normal(fuente):
     return ast.unparse(ast.parse(fuente))
 
 
+def despues_de_la_guarda(mod, nombre):
+    """Lo que corre el reservador 'nombre' después de la guarda del candado (tras_la_guarda), compilado aparte como una
+    función de page, frame, reg y f, con las variables del programa: el código real, sin copiarlo (en el censo, el
+    mutado). Así una prueba lo corre de punta a punta, del clic al estado, sobre un portal falso (encargo 80)."""
+    tree = ast.parse(Path(mod.__file__).read_text(encoding="utf-8"))
+    funcion = ast.parse("def despues(page, frame, reg, f):\n    pass").body[0]
+    funcion.body = tras_la_guarda(mod, nombre, tree)
+    modulo = ast.fix_missing_locations(ast.Module(body=[funcion], type_ignores=[]))
+    espacio = dict(vars(mod))
+    exec(compile(modulo, mod.__file__, "exec"), espacio)
+    return espacio["despues"]
+
+
 class TestReservadores(soporte.CasoAQ):
     """Después de la guarda, cada reservador pulsa el MISMO botón de antes (sin clics nuevos),
     guarda el error si algo falla y decide con _resultado_envio. El flujo en el portal no corre
@@ -712,6 +726,7 @@ def clases(caso, lineas):
 
 class Nada:
     """Localizador de Playwright que no encuentra nada."""
+    first = property(lambda self: self)
     last = property(lambda self: self)
 
     def count(self):
@@ -727,18 +742,21 @@ class Nada:
 class AlcanceCOSCO:
     """El formulario (marco) o la página de COSCO después de Submit: cada JavaScript de la espera
     recibe la respuesta de su tipo, que reconoce por un pedazo de su texto (TIPOS); uno desconocido queda anotado y la
-    prueba cae. Cuenta las esperas y anota cada localizador. Desde el encargo 78 no hay un tipo para pulsar el Submit de
+    prueba cae. Cuenta las esperas, con cada una adelanta el reloj de la prueba (estado["reloj"]; encargo 80), y anota
+    cada localizador. Desde el encargo 78 no hay un tipo para pulsar el Submit de
     la ventana «Reminder»: un JavaScript que pulse es desconocido, salvo que traiga uno de esos pedazos (uno que trajera
     «submit below document» contaría como la pregunta por la ventana, y la prueba caería por las esperas; revisión de
     código del encargo 78)."""
     TIPOS = (("submit below document", "reminder"), ("[class*=boat]", "carga"),
              ("el-form-item__error", "errores"), ("(?:Request", "numero"), ("submitted successfully", "exito"),
-             ("return !!b;", "submit_presente"))
+             ("return !!b;", "submit_presente"), ("c.innerText || c.textContent", "texto"))
 
     def __init__(self, estado, **resp):
         self.estado, self.resp, self.esperas = estado, resp, 0
 
     def evaluate(self, js, *a):
+        if len(self.estado["vistos"]) > 5000:
+            raise Colgada("la espera no termina")
         tipo = next((t for clave, t in self.TIPOS if clave in js), "desconocido")
         self.estado["vistos"].append(tipo)
         r = self.resp.get(tipo)
@@ -750,6 +768,27 @@ class AlcanceCOSCO:
 
     def wait_for_timeout(self, ms):
         self.esperas += 1
+        self.estado["reloj"] += ms / 1000
+
+
+class Reloj:
+    """El time del programa, detenido: avanza solo con las esperas de la página falsa ('ahora', en s), como en
+    test_datadome. La espera de COSCO cuenta su tope con errores de campo con time.monotonic (encargo 80), y el Registro
+    usa time.time."""
+
+    def __init__(self, ahora):
+        self.ahora = ahora
+
+    def monotonic(self):
+        return self.ahora()
+
+    def time(self):
+        return 1000.0 + self.ahora()
+
+
+class Colgada(BaseException):
+    """Una espera que no termina, en una página falsa con el reloj detenido: deriva de BaseException para que ningún
+    `except Exception` del programa se la trague y la prueba caiga en vez de quedar colgada."""
 
 
 class TestCosco(soporte.CasoAQ):
@@ -810,22 +849,35 @@ class TestCosco(soporte.CasoAQ):
         self.assertEqual(self.mod._cosco_errores(None, A({})), ([], ""))
 
     def esperar(self, **resp):
-        estado = {"vistos": [], "localizadores": []}
+        # El reloj del programa avanza solo con las esperas de la página (estado["reloj"], en s desde el clic).
+        estado = {"vistos": [], "localizadores": [], "reloj": 0.0}
         marco, pagina = AlcanceCOSCO(estado, **resp), AlcanceCOSCO(estado)
         carpeta = self.sb / f"cosco_{next(N)}"
-        reg = self.mod.Registro(carpeta / "log.txt")
-        try:
-            r = self.mod._cosco_esperar_resultado(pagina, marco, reg)
-        finally:
-            reg.cerrar()
+        with mock.patch.object(self.mod, "time", Reloj(lambda: estado["reloj"])):
+            reg = self.mod.Registro(carpeta / "log.txt")
+            try:
+                r = self.mod._cosco_esperar_resultado(pagina, marco, reg)
+            finally:
+                reg.cerrar()
         self.assertNotIn("desconocido", estado["vistos"], "la espera corrió un JavaScript que la prueba no conoce")
         self.assertEqual(estado["localizadores"], [], "la espera buscó algo que pulsar")
         return r, pagina.esperas, estado, (carpeta / "log.txt").read_text(encoding="utf-8")
 
-    def test_espera_corta_con_errores_de_validacion(self):
-        r, esperas, _, _ = self.esperar(errores={"campos": ["Gross Weight is required"], "portal": ""},
-                                        submit_presente=True)
-        self.assertEqual((r, esperas), ((["Gross Weight is required"], "", False), 2))
+    def test_errores_de_validacion_esperan_hasta_el_tope(self):
+        # Decisión de Marcelo, encargo 80: con errores de campo, antes de darlos por un rechazo la espera sigue mirando
+        # hasta 20 s desde el clic si aparece la ventana «Reminder» o la página que dice que la reserva se envió. Sin
+        # ninguna, vuelve con los errores a los 20 s justos del reloj: 2 vueltas hasta los errores, a los 3 s, y 12 más
+        # (11 de 1,5 s y la última de 0,5). La etiqueta «Booking confirmation sent to» del formulario da _JS_COSCO_EXITO
+        # (medido): no cuenta como la página de envío. Hasta el encargo 79 volvía a los 3 s, con la primera lectura.
+        r, esperas, estado, log = self.esperar(errores={"campos": ["Gross Weight is required"], "portal": ""},
+                                               submit_presente=True, exito=True)
+        self.assertEqual((r, esperas, estado["reloj"]), ((["Gross Weight is required"], "", False), 14, 20.0))
+        self.assertEqual(estado["vistos"].count("exito"), 0)
+        self.assertEqual(log.count("COSCO marcó errores de campo a los 3 s de esperar el resultado. Antes de darlos por "
+                                   "un rechazo, espero hasta los 20 s desde el Submit, sin pulsar nada, por si aparece "
+                                   "la ventana 'Reminder' o la página que dice que la reserva se envió."), 1)
+        self.assertEqual(log.count("A los 20 s del Submit no apareció la ventana 'Reminder' ni la página que dice que "
+                                   "la reserva se envió."), 1)
 
     def test_espera_corta_con_aviso_del_portal(self):
         r, esperas, _, _ = self.esperar(errores={"campos": [], "portal": "Sistema ocupado"}, submit_presente=True)
@@ -883,6 +935,196 @@ class TestCosco(soporte.CasoAQ):
         # REVISAR EN PORTAL, nunca NO ENVIADA. Hasta ahí, volvía sin leerlos.
         r, esperas, _, _ = self.esperar(reminder=True, errores={"campos": ["Gross Weight is required"], "portal": ""})
         self.assertEqual((r, esperas), (([], "Gross Weight is required", True), 120))
+
+
+class AlcancePortal(P):
+    """La página de COSCO o el marco de su formulario: responde con lo que muestra su PortalCOSCO en ese instante, y le
+    pasa sus esperas y sus localizadores."""
+
+    def __init__(self, portal, en_el_marco, frames=None):
+        super().__init__(url="https://elines.invalid/bkg2" if en_el_marco else "https://elines.invalid/", frames=frames)
+        self.portal, self.en_el_marco = portal, en_el_marco
+
+    def evaluate(self, js, *a):
+        return self.portal.responder(js, self.en_el_marco)
+
+    def locator(self, sel):
+        self.portal.localizadores.append(sel)
+        return Nada()
+
+    def wait_for_timeout(self, ms):
+        self.portal.esperar(ms)
+
+
+class PortalCOSCO:
+    """COSCO después de su guarda, en el tiempo: la página y el marco de su formulario (AlcancePortal), con un reloj en
+    milisegundos que avanza solo con sus esperas. Lo que muestran sale de los segundos desde el clic del Submit, en
+    tramos [desde, hasta): los errores de campo y la máscara de carga (en el marco), la ventana «Reminder» (en la página
+    o, con 'reminder_en_el_marco', en el marco), la página que dice que la reserva se envió (la frase de COSCO, en el
+    marco, desde 'envio') y el Submit del formulario (en el marco, hasta 'submit_hasta'). El marco da siempre _JS_COSCO_EXITO: la etiqueta «Booking
+    confirmation sent to» de su formulario (medido en la guarda del 22-10; encargo 80). Anota cada JavaScript que no
+    conoce y cada localizador, y corta con Colgada si la espera no termina."""
+    SIEMPRE = (0, 10 ** 6)
+
+    def __init__(self, mod, errores=SIEMPRE, carga=(0, 0), reminder=(0, 0), envio=None, submit_hasta=10 ** 6,
+                 reminder_en_el_marco=False):
+        self.mod, self.errores, self.carga, self.reminder = mod, errores, carga, reminder
+        self.envio, self.submit_hasta, self.reminder_en_el_marco = envio, submit_hasta, reminder_en_el_marco
+        self.ms, self.clic, self.esperas = 0, None, 0
+        self.desconocidos, self.localizadores = [], []
+        self.marco = AlcancePortal(self, True)
+        self.pagina = AlcancePortal(self, False, frames=[self.marco])
+
+    def ahora(self):
+        return self.ms / 1000
+
+    def seg(self):
+        """Segundos desde el clic del Submit; None antes."""
+        return None if self.clic is None else (self.ms - self.clic) / 1000
+
+    def ve(self, desde, hasta):
+        return self.clic is not None and desde * 1000 <= self.ms - self.clic < hasta * 1000
+
+    def esperar(self, ms):
+        self.esperas += 1
+        if self.esperas > 400:
+            raise Colgada("la espera no termina")
+        self.ms += ms
+
+    def responder(self, js, en_el_marco):
+        m = self.mod
+        if "getHTML" in js:
+            return {"html": "<p>marco</p>" if en_el_marco else "<p>página</p>", "sombras": 0}
+        if js.startswith("window.scrollTo"):
+            return None
+        if js == m._JS_COSCO_SUBMIT and en_el_marco and self.clic is None:
+            self.clic = self.ms
+            return True
+        enviada = self.envio is not None and self.ve(self.envio, 10 ** 6)
+        respuestas = {
+            m._JS_COSCO_HAY_REMINDER: en_el_marco == self.reminder_en_el_marco and self.ve(*self.reminder),
+            m._JS_COSCO_EN_CARGA: en_el_marco and self.ve(*self.carga),
+            m._JS_COSCO_ERRORES: {"campos": ["Gross Weight is required"] if en_el_marco and self.ve(*self.errores)
+                                  else [], "portal": ""},
+            m._JS_COSCO_NUMERO: "",
+            m._JS_COSCO_EXITO: en_el_marco,
+            m._JS_COSCO_SUBMIT_PRESENTE: en_el_marco and self.ve(0, self.submit_hasta),
+            m._JS_TEXTO_VISIBLE: (COSCO_ENVIADA if enviada else "Booking Details\nBooking confirmation sent to")
+                                 if en_el_marco else "",
+        }
+        if js in respuestas:
+            return respuestas[js]
+        self.desconocidos.append(js[:60])
+        return None
+
+
+class TestCoscoTrasLosErrores(ConRegistro):
+    """Decisión de Marcelo, encargo 80 (CICLO-cosco-espera-tras-errores.md): con errores de campo tras el Submit de COSCO,
+    antes de dar NO ENVIADA la espera sigue mirando hasta 20 s desde el clic si aparece la ventana «Reminder» o la página
+    que dice que la reserva se envió, y con cualquiera de las dos sigue su camino enseguida, sin esperar el resto. NO
+    ENVIADA solo si a los 20 s el Submit sigue a la vista y no apareció ninguna. Corre de punta a punta el código real de
+    reservar_cosco después de su guarda (despues_de_la_guarda), del clic al estado, sobre un portal falso en el tiempo."""
+    SUBMIT = "button:has-text('Submit'), .btn:has-text('Submit')"
+    RECHAZO = ("COSCO: el portal no aceptó el envío y marcó: «Gross Weight is required». La reserva no se envió; "
+               "corrige esos datos y vuelve a correrla.")
+    TRAMO = "COSCO marcó errores de campo a los 3 s de esperar el resultado. Antes de darlos por un rechazo"
+    TOPE = "A los 20 s del Submit no apareció la ventana 'Reminder' ni la página que dice que la reserva se envió."
+
+    def correr(self, **escena):
+        portal = PortalCOSCO(self.mod, **escena)
+        with mock.patch.object(self.mod, "time", Reloj(portal.ahora)):
+            carpeta, reg = self.corrida()
+            try:
+                r = despues_de_la_guarda(self.mod, "reservar_cosco")(portal.pagina, portal.marco, reg, 8)
+            finally:
+                reg.cerrar()
+        self.assertEqual(portal.desconocidos, [], "corrió un JavaScript que la prueba no conoce")
+        self.assertEqual(portal.localizadores, [self.SUBMIT], "buscó algo que pulsar además del Submit")
+        return r, portal.seg(), (carpeta / "log.txt").read_text(encoding="utf-8")
+
+    def test_rechazo_que_dura_los_20_s(self):
+        # Errores de campo desde el principio, el Submit a la vista y ni la ventana ni la página de envío: NO ENVIADA, a
+        # los 20 s del clic justos. Hasta el encargo 79, a los 3 s. La etiqueta del formulario que da _JS_COSCO_EXITO no
+        # corta el tramo.
+        r, seg, log = self.correr()
+        self.assertEqual((r, seg), (("NO ENVIADA", self.RECHAZO), 20.0))
+        self.assertEqual([log.count(self.TRAMO), log.count(self.TOPE)], [1, 1])
+        # Con errores que llegan después del tope (la máscara de carga hasta los 21 s), no espera más: NO ENVIADA con la
+        # primera lectura, como hasta el encargo 79. El tope cuenta desde el clic, no desde los errores.
+        r, seg, log = self.correr(carga=(0, 21))
+        self.assertEqual((r, seg), (("NO ENVIADA", self.RECHAZO), 22.5))
+        self.assertNotIn("Antes de darlos por un rechazo", log)
+        # Con el Submit ya no a la vista a los 20 s, el envío pudo haber entrado: ENVIADA – REVISAR EN PORTAL (encargo
+        # 79).
+        r, seg, _ = self.correr(submit_hasta=10)
+        self.assertEqual((r[0], seg), ("ENVIADA – REVISAR EN PORTAL", 20.0))
+        self.assertIn("pero «Submit» ya no está a la vista: el envío pudo haber entrado", r[1])
+
+    def test_reminder_que_llega_dentro_del_tramo(self):
+        # La ventana a la vista de los 9 a los 12 s: el tramo la ve a los 9 s y sigue su camino enseguida. Mientras siga
+        # a la vista solo se espera, y los errores vistos antes van como aviso del portal (encargo 77): ENVIADA –
+        # REVISAR EN PORTAL a los 13,5 s, sin esperar el resto del tramo.
+        linea = ("Ventana 'Reminder' a la vista a los 9 s de esperar el resultado, con campos marcados antes: es un paso "
+                 "normal de COSCO, que sale después del envío. No pulso nada y sigo esperando.")
+        for en_el_marco in (False, True):         # la ventana, en la página o en el marco del formulario
+            with self.subTest(en_el_marco=en_el_marco):
+                r, seg, log = self.correr(reminder=(9, 12), reminder_en_el_marco=en_el_marco)
+                self.assertEqual((r, seg), (("ENVIADA – REVISAR EN PORTAL", "COSCO: se pulsó «Submit» y el portal "
+                                             "mostró un error: «Gross Weight is required». " + REVISA), 13.5))
+                self.assertEqual(log.count(linea), 1)
+                self.assertEqual(log.count("La ventana 'Reminder' dejó de verse a los 12 s de esperar el resultado."), 1)
+                self.assertNotIn(self.TOPE, log)
+        # Un paso normal: el registro del panel no la pinta como una alerta (clase, en JS_INDEX; revisión de código).
+        self.assertEqual(clases(self, [linea]), [["f-info", ""]])
+        # Una ventana que se ve en una sola vuelta del tramo también cuenta: la espera la recuerda, y nunca da NO
+        # ENVIADA después.
+        r, seg, _ = self.correr(reminder=(7.5, 8))
+        self.assertEqual((r[0], seg), ("ENVIADA – REVISAR EN PORTAL", 10.5))
+
+    def test_pagina_de_envio_dentro_del_tramo(self):
+        # La página que dice que la reserva se envió desde los 10 s, cuando los errores y el Submit ya no se ven: el tramo
+        # la ve a los 10,5 s y sigue su camino enseguida: EMITIDA – CONFIRMAR POR CORREO, con su número.
+        r, seg, log = self.correr(errores=(0, 10), envio=10, submit_hasta=10)
+        self.assertEqual((r[0], seg), ("EMITIDA – CONFIRMAR POR CORREO", 10.5))
+        self.assertIn("(Booking: CD1234567890)", r[1])
+        self.assertEqual(log.count("La página dijo que la reserva se envió a los 10 s de esperar el resultado, después "
+                                   "de los errores de campo."), 1)
+        self.assertNotIn(self.TOPE, log)
+        # Con los errores todavía a la vista, las dos señales se contradicen (encargo 78): ENVIADA – REVISAR EN PORTAL.
+        r, seg, _ = self.correr(envio=10)
+        self.assertEqual((r[0], seg), ("ENVIADA – REVISAR EN PORTAL", 10.5))
+        self.assertIn("Las dos señales se contradicen", r[1])
+
+    def test_sin_errores_de_campo_no_hay_tramo(self):
+        # FRENA SI del encargo: sin errores de campo, la espera no mira nada nuevo ni espera más. La etiqueta del
+        # formulario la corta a los 3 s, como antes, y la frase la lee _resultado_envio, cada segundo hasta 15 s:
+        # EMITIDA – CONFIRMAR POR CORREO a los 10 s.
+        r, seg, log = self.correr(errores=(0, 0), envio=10, submit_hasta=10)
+        self.assertEqual((r[0], seg), ("EMITIDA – CONFIRMAR POR CORREO", 10.0))
+        self.assertNotIn("Antes de darlos por un rechazo", log)
+
+    def test_pagina_de_envio_es_la_frase(self):
+        # La página de envío es la frase de FORMA_ENVIADA, con la que decide el estado, en una sola lectura: no la
+        # etiqueta «Booking confirmation sent to» del formulario, que da _JS_COSCO_EXITO también antes del clic (medido).
+        # Con dos referencias distintas, también lo es; si la lectura falla, no.
+        mod = self.mod
+        pagina = Pantalla("Booking Details\nBooking confirmation sent to")
+        self.assertFalse(mod._cosco_pagina_de_envio(pagina))
+        self.assertEqual((pagina.lecturas, pagina.esperas), (1, 0))
+        self.assertTrue(mod._cosco_pagina_de_envio(Pantalla(COSCO_ENVIADA)))
+        dos = COSCO_ENVIADA + "\nBooking CD0000000000 has been submitted successfully"
+        self.assertTrue(mod._cosco_pagina_de_envio(Pantalla(dos)))
+
+        class Cerrada(Pantalla):
+            """Una página que ya no deja leer sus marcos: la lectura falla con un error que no es de la frase."""
+            @property
+            def frames(self):
+                raise RuntimeError("la página se cerró")
+
+            @frames.setter
+            def frames(self, valor):
+                pass
+        self.assertFalse(mod._cosco_pagina_de_envio(Cerrada("")))
 
 
 class TestLecturaDelPanel(soporte.CasoAQ):

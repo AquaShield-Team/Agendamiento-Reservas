@@ -244,12 +244,35 @@ mismo botón de antes con `_pulsar_boton` (que dice si pulsó), guarda en `error
       envío que entró ningún documento lo trae (1 de 1; sin las hojas de estilo, lo que el HTML guardado da por «a la
       vista» no es lo que vio el navegador).
     - **No está medido** (revisión de código del encargo 79): que COSCO deje su Submit a la vista cuando rechaza (si no,
-      cada fila rechazada queda en REVISAR, el lado seguro); ni que lo quite enseguida cuando acepta. La espera ve los
-      errores a unos 3 s del Submit y el Submit se lee en ese instante; el 22-10 el Reminder llegó a los ~12 s y la frase
-      después. Si COSCO aceptara un envío con errores de campo y dejara su Submit hasta su respuesta, la fila quedaría NO
-      ENVIADA con la reserva creada. Cerrarlo sería esperar más antes de dar NO ENVIADA: lo decide Marcelo.
+      cada fila rechazada queda en REVISAR, el lado seguro); ni que lo quite enseguida cuando acepta.
+  - **Desde el encargo 80, con errores de campo COSCO espera hasta 20 s desde el clic antes de dar NO ENVIADA**
+    (decisión de Marcelo, la opción (b) de la pregunta del encargo 79, `CICLO-cosco-espera-tras-errores.md`). Hasta ahí
+    la espera veía los errores a unos 3 s del Submit y decidía en ese instante; el 22-10, la ventana «Reminder» llegó a
+    los 12,3 s de reloj, y si COSCO aceptaba un envío con errores de campo, la fila quedaba NO ENVIADA con la reserva
+    creada.
+    - Con errores de campo antes de `COSCO_ESPERA_TRAS_ERRORES_SEG` (20 s; hipótesis) desde el clic, contados con el
+      reloj (`time.monotonic`) desde que la espera empieza, y sin la ventana ya vista, `_cosco_tras_los_errores` mira cada
+      1,5 s, sin pulsar nada, si aparece la ventana o la página de envío. Con la ventana, sigue su camino enseguida: la
+      espera la anota, espera mientras siga a la vista, y los errores van como aviso del portal (ENVIADA – REVISAR EN
+      PORTAL). Con la página de envío, también enseguida: vuelve a leer los errores y decide con lo que ve (EMITIDA –
+      CONFIRMAR POR CORREO sin errores; ENVIADA – REVISAR EN PORTAL con ellos, por la contradicción del encargo 78).
+    - Al tope, sin ninguna de las dos, vuelve a leer los errores y decide como en el encargo 79: NO ENVIADA solo si el
+      Submit sigue a la vista. Los errores que aparecen después del tope no esperan más.
+    - **La página de envío es la frase de `FORMA_ENVIADA`** (`_cosco_pagina_de_envio`, una lectura sin espera), la misma
+      con que decide el estado. No es `_JS_COSCO_EXITO`: su «booking confirmation sent to» es la etiqueta de un campo del
+      formulario, y lo da también antes del clic. Medido sin red con el JavaScript del programa: la etiqueta, en el marco
+      del formulario de la guarda del 22-10 y en 10 de los 120 HTML de COSCO de `logs/`; la frase, en ningún formulario,
+      solo en el documento de después del envío del 22-10 (1 de sus 20 HTML; 0 de los 120 de `logs/`).
+    - Sin errores de campo, la espera no cambió ni espera más (lo vigila
+      `test_envio.TestCoscoTrasLosErrores.test_sin_errores_de_campo_no_hay_tramo`), ni con solo un aviso del portal
+      (`TestCosco.test_espera_corta_con_aviso_del_portal`). Los tres casos, de punta a punta (el código real de después
+      de la guarda, del clic al estado, con un reloj falso), en `TestCoscoTrasLosErrores`.
+    - **La máscara de carga no cuenta en el tramo** (revisión de código del encargo 80): con errores de campo, la máscara
+      a la vista y el Submit a la vista a los 20 s, queda NO ENVIADA. No está medido que COSCO muestre los errores y la
+      máscara a la vez.
 - `NO ENVIADA`: el botón no estaba, o el portal marcó errores de validación (con los campos), la pantalla no dice que la
-  reserva se envió y, en COSCO, su Submit sigue a la vista.
+  reserva se envió y, en COSCO, su Submit sigue a la vista a los 20 s del clic, sin que haya aparecido la ventana
+  «Reminder» ni la página de envío (encargo 80).
 
 Antes de decidir, `_guardar_evidencia` deja la captura y el HTML completo de la página y de cada marco
 (con raíces shadow) en la carpeta de la corrida. No la llames antes de la guarda ni le agregues clics:
@@ -1323,9 +1346,10 @@ línea cambian). De arriba hacia abajo:
      leer los errores una vez (encargo 77), porque con la ventana o la carga hasta el final no se leyeron. Van como
      aviso del portal, nunca como errores de campo: al plazo no se sabe si COSCO creó la reserva, y NO ENVIADA invitaría
      a repetirla (ENVIADA – REVISAR EN PORTAL; revisión de seguridad);
-   - separa los errores de validación (`_JS_COSCO_ERRORES`) del aviso del portal. Con errores de campo, la reserva queda
-     NO ENVIADA solo si el Submit sigue a la vista; si no, ENVIADA – REVISAR EN PORTAL (encargo 79; ver «Después de la
-     guarda»).
+   - separa los errores de validación (`_JS_COSCO_ERRORES`) del aviso del portal. Con errores de campo, espera hasta
+     20 s desde el clic la ventana «Reminder» o la página de envío (encargo 80), y la reserva queda NO ENVIADA solo si
+     no apareció ninguna y el Submit sigue a la vista; si no, ENVIADA – REVISAR EN PORTAL (encargo 79; ver «Después de
+     la guarda»).
    - **La ventana «Reminder» es un paso normal, no un error** (encargo 77): solo recuerda enviar los documentos antes
      de su plazo (`CICLO-cosco-campos-y-reminder.md`). log.txt dice a los cuántos segundos de esperar el resultado
      aparece, que no pulsa nada, y cuándo deja de verse. El 22-10, en el equipo de un colega, estaba a la vista unos

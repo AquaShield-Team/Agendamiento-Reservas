@@ -7422,6 +7422,12 @@ def _cosco_errores(frame, page):
 COSCO_ESPERA_CONFIRMACION_SEG = 180
 # Cada vuelta de la espera.
 _COSCO_PASO_SEG = 1.5
+# Con errores de campo, hasta cuántos segundos desde el clic del Submit la espera sigue mirando si aparece la ventana
+# «Reminder» o la página que dice que la reserva se envió, antes de darlos por un rechazo (decisión de Marcelo, encargo
+# 80, CICLO-cosco-espera-tras-errores.md: NO ENVIADA invita a reenviar la fila, y si COSCO aceptó el envío, la reserva
+# queda duplicada). Con el reloj (time.monotonic), desde que empieza a esperar, justo después del clic. HIPÓTESIS: el
+# único dato medido es el envío del 22-10, con la ventana a la vista unos 12 s de reloj después del Submit (1 de 1).
+COSCO_ESPERA_TRAS_ERRORES_SEG = 20
 
 # ¿Está abierta la ventana «Reminder»? Su texto, medido en las capturas.
 _JS_COSCO_HAY_REMINDER = """() => {
@@ -7529,6 +7535,53 @@ def _cosco_hay_numero(frame, page):
     return False
 
 
+def _cosco_pagina_de_envio(page):
+    """¿La pantalla dice que la reserva se envió? La frase de FORMA_ENVIADA, con la que decide el estado
+    (referencia_tras_envio), en una sola lectura de la página y de sus marcos, sin espera; con más de una referencia,
+    también. Si la lectura falla, no. No mira _JS_COSCO_EXITO: su «booking confirmation sent to» es la etiqueta de un
+    campo del formulario, y lo da también antes del clic (medido en el marco del formulario de la guarda del 22-10 y en
+    10 de los 120 HTML de COSCO de logs/). La frase no está en ningún formulario: solo en el documento de después del
+    envío del 22-10 (1 de sus 20 HTML; 0 de los 120 de logs/; encargo 80)."""
+    try:
+        return bool(referencia_tras_envio(page, "cosco", espera=0))
+    except ReferenciaAmbigua:
+        return True
+    except Exception:
+        return False
+
+
+def _cosco_tras_los_errores(page, frame, reg, inicio, esperado):
+    """Con errores de campo, antes de darlos por un rechazo (decisión de Marcelo, encargo 80,
+    CICLO-cosco-espera-tras-errores.md): mira cada _COSCO_PASO_SEG, sin pulsar nada, si aparece la ventana «Reminder» o
+    la página que dice que la reserva se envió (_cosco_pagina_de_envio), hasta COSCO_ESPERA_TRAS_ERRORES_SEG desde el
+    clic ('inicio', de time.monotonic: cuando empezó a esperar el resultado, justo después del clic). Con cualquiera de
+    las dos vuelve enseguida, sin esperar el resto. Devuelve (lo que vio, esperado): «reminder», «envio», o '' si llegó al
+    tope sin ninguna; 'esperado' suma sus esperas, como el resto de la espera. log.txt dice cómo terminó."""
+    reg.info(f"COSCO marcó errores de campo a los {esperado:.0f} s de esperar el resultado. Antes de darlos por un "
+             f"rechazo, espero hasta los {COSCO_ESPERA_TRAS_ERRORES_SEG} s desde el Submit, sin pulsar nada, por si "
+             f"aparece la ventana 'Reminder' o la página que dice que la reserva se envió.")
+    while True:
+        falta = COSCO_ESPERA_TRAS_ERRORES_SEG - (time.monotonic() - inicio)
+        if falta <= 0:
+            break
+        paso = min(_COSCO_PASO_SEG, falta)
+        esperar(page, paso)
+        esperado += paso
+        if _cosco_en_alguno(frame, page, _JS_COSCO_HAY_REMINDER):
+            # Sin «error» en el texto: el registro del panel pintaría como alerta un paso normal (clase, en JS_INDEX).
+            reg.info(f"Ventana 'Reminder' a la vista a los {esperado:.0f} s de esperar el resultado, con campos "
+                     f"marcados antes: es un paso normal de COSCO, que sale después del envío. No pulso nada y sigo "
+                     f"esperando.")
+            return "reminder", esperado
+        if _cosco_pagina_de_envio(page):
+            reg.info(f"La página dijo que la reserva se envió a los {esperado:.0f} s de esperar el resultado, después "
+                     f"de los errores de campo.")
+            return "envio", esperado
+    reg.info(f"A los {COSCO_ESPERA_TRAS_ERRORES_SEG} s del Submit no apareció la ventana 'Reminder' ni la página que "
+             f"dice que la reserva se envió.")
+    return "", esperado
+
+
 def _cosco_esperar_resultado(page, frame, reg):
     """Después de pulsar Submit en COSCO, espera el resultado sin pulsar nada más (decisiones de Marcelo,
     CICLO-revision-corrida-completa.md y, desde el encargo 78, CICLO-decisiones-tras-el-envio.md), hasta ver errores o
@@ -7538,10 +7591,16 @@ def _cosco_esperar_resultado(page, frame, reg):
     el encargo 78, se pulsaba una vez). El 22-10 estaba a la vista unos 12 s después del Submit, el programa no pulsó
     nada, se cerró, y la página dijo que la reserva se envió (encargo 77). log.txt dice cuándo aparece y cuándo deja de
     verse, contados desde que empieza a esperar.
+    Con errores de campo antes de COSCO_ESPERA_TRAS_ERRORES_SEG desde el clic, y sin la ventana vista, todavía no corta:
+    sigue mirando hasta ese tope si aparece la ventana o la página que dice que la reserva se envió
+    (_cosco_tras_los_errores; decisión de Marcelo, encargo 80). Con la ventana sigue su camino, como cualquier ventana;
+    con la página, o al tope, vuelve a leer los errores y decide con lo que se ve. Sin errores de campo, ni con solo un
+    aviso del portal, no mira nada de eso: ese camino no cambió.
     Devuelve (campos, error_portal, vio_reminder). No decide el estado: sin errores, _resultado_envio da EMITIDA –
     CONFIRMAR POR CORREO si la pantalla dice que la reserva se envió (FORMA_ENVIADA), y si no, ENVIADA – REVISAR EN
     PORTAL. Hasta 0f1507e pulsaba «el último Submit» y lo repetía durante unos 70 s, y las reservas se creaban igual
     (CICLO-cosco-campos-y-reminder.md)."""
+    inicio = time.monotonic()           # justo después del clic: de aquí cuenta el tope con errores de campo
     reg.info("Esperando el resultado de COSCO (la ventana 'Reminder' o la confirmación)...")
     campos, error_portal = [], ""
     vio_reminder = vio_carga = rem_abierta = rem_cerrada = False
@@ -7569,6 +7628,13 @@ def _cosco_esperar_resultado(page, frame, reg):
         esperar(page, _COSCO_PASO_SEG)
         esperado += _COSCO_PASO_SEG
         campos, error_portal = _cosco_errores(frame, page)
+        if campos and not vio_reminder and time.monotonic() - inicio < COSCO_ESPERA_TRAS_ERRORES_SEG:
+            # Errores de campo antes del tope, sin la ventana vista: todavía no son un rechazo (encargo 80).
+            vio, esperado = _cosco_tras_los_errores(page, frame, reg, inicio, esperado)
+            if vio == "reminder":
+                rem_abierta = vio_reminder = True
+                continue                  # su camino: mientras siga a la vista, solo se espera
+            campos, error_portal = _cosco_errores(frame, page)     # lo que se ve con la página de envío, o al tope
         if campos or error_portal:
             break
         if _cosco_hay_numero(frame, page) or _cosco_en_alguno(frame, page, _JS_COSCO_EXITO):

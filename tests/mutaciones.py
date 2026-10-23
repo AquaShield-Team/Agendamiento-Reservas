@@ -1046,7 +1046,7 @@ MUTACIONES += [
          viejo='        campos += [c for c in (r.get("campos") or []) if c not in campos]\n',
          nuevo='        campos += list(r.get("campos") or [])\n'),
     dict(id="cosco-espera-no-corta-con-errores",
-         pruebas=[CO_ + "test_espera_corta_con_errores_de_validacion", CO_ + "test_espera_corta_con_aviso_del_portal"],
+         pruebas=[CO_ + "test_errores_de_validacion_esperan_hasta_el_tope", CO_ + "test_espera_corta_con_aviso_del_portal"],
          viejo="        if campos or error_portal:\n            break\n", nuevo="        if False:\n            break\n"),
     dict(id="cosco-espera-no-anota-el-reminder",
          pruebas=[CO_ + "test_reminder_no_se_pulsa", CO_ + "test_reminder_tardio_tampoco_se_pulsa",
@@ -9255,4 +9255,112 @@ MUTACIONES += [
     dict(id="e79-duda-antes-que-la-contradiccion", pruebas=[SUBMIT_DUDA],
          viejo=RAMA_CONTRADICE,
          nuevo="        if campos_en_duda:\n            return (ENVIADA_REVISAR, campos_en_duda)\n" + RAMA_CONTRADICE),
+]
+
+# --- Encargo 80 (CICLO-cosco-espera-tras-errores.md), decisión de Marcelo (la opción (b) del encargo 79): con errores de
+# campo tras el Submit de COSCO, antes de dar NO ENVIADA la espera sigue mirando hasta 20 s desde el clic si aparece la
+# ventana «Reminder» o la página que dice que la reserva se envió, y con cualquiera de las dos sigue su camino
+# enseguida. Los tres casos de punta a punta (TestCoscoTrasLosErrores), la espera sola (TestCosco) y el FRENA SI: sin
+# errores de campo, nada cambia ---
+TE80 = "test_envio.TestCoscoTrasLosErrores."
+TOPE_E80 = CO_ + "test_errores_de_validacion_esperan_hasta_el_tope"
+RECHAZO_E80 = TE80 + "test_rechazo_que_dura_los_20_s"
+REMINDER_E80 = TE80 + "test_reminder_que_llega_dentro_del_tramo"
+ENVIO_E80 = TE80 + "test_pagina_de_envio_dentro_del_tramo"
+FRASE_E80 = TE80 + "test_pagina_de_envio_es_la_frase"
+TRAMO_E80 = ("        if campos and not vio_reminder and time.monotonic() - inicio < COSCO_ESPERA_TRAS_ERRORES_SEG:\n")
+LLAMA_E80 = "            vio, esperado = _cosco_tras_los_errores(page, frame, reg, inicio, esperado)\n"
+MARCA_E80 = "                rem_abierta = vio_reminder = True\n"
+RELEE_E80 = ("            campos, error_portal = _cosco_errores(frame, page)     # lo que se ve con la página de envío, "
+             "o al tope\n")
+VE_REMINDER_E80 = ("        if _cosco_en_alguno(frame, page, _JS_COSCO_HAY_REMINDER):\n"
+                   "            # Sin «error» en el texto: el registro del panel pintaría como alerta un paso normal "
+                   "(clase, en JS_INDEX).\n")
+DICE_REMINDER_E80 = ("            reg.info(f\"Ventana 'Reminder' a la vista a los {esperado:.0f} s de esperar el resultado, "
+                     "con campos \"\n"
+                     "                     f\"marcados antes: es un paso normal de COSCO, que sale después del envío. No "
+                     "pulso nada y sigo \"\n"
+                     "                     f\"esperando.\")\n")
+VE_ENVIO_E80 = "        if _cosco_pagina_de_envio(page):\n"
+DICE_ENVIO_E80 = ("            reg.info(f\"La página dijo que la reserva se envió a los {esperado:.0f} s de esperar el "
+                  "resultado, después \"\n"
+                  "                     f\"de los errores de campo.\")\n")
+DICE_TOPE_E80 = ("    reg.info(f\"A los {COSCO_ESPERA_TRAS_ERRORES_SEG} s del Submit no apareció la ventana 'Reminder' ni "
+                 "la página que \"\n"
+                 "             f\"dice que la reserva se envió.\")\n")
+DICE_TRAMO_E80 = ("    reg.info(f\"COSCO marcó errores de campo a los {esperado:.0f} s de esperar el resultado. Antes de "
+                  "darlos por un \"\n"
+                  "             f\"rechazo, espero hasta los {COSCO_ESPERA_TRAS_ERRORES_SEG} s desde el Submit, sin "
+                  "pulsar nada, por si \"\n"
+                  "             f\"aparece la ventana 'Reminder' o la página que dice que la reserva se envió.\")\n")
+ATRAPA_E80 = ("    except ReferenciaAmbigua:\n        return True\n    except Exception:\n        return False\n")
+
+MUTACIONES += [
+    # La espera: sin el tramo; con él también con la ventana ya vista, con solo un aviso del portal o sin errores de campo
+    # (el FRENA SI); el tope contado desde los errores, y no desde el clic; otro tope; un paso que se pasa del tope.
+    dict(id="e80-sin-tramo", pruebas=[TOPE_E80, RECHAZO_E80],
+         viejo=TRAMO_E80, nuevo="        if False:\n"),
+    dict(id="e80-tramo-con-el-reminder-visto", pruebas=[REMINDER_E80],
+         viejo=TRAMO_E80, nuevo=TRAMO_E80.replace("not vio_reminder and ", "")),
+    dict(id="e80-tramo-con-aviso-del-portal", pruebas=[CO_ + "test_espera_corta_con_aviso_del_portal"],
+         viejo=TRAMO_E80, nuevo=TRAMO_E80.replace("if campos and", "if (campos or error_portal) and")),
+    dict(id="e80-tramo-sin-errores-de-campo", pruebas=[TE80 + "test_sin_errores_de_campo_no_hay_tramo"],
+         viejo=TRAMO_E80, nuevo=TRAMO_E80.replace("if campos and ", "if ")),
+    dict(id="e80-tope-desde-los-errores", pruebas=[TOPE_E80, RECHAZO_E80],
+         viejo=LLAMA_E80, nuevo=LLAMA_E80.replace("reg, inicio, esperado", "reg, time.monotonic(), esperado")),
+    dict(id="e80-otro-tope", pruebas=[TOPE_E80, RECHAZO_E80],
+         viejo="COSCO_ESPERA_TRAS_ERRORES_SEG = 20\n", nuevo="COSCO_ESPERA_TRAS_ERRORES_SEG = 30\n"),
+    dict(id="e80-se-pasa-del-tope", pruebas=[TOPE_E80, RECHAZO_E80],
+         viejo="        paso = min(_COSCO_PASO_SEG, falta)\n", nuevo="        paso = _COSCO_PASO_SEG\n"),
+    # La ventana en el tramo: sin mirarla, sin recordarla (una que se ve en una sola vuelta), o callada en log.txt.
+    dict(id="e80-tramo-sin-reminder", pruebas=[REMINDER_E80],
+         viejo=VE_REMINDER_E80, nuevo=VE_REMINDER_E80.replace(
+             "        if _cosco_en_alguno(frame, page, _JS_COSCO_HAY_REMINDER):\n", "        if False:\n")),
+    dict(id="e80-reminder-del-tramo-sin-marcar", pruebas=[REMINDER_E80],
+         viejo=MARCA_E80, nuevo=""),
+    dict(id="e80-reminder-del-tramo-callado", pruebas=[REMINDER_E80],
+         viejo=DICE_REMINDER_E80, nuevo=""),
+    # La página de envío en el tramo: sin mirarla, con _JS_COSCO_EXITO (que da la etiqueta del formulario), callada; y
+    # sin volver a leer los errores después.
+    dict(id="e80-envio-no-se-mira", pruebas=[ENVIO_E80],
+         viejo=VE_ENVIO_E80, nuevo="        if False:\n"),
+    dict(id="e80-envio-con-exito", pruebas=[TOPE_E80, RECHAZO_E80],
+         viejo=VE_ENVIO_E80, nuevo="        if _cosco_en_alguno(frame, page, _JS_COSCO_EXITO):\n"),
+    dict(id="e80-envio-callado", pruebas=[ENVIO_E80],
+         viejo=DICE_ENVIO_E80, nuevo=""),
+    dict(id="e80-sin-releer-los-errores", pruebas=[ENVIO_E80],
+         viejo=RELEE_E80, nuevo=""),
+    # Lo que dice log.txt al empezar el tramo y al tope.
+    dict(id="e80-tramo-callado", pruebas=[TOPE_E80, RECHAZO_E80],
+         viejo=DICE_TRAMO_E80, nuevo=""),
+    dict(id="e80-tope-callado", pruebas=[TOPE_E80, RECHAZO_E80],
+         viejo=DICE_TOPE_E80, nuevo=""),
+    # La página de envío es la frase, en una sola lectura sin espera; con dos referencias también; si la lectura falla,
+    # no.
+    dict(id="e80-pagina-de-envio-con-espera", pruebas=[FRASE_E80],
+         viejo='        return bool(referencia_tras_envio(page, "cosco", espera=0))\n',
+         nuevo='        return bool(referencia_tras_envio(page, "cosco"))\n'),
+    dict(id="e80-ambigua-no-es-envio", pruebas=[FRASE_E80],
+         viejo=ATRAPA_E80, nuevo=ATRAPA_E80.replace("        return True\n", "        return False\n", 1)),
+    dict(id="e80-lectura-que-falla-es-envio", pruebas=[FRASE_E80],
+         viejo=ATRAPA_E80, nuevo=ATRAPA_E80[:ATRAPA_E80.rindex("        return False\n")] + "        return True\n"),
+]
+
+# De la revisión de código del encargo 80: las mutaciones del revisor que el censo no tenía.
+MUTACIONES += [
+    dict(id="e80-tramo-sin-mirar-el-reloj", pruebas=[RECHAZO_E80],
+         viejo=TRAMO_E80, nuevo="        if campos and not vio_reminder:\n"),
+    dict(id="e80-envio-cuenta-como-reminder", pruebas=[ENVIO_E80],
+         viejo="            if vio == \"reminder\":\n", nuevo="            if vio:\n"),
+    dict(id="e80-tope-estricto", pruebas=[TOPE_E80, RECHAZO_E80],
+         viejo="        if falta <= 0:\n", nuevo="        if falta < 0:\n"),
+    dict(id="e80-reminder-sin-seguir-su-camino", pruebas=[REMINDER_E80],
+         viejo="                continue                  # su camino: mientras siga a la vista, solo se espera\n",
+         nuevo="                pass\n"),
+    dict(id="e80-tramo-sin-sumar-lo-esperado", pruebas=[REMINDER_E80, ENVIO_E80],
+         viejo="        esperado += paso\n", nuevo=""),
+    dict(id="e80-reminder-del-tramo-solo-en-la-pagina", pruebas=[REMINDER_E80],
+         viejo=VE_REMINDER_E80, nuevo=VE_REMINDER_E80.replace("(frame, page,", "(None, page,")),
+    dict(id="e80-reminder-del-tramo-solo-en-el-marco", pruebas=[REMINDER_E80],
+         viejo=VE_REMINDER_E80, nuevo=VE_REMINDER_E80.replace("(frame, page,", "(frame, None,")),
 ]
