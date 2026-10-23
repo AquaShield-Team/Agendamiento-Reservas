@@ -2,12 +2,13 @@
 
 **Fecha:** 2026-10-23 · **Método:** `metodo-ciclo` v38, en Modo autónomo (por omisión).
 
-Base: `Agendamiento Reservas` @ `6ade779` · árbol limpio (los commits de los encargos 77 y 78, sin subir; `origin/main`
-en `abadb88`).
+Base: `Agendamiento Reservas` @ `6ade779` · árbol limpio. `origin/main` también estaba en `6ade779`: los commits de los
+encargos 77 y 78 se subieron el 2026-10-23 a las 05:52, antes de este encargo (el reflog de `origin/main`).
 
 **Commits,** en `main` y sin push (lo pidió el encargo, y el repo es público):
 - `018c3b3`, el cambio;
-- el de este informe.
+- `ceb74e8`, este informe;
+- el que corrige esta línea de la base, que decía que los commits de los encargos 77 y 78 no estaban subidos.
 
 ## La decisión
 
