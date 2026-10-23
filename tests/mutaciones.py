@@ -9382,3 +9382,22 @@ MUTACIONES += [
     dict(id="e81-carga-sin-motivo", pruebas=[MASCARA_E81, SUBMIT_DUDA],
          viejo=CARGA_E81, nuevo=CARGA_E81.replace('return "la máscara de carga sigue a la vista"', 'return ""')),
 ]
+
+# --- Encargo 81, ítem 2, decisión de Marcelo: sin errores de campo, EMITIDA – CONFIRMAR POR CORREO exige la frase de la
+# página de envío, nunca la etiqueta del formulario (que da _JS_COSCO_EXITO); y el envío del 22-10 sigue dando EMITIDA –
+# CONFIRMAR POR CORREO (FRENA SI). Una lectura que acepta la señal de la espera como la frase, y una espera que no espera
+# con la máscara (el div «partial-shipment» del formulario) ---
+ETIQUETA_E81 = TE80 + "test_la_etiqueta_sola_no_da_emitida"
+DIA_22_E81 = TE80 + "test_el_22_10_sigue_emitido_con_su_evidencia"
+REF_E81 = "                ref = referencia_tras_envio(page, naviera, plazo_ms=plazo_ms)\n"
+
+MUTACIONES += [
+    dict(id="e81-senal-de-la-espera-como-frase", pruebas=[ETIQUETA_E81],
+         viejo=REF_E81,
+         nuevo=REF_E81.replace(
+             "plazo_ms=plazo_ms)\n",
+             "plazo_ms=plazo_ms) or next((\"(sin número)\" for f in [page] + list(getattr(page, \"frames\", None) "
+             "or []) if naviera == \"cosco\" and f.evaluate(_JS_COSCO_EXITO)), \"\")\n")),
+    dict(id="e81-sin-esperar-la-carga", pruebas=[DIA_22_E81, ETIQUETA_E81],
+         viejo="            vio_carga = True\n            continue\n", nuevo="            vio_carga = True\n"),
+]

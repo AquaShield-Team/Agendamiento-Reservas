@@ -972,16 +972,20 @@ class PortalCOSCO:
     tramos [desde, hasta): los errores de campo y la máscara de carga (en el marco o, con 'carga_en_la_pagina', en la
     página), la ventana «Reminder» (en la página o, con 'reminder_en_el_marco', en el marco), la página que dice que la
     reserva se envió (la frase de COSCO, en el marco, desde 'envio') y el Submit del formulario (en el marco, hasta
-    'submit_hasta'). El marco da siempre _JS_COSCO_EXITO: la etiqueta «Booking confirmation sent to» de su formulario
-    (medido en la guarda del 22-10; encargo 80). Anota cada JavaScript que no conoce y cada localizador, y corta con
-    Colgada si la espera no termina."""
+    'submit_hasta'). Sin 'formulario_hasta', el marco da _JS_COSCO_EXITO siempre (la etiqueta «Booking confirmation
+    sent to» de su formulario, medida en la guarda del 22-10; encargo 80), sin el div del formulario. Con
+    'formulario_hasta' (encargo 81), el formulario está a la vista hasta ese segundo: mientras se ve, el marco da
+    _JS_COSCO_EXITO (la etiqueta) y _JS_COSCO_EN_CARGA (el div vacío «partial-shipment», por su «ship»), y después,
+    solo con la página de envío. Es una hipótesis: en el HTML guardado, sin las hojas del portal, los dos están en los
+    mismos documentos, pero no está medido que el portal muestre el div. Anota cada JavaScript que no conoce y cada
+    localizador, y corta con Colgada si la espera no termina."""
     SIEMPRE = (0, 10 ** 6)
 
     def __init__(self, mod, errores=SIEMPRE, carga=(0, 0), reminder=(0, 0), envio=None, submit_hasta=10 ** 6,
-                 reminder_en_el_marco=False, carga_en_la_pagina=False):
+                 reminder_en_el_marco=False, carga_en_la_pagina=False, formulario_hasta=None):
         self.mod, self.errores, self.carga, self.reminder = mod, errores, carga, reminder
         self.envio, self.submit_hasta, self.reminder_en_el_marco = envio, submit_hasta, reminder_en_el_marco
-        self.carga_en_la_pagina = carga_en_la_pagina
+        self.carga_en_la_pagina, self.formulario_hasta = carga_en_la_pagina, formulario_hasta
         self.ms, self.clic, self.esperas = 0, None, 0
         self.desconocidos, self.localizadores = [], []
         self.marco = AlcancePortal(self, True)
@@ -1013,13 +1017,17 @@ class PortalCOSCO:
             self.clic = self.ms
             return True
         enviada = self.envio is not None and self.ve(self.envio, 10 ** 6)
+        # Sin 'formulario_hasta', la etiqueta del formulario se ve siempre (encargo 80); con él, hasta ese segundo.
+        formulario = self.formulario_hasta is None or self.ve(0, self.formulario_hasta)
+        div_del_formulario = self.formulario_hasta is not None and self.ve(0, self.formulario_hasta)
         respuestas = {
             m._JS_COSCO_HAY_REMINDER: en_el_marco == self.reminder_en_el_marco and self.ve(*self.reminder),
-            m._JS_COSCO_EN_CARGA: en_el_marco != self.carga_en_la_pagina and self.ve(*self.carga),
+            m._JS_COSCO_EN_CARGA: (en_el_marco != self.carga_en_la_pagina and self.ve(*self.carga))
+                                  or (en_el_marco and div_del_formulario),
             m._JS_COSCO_ERRORES: {"campos": ["Gross Weight is required"] if en_el_marco and self.ve(*self.errores)
                                   else [], "portal": ""},
             m._JS_COSCO_NUMERO: "",
-            m._JS_COSCO_EXITO: en_el_marco,
+            m._JS_COSCO_EXITO: en_el_marco and (formulario or enviada),
             m._JS_COSCO_SUBMIT_PRESENTE: en_el_marco and self.ve(0, self.submit_hasta),
             m._JS_TEXTO_VISIBLE: (COSCO_ENVIADA if enviada else "Booking Details\nBooking confirmation sent to")
                                  if en_el_marco else "",
@@ -1052,6 +1060,7 @@ class TestCoscoTrasLosErrores(ConRegistro):
                 reg.cerrar()
         self.assertEqual(portal.desconocidos, [], "corrió un JavaScript que la prueba no conoce")
         self.assertEqual(portal.localizadores, [self.SUBMIT], "buscó algo que pulsar además del Submit")
+        self.carpeta = carpeta                    # la de la última corrida, con su evidencia
         return r, portal.seg(), (carpeta / "log.txt").read_text(encoding="utf-8")
 
     def test_rechazo_que_dura_los_20_s(self):
@@ -1135,6 +1144,42 @@ class TestCoscoTrasLosErrores(ConRegistro):
         r, seg, log = self.correr(errores=(0, 0), envio=10, submit_hasta=10)
         self.assertEqual((r[0], seg), ("EMITIDA – CONFIRMAR POR CORREO", 10.0))
         self.assertNotIn("Antes de darlos por un rechazo", log)
+
+    def test_el_22_10_sigue_emitido_con_su_evidencia(self):
+        # FRENA SI del encargo 81: el envío del 22-10, con la reserva creada, en el tiempo: la ventana de los 12 a los 33 s
+        # y, desde ahí, la página de envío. Lo medido es el log de ese día: la espera, con las mismas vueltas, no se cortó
+        # antes de ver la ventana a los 12,3 s, aunque la etiqueta del formulario da _JS_COSCO_EXITO. Hay dos lecturas que
+        # lo explican, y las dos son hipótesis (no está medido con las hojas del portal):
+        # - el formulario a la vista hasta que la ventana se cierra, con su div «partial-shipment», que la espera toma
+        #   por la carga (formulario_hasta);
+        # - una máscara de carga de verdad hasta que llega la ventana, con la etiqueta a la vista.
+        # Con las dos, EMITIDA – CONFIRMAR POR CORREO, con su número y su evidencia. Una lectura que cortara la espera
+        # antes de los 12 s contradice el log (revisión de código del ítem 2).
+        lecturas = {"el div del formulario": dict(formulario_hasta=33),
+                    "una máscara hasta la ventana": dict(carga=(0, 12))}
+        for lectura, escena in lecturas.items():
+            with self.subTest(lectura=lectura):
+                r, seg, log = self.correr(errores=(0, 0), reminder=(12, 33), envio=33, submit_hasta=33, **escena)
+                self.assertEqual((r[0], seg), ("EMITIDA – CONFIRMAR POR CORREO", 34.5))
+                self.assertIn("(Booking: CD1234567890)", r[1])
+                self.assertEqual(log.count("Ventana 'Reminder' a la vista a los 12 s de esperar el resultado"), 1)
+                self.assertEqual(log.count("La ventana 'Reminder' dejó de verse a los 33 s de esperar el resultado."), 1)
+                self.assertEqual(sorted(p.name for p in self.carpeta.iterdir() if p.name != "log.txt"),
+                                 ["cosco_f8_6_confirmado.html", "cosco_f8_6_confirmado.png",
+                                  "cosco_f8_6_confirmado_marco1.html"])
+
+    def test_la_etiqueta_sola_no_da_emitida(self):
+        # Decisión de Marcelo, encargo 81 (ítem 2): sin errores de campo, EMITIDA – CONFIRMAR POR CORREO exige la frase de
+        # la página de envío. Medido: la exige ya, porque _resultado_envio la lee (referencia_tras_envio) y COSCO no tiene
+        # forma de número. La etiqueta del formulario (_JS_COSCO_EXITO), sin su div ni la máscara, corta la espera a los
+        # 3 s; sin la frase, _resultado_envio la busca hasta 15 s y da ENVIADA – REVISAR EN PORTAL, nunca EMITIDA.
+        revisa = "COSCO: se pulsó «Submit», pero la pantalla no mostró que la reserva se enviara. " + REVISA
+        r, seg, _ = self.correr(errores=(0, 0))
+        self.assertEqual((r, seg), (("ENVIADA – REVISAR EN PORTAL", revisa), 18.0))
+        # Con el formulario a la vista para siempre (su etiqueta y su div) y sin la frase: la espera llega a su plazo de
+        # 180 s, y tampoco EMITIDA.
+        r, seg, _ = self.correr(errores=(0, 0), formulario_hasta=10 ** 6)
+        self.assertEqual((r, seg), (("ENVIADA – REVISAR EN PORTAL", revisa), 195.0))
 
     def test_pagina_de_envio_es_la_frase(self):
         # La página de envío es la frase de FORMA_ENVIADA, con la que decide el estado, en una sola lectura: no la

@@ -211,6 +211,18 @@ mismo botón de antes con `_pulsar_boton` (que dice si pulsó), guarda en `error
   Cada frase se midió en la única emisión de su naviera que guardó su HTML, la del 22-10 (1 de 1; COSCO, en el marco del
   formulario). En `logs/` de este equipo no aparece ninguna (medido sin red con el JavaScript del programa: la de COSCO,
   en 1.347 HTML; la de CMA-CGM, en los 409 de CMA-CGM). Con cualquier duda queda ENVIADA – REVISAR EN PORTAL.
+  **Sin la frase, nunca EMITIDA – CONFIRMAR POR CORREO** (decisión de Marcelo, encargo 81, ítem 2): ni por la etiqueta
+  «Booking confirmation sent to» del formulario de COSCO, que da `_JS_COSCO_EXITO` (la señal con que su espera deja de
+  esperar) también antes del clic, ni por ninguna otra señal de la espera. Medido: ya era así, porque esa salida de
+  `_resultado_envio` exige la referencia de la frase (`referencia_tras_envio`), y no se cambió el código. Si la etiqueta
+  corta la espera, `_resultado_envio` busca la frase hasta 15 s y, sin ella, ENVIADA – REVISAR EN PORTAL. Lo fijan, de
+  punta a punta, `test_envio.TestCoscoTrasLosErrores.test_la_etiqueta_sola_no_da_emitida` y, con el envío del 22-10 en
+  el tiempo (la ventana de los 12 a los 33 s, y la página de envío), el FRENA SI del encargo:
+  `test_el_22_10_sigue_emitido_con_su_evidencia`, EMITIDA – CONFIRMAR POR CORREO con su número y su evidencia. Lo
+  medido de ese día es su log: la espera no se cortó antes de ver la ventana. La prueba lo modela con las dos lecturas
+  que lo explican, las dos hipótesis: el `div` `partial-shipment` del formulario a la vista, o una máscara de verdad
+  hasta la ventana. Con una espera que se cortara antes (un hueco entre la máscara y la ventana), una reserva creada
+  quedaría ENVIADA – REVISAR EN PORTAL, el lado seguro; esa lectura contradice el log.
   **La referencia es el número de la reserva** (decisión de Marcelo, encargo 78: el de COSCO lo vio en su correo de
   confirmación, y el de CMA-CGM, en el portal): va en el detalle como «(Booking: …)», y de ahí a la columna «N° de
   reserva emitida», en el panel y en la planilla (`_extraer_bkg_limpio`, solo de esa forma y solo con este estado). Un
