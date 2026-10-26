@@ -5450,23 +5450,48 @@ _JS_MSC_HS_ELEGIR = """() => {
 }"""
 
 
+# Las lecturas de la lista del HS Code de MSC después de escribirlo, cada 0,5 s: 7 s. Medido en las 50 elecciones de
+# los log.txt de este equipo (17) y del colega del 23-10 (33) (encargo 82): el programa eligió la sugerencia del salmón
+# de 1,5 a 2,1 s después de escribirlo.
+MSC_SONDEOS_HS = 14
+
+
+def _msc_escribir_hs(page, inp, hscode):
+    """Escribe el HS Code en su campo (#HsCode), borrando lo que tuviera."""
+    inp.click()
+    inp.press("Control+a")
+    inp.press("Backspace")
+    esperar(page, 0.3)
+    inp.press_sequentially(str(hscode), delay=120)
+
+
 def _msc_set_hscode(page, hscode, reg):
     """Escribe el HS Code (030313), aguarda a que carguen las sugerencias y elige la del salmón. Si ninguna es el
     salmón, o el portal no ofrece ninguna, no pulsa nada y corta la reserva (ObjetivoNoEncontrado). Hasta fb63271,
-    sin sugerencias, confirmaba con el teclado la que quedara primera (CICLO-cola-nueve-items.md)."""
+    sin sugerencias, confirmaba con el teclado la que quedara primera (CICLO-cola-nueve-items.md).
+    Si en la última de MSC_SONDEOS_HS lecturas no hay ninguna sugerencia a la vista, lo vuelve a escribir una sola vez y
+    lee otras tantas (encargo 82, CICLO-msc-lista-abierta-y-hs.md): el 23-10, en el equipo de un colega, 2 de 35 filas
+    no recibieron ninguna en 7 s, con el campo escrito, y quedaron NO ENVIADA; en las otras 33, y en las 17 de este
+    equipo, la eligió de 1,5 a 2,1 s después de escribirlo. Que escribirlo otra vez la traiga es una hipótesis: si la
+    primera lista llegara tarde, la segunda espera la ve igual. Si en esa lectura hay otras y no el salmón, no lo vuelve
+    a escribir. Como antes, decide con la última lectura. Si algo falla desde que lo vuelve a escribir, corta: el campo
+    pudo quedar borrado, y sin esa escritura la fila habría quedado NO ENVIADA (revisión de código del encargo 82)."""
+    elegido, reescrito = "", False
     try:
         inp = page.locator("#HsCode").first
         inp.wait_for(state="visible", timeout=8000)
-        inp.click()
-        inp.press("Control+a")
-        inp.press("Backspace")
-        esperar(page, 0.3)
-        inp.press_sequentially(str(hscode), delay=120)
+        _msc_escribir_hs(page, inp, hscode)
         reg.info(f"HS Code escrito '{hscode}', esperando carga de opciones...")
 
         # Aguardar a que cargue la lista de opciones (llamada AJAX de MSC); el salmón puede llegar después
-        elegido = ""
-        for seg in range(14):   # hasta 7 segundos de sondeo
+        for seg in range(2 * MSC_SONDEOS_HS):   # hasta 7 s; sin ninguna sugerencia, otra escritura y 7 s más
+            if seg == MSC_SONDEOS_HS:
+                if elegido:   # el portal ofreció otras («sin-salmon»): no se vuelve a escribir
+                    break
+                reg.info(f"HS Code: el portal no ofreció ninguna sugerencia en {MSC_SONDEOS_HS * 0.5:.0f} s; lo "
+                         f"vuelvo a escribir, una sola vez")
+                reescrito = True
+                _msc_escribir_hs(page, inp, hscode)
             esperar(page, 0.5)
             elegido = str(page.evaluate(_JS_MSC_HS_ELEGIR))
             if elegido and elegido != "sin-salmon":
@@ -5483,6 +5508,10 @@ def _msc_set_hscode(page, hscode, reg):
         esperar(page, 1.0)
         return True
     except Exception as e:
+        if reescrito and not (elegido and elegido != "sin-salmon"):
+            raise ObjetivoNoEncontrado("HS Code de MSC", f"la sugerencia del salmón para '{hscode}': el portal no "
+                                                         f"ofreció ninguna en {MSC_SONDEOS_HS * 0.5:.0f} s, y al "
+                                                         f"volver a escribirlo el programa falló ({str(e)[:60]})")
         reg.info(f"HS Code err: {e}")
         return False
 

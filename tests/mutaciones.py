@@ -9454,3 +9454,43 @@ MUTACIONES += [
     dict(id="e82-js-cierre-otro-widget", pruebas=[JS_LISTAS_E82],
          viejo=".data('kendoComboBox') : null;\n", nuevo=".data('kendoDropDownList') : null;\n"),
 ]
+
+# --- Encargo 82 (CICLO-msc-lista-abierta-y-hs.md): sin ninguna sugerencia del HS Code de MSC en MSC_SONDEOS_HS lecturas,
+# lo vuelve a escribir una sola vez y lee otras tantas; con otras sugerencias sin el salmón, no. Sin volver a escribirlo,
+# volviendo a escribirlo también con otras, leyendo una tercera tanda, con otra cuenta de lecturas, o escribiéndolo sin
+# borrar lo que había ---
+HS_E82 = M1 + "test_hs_sin_sugerencias_lo_escribe_otra_vez"
+HS_FALLA_E82 = M1 + "test_hs_si_falla_al_volver_a_escribirlo_corta"
+OTRA_VEZ_E82 = ('                reg.info(f"HS Code: el portal no ofreció ninguna sugerencia en {MSC_SONDEOS_HS * 0.5:.0f} s; lo "\n'
+                '                         f"vuelvo a escribir, una sola vez")\n'
+                '                reescrito = True\n'
+                '                _msc_escribir_hs(page, inp, hscode)\n')
+
+MUTACIONES += [
+    dict(id="e82-hs-no-la-vuelve-a-escribir", pruebas=[HS_E82],
+         viejo=OTRA_VEZ_E82, nuevo="                break\n"),
+    dict(id="e82-hs-otra-vez-tambien-sin-salmon", pruebas=[HS_E82],
+         viejo="                if elegido:   # el portal", nuevo="                if False:   # el portal"),
+    dict(id="e82-hs-una-tercera-vez", pruebas=[HS_E82],
+         viejo="        for seg in range(2 * MSC_SONDEOS_HS):", nuevo="        for seg in range(3 * MSC_SONDEOS_HS):"),
+    dict(id="e82-hs-menos-lecturas", pruebas=[HS_E82],
+         viejo="MSC_SONDEOS_HS = 14\n", nuevo="MSC_SONDEOS_HS = 10\n"),
+    # De la revisión de código: una escritura de verdad por cada tanda (tres), decidir con cualquier lectura y no con la
+    # última, y lo que falla desde la segunda escritura: que siga (con el campo borrado), o que corte también antes.
+    dict(id="e82-hs-tercera-escritura", pruebas=[HS_E82],
+         viejo=("        for seg in range(2 * MSC_SONDEOS_HS):   # hasta 7 s; sin ninguna sugerencia, otra escritura y 7 s más\n"
+                "            if seg == MSC_SONDEOS_HS:\n"),
+         nuevo=("        for seg in range(3 * MSC_SONDEOS_HS):   # hasta 7 s; sin ninguna sugerencia, otra escritura y 7 s más\n"
+                "            if seg and seg % MSC_SONDEOS_HS == 0:\n")),
+    dict(id="e82-hs-decide-con-cualquier-lectura", pruebas=[HS_E82],
+         viejo="            elegido = str(page.evaluate(_JS_MSC_HS_ELEGIR))\n",
+         nuevo="            elegido = str(page.evaluate(_JS_MSC_HS_ELEGIR)) or elegido\n"),
+    dict(id="e82-hs-falla-al-volver-a-escribir-sigue", pruebas=[HS_FALLA_E82],
+         viejo='        if reescrito and not (elegido and elegido != "sin-salmon"):\n',
+         nuevo='        if False:\n'),
+    dict(id="e82-hs-falla-antes-tambien-corta", pruebas=[HS_FALLA_E82],
+         viejo='        if reescrito and not (elegido and elegido != "sin-salmon"):\n',
+         nuevo='        if not (elegido and elegido != "sin-salmon"):\n'),
+    dict(id="e82-hs-otra-vez-sin-borrar", pruebas=[HS_E82],
+         viejo=OTRA_VEZ_E82, nuevo=OTRA_VEZ_E82.replace("_msc_escribir_hs(page, inp, hscode)", "inp.press_sequentially(str(hscode), delay=120)")),
+]

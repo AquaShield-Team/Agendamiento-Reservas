@@ -684,6 +684,22 @@ cerrado:
   - Lo vigilan `test_clics.TestMsc` (`test_la_lista_de_un_puerto_abierta_se_cierra_antes_de_buscar`,
     `test_con_las_listas_cerradas_el_camino_no_cambia`, `test_si_la_lista_no_se_cierra_bien_corta_sin_buscar` y
     `test_js_listas_de_puertos_y_su_cierre`).
+- **MSC vuelve a escribir el HS Code una vez si el portal no ofrece ninguna sugerencia** (encargo 82,
+  `CICLO-msc-lista-abierta-y-hs.md`; `_msc_set_hscode`, `_msc_escribir_hs`, `MSC_SONDEOS_HS`). Escribe «030313» en
+  `#HsCode` y lee la lista cada 0,5 s, hasta 14 veces (7 s), como antes; elige solo la sugerencia del salmón
+  (`_JS_MSC_HS_ELEGIR`). Si en la 14.ª lectura no hay ninguna sugerencia a la vista, lo vuelve a escribir, borrando el
+  campo, una sola vez, y lee otras 14. Si tampoco, NO ENVIADA, con el mismo motivo de antes. Si en la 14.ª hay otras sin
+  el salmón, no lo vuelve a escribir: NO ENVIADA, como antes. Como antes, decide con la última lectura.
+  - Si algo falla desde que lo vuelve a escribir (un clic, una tecla o una lectura), NO ENVIADA, con lo que falló en el
+    motivo: el campo pudo quedar borrado, y sin esa escritura la fila habría quedado NO ENVIADA (revisión de código del
+    encargo 82). Antes de volver a escribirlo, como antes: lo anota («HS Code err») y la reserva sigue.
+  - El 23-10, en el equipo de un colega, 2 de 35 filas no recibieron ninguna sugerencia en 7 s, con el campo escrito y
+    sin la lista a la vista (su captura y su HTML), y quedaron NO ENVIADA. En las otras 33, y en las 17 de `logs/` de
+    este equipo, el programa eligió el salmón de 1,5 a 2,1 s después de escribirlo.
+  - Que escribirlo otra vez traiga la lista es una hipótesis (no está probado en el portal): si la primera llegara
+    tarde, la segunda espera la ve igual. Con la sugerencia en las primeras 14 lecturas, el camino no cambia.
+  - Lo vigilan `test_clics.TestMsc.test_hs_sin_sugerencias_lo_escribe_otra_vez` y
+    `test_hs_si_falla_al_volver_a_escribirlo_corta`.
 - **COSCO elige el puerto de carga de la fila** (`_cosco_puerto_de_carga`, `CICLO-cola-seis-items.md`): la celda del
   puerto de carga normalizada (`_cosco_puerto_de_la_celda`, `CICLO-inicio-de-todas.md`: la parte antes de la primera
   coma, en mayúsculas, sin tildes, con todo signo como separador y sin el país al final: «CHILE» o, desde el encargo

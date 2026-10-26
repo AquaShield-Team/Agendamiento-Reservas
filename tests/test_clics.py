@@ -1542,6 +1542,100 @@ class TestMsc(ConRegistro):
         self.assertNotIn("ArrowDown", hechos)
         self.assertNotIn("Enter", hechos)
 
+    def test_hs_sin_sugerencias_lo_escribe_otra_vez(self):
+        # El 23-10, en el equipo de un colega, 2 de 35 filas no recibieron ninguna sugerencia del HS Code en 7 s y
+        # quedaron NO ENVIADA (encargo 82, CICLO-msc-lista-abierta-y-hs.md). Desde entonces, sin ninguna en 14
+        # lecturas, lo vuelve a escribir una sola vez y lee otras 14.
+        escritura = ["clic", "Control+a", "Backspace", "030313"]
+        n = self.mod.MSC_SONDEOS_HS
+        self.assertEqual(n, 14)
+        reg, _, log = self.corrida("msc_hs")
+        # Lo de siempre: la sugerencia llega, una sola escritura (su espera de 0,3 s), una lectura y la espera de 1 s.
+        pagina, hechos = pagina_con_respuestas(["030313 SALMON"])
+        self.assertIs(self.mod._msc_set_hscode(pagina, "030313", reg), True)
+        self.assertEqual((hechos, pagina.esperas), (escritura, 3))
+        # Llega en la última lectura de la primera escritura: no la vuelve a escribir.
+        pagina, hechos = pagina_con_respuestas([""] * (n - 1) + ["030313 SALMON"])
+        self.assertIs(self.mod._msc_set_hscode(pagina, "030313", reg), True)
+        self.assertEqual((hechos, pagina.esperas), (escritura, n + 2))
+        self.assertNotIn("lo vuelvo a escribir", log.read_text(encoding="utf-8"))
+        # Ninguna en 14 lecturas: la escribe otra vez, y la sugerencia llega en la primera lectura de después.
+        pagina, hechos = pagina_con_respuestas([""] * n + ["030313 SALMON"])
+        self.assertIs(self.mod._msc_set_hscode(pagina, "030313", reg), True)
+        self.assertEqual((hechos, pagina.esperas), (escritura * 2, n + 1 + 1 + 1 + 1))
+        self.assertIn("HS Code: el portal no ofreció ninguna sugerencia en 7 s; lo vuelvo a escribir, una sola vez",
+                      log.read_text(encoding="utf-8"))
+        # Ninguna tampoco después: corta tras 28 lecturas y dos escrituras, nunca una tercera.
+        pagina, hechos = pagina_con_respuestas([""])
+        with self.assertRaises(self.mod.ObjetivoNoEncontrado) as e:
+            self.mod._msc_set_hscode(pagina, "030313", reg)
+        self.assertEqual((e.exception.paso, e.exception.buscaba),
+                         ("HS Code de MSC", "la sugerencia del salmón para '030313': el portal no ofreció ninguna"))
+        self.assertEqual((hechos, pagina.esperas), (escritura * 2, 2 * n + 2))
+        # Con otras sugerencias y sin el salmón, no la vuelve a escribir: corta tras 14 lecturas.
+        pagina, hechos = pagina_con_respuestas(["sin-salmon"])
+        with self.assertRaises(self.mod.ObjetivoNoEncontrado) as e:
+            self.mod._msc_set_hscode(pagina, "030313", reg)
+        self.assertEqual(e.exception.paso, "HS Code de MSC")
+        self.assertEqual((hechos, pagina.esperas), (escritura, n + 1))
+        # Decide con la última lectura, como antes (revisión de código): otras al principio y ninguna en la 14.ª, la
+        # vuelve a escribir; ninguna al principio y otras en la 14.ª, no.
+        pagina, hechos = pagina_con_respuestas(["sin-salmon"] * (n - 1) + ["", "030313 SALMON"])
+        self.assertIs(self.mod._msc_set_hscode(pagina, "030313", reg), True)
+        self.assertEqual(hechos, escritura * 2)
+        pagina, hechos = pagina_con_respuestas([""] * (n - 1) + ["sin-salmon"])
+        with self.assertRaises(self.mod.ObjetivoNoEncontrado) as e:
+            self.mod._msc_set_hscode(pagina, "030313", reg)
+        self.assertEqual(e.exception.buscaba, "la sugerencia del salmón («Atlantic salmon» o «Salmo salar») entre las "
+                                              "que ofrece el portal para '030313'")
+        self.assertEqual(hechos, escritura)
+
+    def test_hs_si_falla_al_volver_a_escribirlo_corta(self):
+        # Revisión de código del encargo 82: si algo falla desde que lo vuelve a escribir (el campo pudo quedar
+        # borrado), corta, en vez de seguir con el HS Code vacío; sin esa escritura, la fila habría quedado NO ENVIADA.
+        n = self.mod.MSC_SONDEOS_HS
+        reg, _, log = self.corrida("msc_hs_falla")
+        escritura = ["clic", "Control+a", "Backspace", "030313"]
+
+        class FallaAlSegundoClic(CampoFalso):
+            def click(self, **k):
+                if self.hechos.count("clic"):
+                    raise RuntimeError("el clic venció su plazo")
+                super().click(**k)
+        motivo = ("la sugerencia del salmón para '030313': el portal no ofreció ninguna en 7 s, y al volver a "
+                  "escribirlo el programa falló ({})")
+        pagina, hechos = pagina_con_respuestas([""])
+        pagina.locator = lambda sel: FallaAlSegundoClic(hechos)
+        with self.assertRaises(self.mod.ObjetivoNoEncontrado) as e:
+            self.mod._msc_set_hscode(pagina, "030313", reg)
+        self.assertEqual((e.exception.paso, e.exception.buscaba),
+                         ("HS Code de MSC", motivo.format("el clic venció su plazo")))
+        self.assertEqual(hechos, escritura)
+        # Una lectura que falla después de volver a escribirlo, también.
+        lecturas = []
+
+        def leer(js, *a):
+            lecturas.append(js)
+            if len(lecturas) > n:
+                raise RuntimeError("la página navegó")
+            return ""
+        pagina = soporte.PaginaFalsa(texto=leer)
+        hechos = []
+        pagina.locator = lambda sel: CampoFalso(hechos)
+        with self.assertRaises(self.mod.ObjetivoNoEncontrado) as e:
+            self.mod._msc_set_hscode(pagina, "030313", reg)
+        self.assertEqual(e.exception.buscaba, motivo.format("la página navegó"))
+        self.assertEqual(hechos, escritura * 2)
+        # Antes de volver a escribirlo, como antes: lo anota y sigue (devuelve False).
+        lecturas.clear()
+
+        def falla_ya(js, *a):
+            raise RuntimeError("la página navegó antes")
+        pagina = soporte.PaginaFalsa(texto=falla_ya)
+        pagina.locator = lambda sel: CampoFalso([])
+        self.assertIs(self.mod._msc_set_hscode(pagina, "030313", reg), False)
+        self.assertIn("HS Code err: la página navegó antes", log.read_text(encoding="utf-8"))
+
     def test_kendo_sin_coincidencia_corta(self):
         reg, _, log = self.corrida()
         pagina, _ = pagina_con_respuestas(["sin-coincidencia"])
