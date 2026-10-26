@@ -5639,13 +5639,88 @@ def _msc_llenar_comentarios(page, texto, reg):
         return False
 
 
+# Los dos puertos de la ruta de MSC: cada campo es un combobox de Kendo (#POLId y #PODId), con su campo de texto
+# «<id>_input» y su lista de sugerencias «<id>-list». Medido en el HTML guardado del 23-10, en el equipo de un colega
+# (encargo 82, CICLO-msc-lista-abierta-y-hs.md): con la lista abierta, el campo trae aria-expanded="true" y la lista se
+# ve (los 36 HTML de las sugerencias del destino, y el del corte de la fila que no pudo pulsar «Search Schedule»); con la
+# lista cerrada, «false» y la lista escondida (los dos puertos en los 33 HTML de la guarda).
+MSC_PUERTOS = (("POLId", "Port of Load"), ("PODId", "Port of Discharge"))
+
+# De cada puerto de MSC_PUERTOS: [si su lista está abierta, el texto de su campo]. Solo lee.
+_JS_MSC_LISTAS_DE_PUERTOS = """(ids) => ids.map(id => {
+    const campo = document.querySelector('input[name="' + id + '_input"]');
+    const lista = document.getElementById(id + '-list');
+    const seVe = !!(lista && lista.getClientRects().length);
+    return [!!(campo && campo.getAttribute('aria-expanded') === 'true') || seVe, campo ? campo.value : null];
+})"""
+
+# Cierra la lista de sugerencias de un puerto con el método de su combobox de Kendo, sin pulsar ni elegir nada: según la
+# documentación de Kendo, close() solo esconde la lista, sin cambiar lo elegido. No está probado en el portal: por eso
+# _msc_cerrar_listas_abiertas comprueba después que se cerró y que el campo dice lo mismo. Sin un combobox de Kendo con
+# ese id, no hace nada.
+_JS_MSC_CERRAR_LISTA = """(id) => {
+    const w = window.jQuery ? window.jQuery('#' + id).data('kendoComboBox') : null;
+    if (!w) return 'sin-combobox';
+    w.close();
+    return 'cerrada';
+}"""
+
+
+def _msc_listas_de_puertos(page):
+    """{id: (abierta, texto del campo)} de cada puerto de MSC_PUERTOS (_JS_MSC_LISTAS_DE_PUERTOS)."""
+    leido = page.evaluate(_JS_MSC_LISTAS_DE_PUERTOS, [i for i, _ in MSC_PUERTOS])
+    return {i: (bool(x[0]), x[1]) for (i, _), x in zip(MSC_PUERTOS, leido)}
+
+
+def _msc_cerrar_listas_abiertas(page, reg):
+    """Antes de «Search Schedule»: si la lista de sugerencias de un puerto quedó abierta, la cierra con el método de su
+    combobox (_JS_MSC_CERRAR_LISTA), sin pulsar ni elegir nada, y comprueba que se cerró y que su campo sigue diciendo
+    lo mismo. Si no puede comprobarlo, si sigue abierta o si el campo cambió, corta (ObjetivoNoEncontrado): NO ENVIADA,
+    sin pulsar «Search Schedule».
+    El 23-10, en el equipo de un colega, la lista del destino volvió a abrirse después de elegir el puerto (1 de las 36
+    filas de MSC), tapó «Search Schedule», y el clic esperó 30 s sin poder darse: la fila quedó NO ENVIADA, con «no
+    encontré el botón» (encargo 82, CICLO-msc-lista-abierta-y-hs.md). Con las listas cerradas, solo lee: el camino de
+    siempre no cambia. Si esa lectura falla, sigue como antes, al clic."""
+    try:
+        antes = _msc_listas_de_puertos(page)
+    except Exception as e:
+        reg.info(f"listas de sugerencias de los puertos: no pude leerlas ({str(e)[:60]}); sigo")
+        return
+    abiertas = [(i, etiqueta) for i, etiqueta in MSC_PUERTOS if antes[i][0]]
+    if not abiertas:
+        return
+    for i, etiqueta in abiertas:
+        try:
+            r = page.evaluate(_JS_MSC_CERRAR_LISTA, i)
+        except Exception as e:
+            r = f"error: {str(e)[:60]}"
+        reg.info(f"{etiqueta}: su lista de sugerencias quedó abierta; la cierro sin elegir nada ({r})")
+    esperar(page, 0.6)
+    try:
+        despues = _msc_listas_de_puertos(page)
+    except Exception as e:
+        despues = None
+        reg.info(f"listas de sugerencias de los puertos: no pude volver a leerlas ({str(e)[:60]})")
+    for i, etiqueta in abiertas:
+        por_que = ("no pude volver a leerla" if despues is None else "sigue abierta" if despues[i][0]
+                   else "el campo ya no dice lo mismo" if despues[i][1] != antes[i][1] else "")
+        if por_que:
+            raise ObjetivoNoEncontrado("Search Schedule de MSC", f"la lista de sugerencias de «{etiqueta}» cerrada, con "
+                                                                 f"el puerto elegido en su campo: quedó abierta (puede "
+                                                                 f"tapar el botón) y, al cerrarla, {por_que}")
+        reg.info(f"{etiqueta}: lista cerrada, y su campo sigue con el puerto elegido")
+
+
 def _msc_buscar_itinerarios(page, reg):
     """Pulsa «Search Schedule» con click_si_existe: el primer botón, en el orden de la página, cuyo texto traiga «Search
     Schedule» o «Buscar». Si ese no se ve en 6 s, no pulsa nada y levanta ObjetivoNoEncontrado: la reserva queda NO
     ENVIADA, con la captura y el HTML (decisión de Marcelo, CICLO-inicio-de-todas.md). Hasta c4df3ab caía a
     _JS_CLICK_BTN, que pulsaba el primer botón, enlace o input submit de la página, fuera del encabezado y de la
     navegación, cuyo texto trajera «search schedule» o «buscar», visible o no. Medido en logs/: en las 9 búsquedas del
-    2026-09-21 al 26, el botón lo encontró su selector."""
+    2026-09-21 al 26, el botón lo encontró su selector.
+    Antes, una lista de sugerencias de un puerto que quedó abierta se cierra, o corta (_msc_cerrar_listas_abiertas;
+    encargo 82)."""
+    _msc_cerrar_listas_abiertas(page, reg)
     if not click_si_existe(page, "button:has-text('Search Schedule'), button:has-text('Buscar')", 6000, reg):
         raise ObjetivoNoEncontrado("Search Schedule de MSC", "el botón «Search Schedule» o «Buscar» (por su texto)")
 

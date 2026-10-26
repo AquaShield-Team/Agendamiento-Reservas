@@ -2372,14 +2372,16 @@ console.log(JSON.stringify([
         def sin_boton(page, selector, timeout_ms=2500, reg=None):
             pedidos.append(selector)
             return False
+        # Las listas de los puertos, cerradas (encargo 82).
+        cerradas = lambda: soporte.PaginaFalsa(texto=lambda js, *a: [[False, "A"], [False, "B"]])
         with mock.patch.object(self.mod, "click_si_existe", sin_boton):
             with self.assertRaises(self.mod.ObjetivoNoEncontrado) as c:
-                self.mod._msc_buscar_itinerarios(object(), reg)
+                self.mod._msc_buscar_itinerarios(cerradas(), reg)
         self.assertEqual((c.exception.paso, c.exception.buscaba, pedidos),
                          ("Search Schedule de MSC", "el botón «Search Schedule» o «Buscar» (por su texto)",
                           ["button:has-text('Search Schedule'), button:has-text('Buscar')"]))
         with mock.patch.object(self.mod, "click_si_existe", lambda *a, **k: True):
-            self.assertIsNone(self.mod._msc_buscar_itinerarios(object(), reg))
+            self.assertIsNone(self.mod._msc_buscar_itinerarios(cerradas(), reg))
         # reservar_msc la llama antes de la guarda; _JS_CLICK_BTN queda solo en el envío, después, que no se toca.
         tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
         f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_msc")
@@ -2390,6 +2392,135 @@ console.log(JSON.stringify([
         nombres = lambda nodos: [x.id for n in nodos for x in ast.walk(n) if isinstance(x, ast.Name)]
         self.assertNotIn("_JS_CLICK_BTN", nombres(antes_de_la_guarda(f, g)))
         self.assertEqual(nombres(f.body).count("_JS_CLICK_BTN"), 1)
+
+    def pagina_de_puertos(self, lecturas, cierre="cerrada"):
+        """Página falsa de la ruta de MSC: cada lectura de las listas de los puertos devuelve la siguiente de
+        'lecturas' (un Exception se levanta), y cada cierre devuelve 'cierre' o, si es un diccionario, lo de su puerto
+        (un Exception se levanta). Anota en 'hechos' las lecturas, los cierres (con su puerto), las esperas (con sus
+        milisegundos) y el clic en «Search Schedule» (click_si_existe, que la prueba cambia)."""
+        hechos, pendientes = [], list(lecturas)
+        mod = self.mod
+
+        def evaluar(js, *a):
+            if js == mod._JS_MSC_LISTAS_DE_PUERTOS:
+                hechos.append("lee")
+                self.assertEqual(a, (["POLId", "PODId"],))
+                r = pendientes.pop(0)
+                if isinstance(r, Exception):
+                    raise r
+                return r
+            if js == mod._JS_MSC_CERRAR_LISTA:
+                hechos.append(f"cierra {a[0]}")
+                r = cierre.get(a[0], "cerrada") if isinstance(cierre, dict) else cierre
+                if isinstance(r, Exception):
+                    raise r
+                return r
+            raise AssertionError(f"JavaScript inesperado: {js[:60]}")
+        pagina = soporte.PaginaFalsa(texto=evaluar)
+        pagina.wait_for_timeout = lambda ms: hechos.append(f"espera {ms}")
+        return pagina, hechos
+
+    def buscar(self, pagina, hechos, reg):
+        """Corre _msc_buscar_itinerarios con un click_si_existe que anota el clic y lo da por hecho."""
+        def pulsa(page, selector, timeout_ms=2500, reg=None):
+            hechos.append("clic")
+            return True
+        with mock.patch.object(self.mod, "click_si_existe", pulsa):
+            return self.mod._msc_buscar_itinerarios(pagina, reg)
+
+    def test_la_lista_de_un_puerto_abierta_se_cierra_antes_de_buscar(self):
+        # El 23-10, en el equipo de un colega, la lista del destino volvió a abrirse después de elegir el puerto, tapó
+        # «Search Schedule», y la fila quedó NO ENVIADA (encargo 82, CICLO-msc-lista-abierta-y-hs.md). Desde entonces,
+        # se cierra con el método de su combobox, sin pulsar ni elegir nada, y se comprueba antes de buscar.
+        reg, _, log = self.corrida("msc_lista")
+        pagina, hechos = self.pagina_de_puertos([[[False, "A"], [True, "B"]], [[False, "A"], [False, "B"]]])
+        self.assertIsNone(self.buscar(pagina, hechos, reg))
+        self.assertEqual(hechos, ["lee", "cierra PODId", "espera 600", "lee", "clic"])
+        texto = log.read_text(encoding="utf-8")
+        self.assertIn("Port of Discharge: su lista de sugerencias quedó abierta; la cierro sin elegir nada (cerrada)",
+                      texto)
+        self.assertIn("Port of Discharge: lista cerrada, y su campo sigue con el puerto elegido", texto)
+        self.assertNotIn("Port of Load:", texto)
+        # Las dos abiertas: las dos se cierran, en el orden de la ruta.
+        pagina, hechos = self.pagina_de_puertos([[[True, "A"], [True, "B"]], [[False, "A"], [False, "B"]]])
+        self.buscar(pagina, hechos, reg)
+        self.assertEqual(hechos, ["lee", "cierra POLId", "cierra PODId", "espera 600", "lee", "clic"])
+
+    def test_con_las_listas_cerradas_el_camino_no_cambia(self):
+        # Lo de siempre (33 de 33 en la guarda del 23-10): una lectura y el clic, sin cierres ni esperas.
+        reg, _, log = self.corrida("msc_lista_cerrada")
+        pagina, hechos = self.pagina_de_puertos([[[False, "A"], [False, "B"]]])
+        self.buscar(pagina, hechos, reg)
+        self.assertEqual(hechos, ["lee", "clic"])
+        self.assertNotIn("lista", log.read_text(encoding="utf-8"))
+        # Si la lectura falla, sigue al clic, como antes, y lo dice.
+        pagina, hechos = self.pagina_de_puertos([RuntimeError("navegación en curso")])
+        self.buscar(pagina, hechos, reg)
+        self.assertEqual(hechos, ["lee", "clic"])
+        self.assertIn("listas de sugerencias de los puertos: no pude leerlas (navegación en curso); sigo",
+                      log.read_text(encoding="utf-8"))
+
+    def test_si_la_lista_no_se_cierra_bien_corta_sin_buscar(self):
+        # Sigue abierta, el campo cambió, la segunda lectura falla, no hay combobox o el cierre falla: NO ENVIADA, sin
+        # pulsar «Search Schedule».
+        reg, _, log = self.corrida("msc_lista_corta")
+        abierta = [[False, "A"], [True, "B"]]
+        casos = [([abierta, [[False, "A"], [True, "B"]]], "cerrada", "sigue abierta"),
+                 ([abierta, [[False, "A"], [False, "OTRO"]]], "cerrada", "el campo ya no dice lo mismo"),
+                 ([abierta, RuntimeError("se cerró la página")], "cerrada", "no pude volver a leerla"),
+                 ([abierta, [[False, "A"], [True, "B"]]], "sin-combobox", "sigue abierta"),
+                 ([abierta, [[False, "A"], [True, "B"]]], {"PODId": RuntimeError("navegó")}, "sigue abierta")]
+        for lecturas, cierre, por_que in casos:
+            pagina, hechos = self.pagina_de_puertos(lecturas, cierre)
+            with self.assertRaises(self.mod.ObjetivoNoEncontrado) as c:
+                self.buscar(pagina, hechos, reg)
+            self.assertEqual(hechos, ["lee", "cierra PODId", "espera 600", "lee"])
+            self.assertEqual((c.exception.paso, c.exception.buscaba),
+                             ("Search Schedule de MSC", "la lista de sugerencias de «Port of Discharge» cerrada, con el "
+                                                        "puerto elegido en su campo: quedó abierta (puede tapar el "
+                                                        f"botón) y, al cerrarla, {por_que}"))
+        texto = log.read_text(encoding="utf-8")
+        self.assertIn("Port of Discharge: su lista de sugerencias quedó abierta; la cierro sin elegir nada "
+                      "(sin-combobox)", texto)
+        self.assertIn("Port of Discharge: su lista de sugerencias quedó abierta; la cierro sin elegir nada "
+                      "(error: navegó)", texto)
+        # Las dos abiertas y una sola se cierra: corta por la que no, sea la primera o la segunda.
+        for sigue, etiqueta in ((1, "Port of Discharge"), (0, "Port of Load")):
+            despues = [[False, "A"], [False, "B"]]
+            despues[sigue][0] = True
+            pagina, hechos = self.pagina_de_puertos([[[True, "A"], [True, "B"]], despues])
+            with self.assertRaises(self.mod.ObjetivoNoEncontrado) as c:
+                self.buscar(pagina, hechos, reg)
+            self.assertEqual(hechos, ["lee", "cierra POLId", "cierra PODId", "espera 600", "lee"])
+            self.assertEqual(c.exception.buscaba,
+                             f"la lista de sugerencias de «{etiqueta}» cerrada, con el puerto elegido en su campo: "
+                             f"quedó abierta (puede tapar el botón) y, al cerrarla, sigue abierta")
+
+    def test_js_listas_de_puertos_y_su_cierre(self):
+        # La lectura: abierta con aria-expanded="true" en el campo o con la lista a la vista; el texto del campo. Sin
+        # campo, cerrada y sin texto.
+        guion = (
+            "const campos = {POLId: {getAttribute: () => 'false', value: 'A'}, "
+            "PODId: {getAttribute: (n) => n === 'aria-expanded' ? 'true' : null, value: 'B'}, "
+            "X: {getAttribute: () => 'false', value: 'C'}, Z: {getAttribute: () => 'true', value: 'D'}};\n"
+            "const listas = {POLId: {getClientRects: () => []}, PODId: {getClientRects: () => [1]}, "
+            "X: {getClientRects: () => [1]}, Y: {getClientRects: () => []}, Z: {getClientRects: () => []}};\n"
+            "global.document = {querySelector: (s) => campos[(s.match(/name=\"(\\w+)_input\"/) || [])[1]] || null,\n"
+            "  getElementById: (id) => listas[id.replace(/-list$/, '')] || null};\n"
+            "const leer = " + self.mod._JS_MSC_LISTAS_DE_PUERTOS + ";\n"
+            # El cierre: con el combobox, close() una vez y nada más; sin él, no hace nada.
+            "const hechos = [];\n"
+            "const w = {close() { hechos.push('close'); }, value() { hechos.push('value'); }, "
+            "select() { hechos.push('select'); }, trigger() { hechos.push('trigger'); }};\n"
+            "const cerrar = " + self.mod._JS_MSC_CERRAR_LISTA + ";\n"
+            "global.window = {jQuery: (s) => ({data: (k) => (s === '#PODId' && k === 'kendoComboBox') ? w : undefined})};\n"
+            "const r = [leer(['POLId', 'PODId', 'X', 'Y', 'Z']), cerrar('PODId'), cerrar('POLId'), hechos];\n"
+            "global.window = {};\n"
+            "r.push(cerrar('PODId'));\n"
+            "console.log(JSON.stringify(r));\n")
+        self.assertEqual(correr_node(self, guion),
+                         [[[False, "A"], [True, "B"], [True, "C"], [False, None], [True, "D"]], "cerrada", "sin-combobox",
+                          ["close"], "sin-combobox"])
 
     def test_reservar_msc_no_toma_la_primera(self):
         tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))

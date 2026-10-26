@@ -666,6 +666,24 @@ cerrado:
   verificación de la sesión dice si entró. «Search Schedule» va con `_msc_buscar_itinerarios`, que corta si no encuentra
   el botón. Hasta `c4df3ab` los tres caían a `_JS_CLICK_BTN`. El login no está en el universo de la foto: lo vigila
   `test_login_sin_clic_generico`.
+- **MSC cierra la lista de un puerto que quedó abierta antes de «Search Schedule»** (encargo 82,
+  `CICLO-msc-lista-abierta-y-hs.md`; `_msc_cerrar_listas_abiertas`, al principio de `_msc_buscar_itinerarios`). El
+  23-10, en el equipo de un colega, la lista de sugerencias del destino volvió a abrirse después de elegir el puerto (1
+  de las 36 filas de MSC; la causa no se sabe), quedó encima de «Search Schedule», y el clic de Playwright esperó sus 30 s
+  sin poder darse: la fila quedó NO ENVIADA, con «no encontré el botón», aunque el botón estaba a la vista.
+  - Lee, sin tocar nada, si la lista de cada puerto está abierta (`_JS_MSC_LISTAS_DE_PUERTOS`: aria-expanded="true" en
+    su campo, o la lista a la vista; `MSC_PUERTOS`) y el texto de su campo. Con las dos cerradas, sigue al clic: el
+    camino de siempre no cambia, salvo esa lectura. Si la lectura falla, sigue al clic, como antes.
+  - Si una está abierta, la cierra con el método de su combobox de Kendo (`_JS_MSC_CERRAR_LISTA`: `close()`, que no
+    pulsa ni elige nada), espera 0,6 s y vuelve a leer. Si no pudo volver a leer, si sigue abierta o si el texto del
+    campo cambió, NO ENVIADA sin pulsar «Search Schedule» (`ObjetivoNoEncontrado`, «Search Schedule de MSC», con el
+    porqué).
+  - Medido en el HTML guardado del 23-10: con la lista abierta, aria-expanded="true" y la lista a la vista (los 36 de las
+    sugerencias del destino, y el del corte); cerrada, «false» y escondida (los dos puertos en los 33 de la guarda).
+    Que `close()` la cierre en el portal sin cambiar el puerto no está probado en el portal.
+  - Lo vigilan `test_clics.TestMsc` (`test_la_lista_de_un_puerto_abierta_se_cierra_antes_de_buscar`,
+    `test_con_las_listas_cerradas_el_camino_no_cambia`, `test_si_la_lista_no_se_cierra_bien_corta_sin_buscar` y
+    `test_js_listas_de_puertos_y_su_cierre`).
 - **COSCO elige el puerto de carga de la fila** (`_cosco_puerto_de_carga`, `CICLO-cola-seis-items.md`): la celda del
   puerto de carga normalizada (`_cosco_puerto_de_la_celda`, `CICLO-inicio-de-todas.md`: la parte antes de la primera
   coma, en mayúsculas, sin tildes, con todo signo como separador y sin el país al final: «CHILE» o, desde el encargo

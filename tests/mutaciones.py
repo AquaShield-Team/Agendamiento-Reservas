@@ -9401,3 +9401,56 @@ MUTACIONES += [
     dict(id="e81-sin-esperar-la-carga", pruebas=[DIA_22_E81, ETIQUETA_E81],
          viejo="            vio_carga = True\n            continue\n", nuevo="            vio_carga = True\n"),
 ]
+
+# --- Encargo 82 (CICLO-msc-lista-abierta-y-hs.md): antes de «Search Schedule», la lista de sugerencias de un puerto de
+# MSC que quedó abierta se cierra con el método de su combobox, sin pulsar ni elegir nada, y se comprueba que se cerró y
+# que su campo sigue igual; si no, corta (_msc_cerrar_listas_abiertas). Sin mirarla, sin cerrarla, sin comprobar, o
+# pulsando ---
+LISTA_E82 = M1 + "test_la_lista_de_un_puerto_abierta_se_cierra_antes_de_buscar"
+CERRADAS_E82 = M1 + "test_con_las_listas_cerradas_el_camino_no_cambia"
+CORTA_E82 = M1 + "test_si_la_lista_no_se_cierra_bien_corta_sin_buscar"
+JS_LISTAS_E82 = M1 + "test_js_listas_de_puertos_y_su_cierre"
+POR_QUE_E82 = ('        por_que = ("no pude volver a leerla" if despues is None else "sigue abierta" if despues[i][0]\n'
+               '                   else "el campo ya no dice lo mismo" if despues[i][1] != antes[i][1] else "")\n')
+
+MUTACIONES += [
+    dict(id="e82-lista-no-se-mira", pruebas=[LISTA_E82],
+         viejo="    _msc_cerrar_listas_abiertas(page, reg)\n    if not click_si_existe(", nuevo="    if not click_si_existe("),
+    dict(id="e82-lista-no-se-cierra", pruebas=[LISTA_E82, CORTA_E82],
+         viejo="            r = page.evaluate(_JS_MSC_CERRAR_LISTA, i)\n", nuevo='            r = "no la cerré"\n'),
+    dict(id="e82-lista-sin-comprobar", pruebas=[CORTA_E82],
+         viejo=POR_QUE_E82, nuevo='        por_que = ""\n'),
+    dict(id="e82-lista-sin-mirar-el-campo", pruebas=[CORTA_E82],
+         viejo=POR_QUE_E82, nuevo=POR_QUE_E82.replace(' if despues[i][1] != antes[i][1] else ""', ' if False else ""')),
+    dict(id="e82-lista-sin-releer-sigue", pruebas=[CORTA_E82],
+         viejo=POR_QUE_E82, nuevo=POR_QUE_E82.replace('"no pude volver a leerla" if despues is None else ', '"" if despues is None else ')),
+    # De la revisión de código: el cierre que falla sin atrapar (la fila daría ERROR), la comprobación solo de la
+    # primera lista abierta, y sin el plazo de la animación del cierre.
+    dict(id="e82-lista-cierre-sin-try", pruebas=[CORTA_E82],
+         viejo=('        try:\n            r = page.evaluate(_JS_MSC_CERRAR_LISTA, i)\n        except Exception as e:\n'
+                '            r = f"error: {str(e)[:60]}"\n'),
+         nuevo="        r = page.evaluate(_JS_MSC_CERRAR_LISTA, i)\n"),
+    dict(id="e82-lista-comprueba-solo-la-primera", pruebas=[CORTA_E82],
+         viejo="    for i, etiqueta in abiertas:\n        por_que = (",
+         nuevo="    for i, etiqueta in abiertas[:1]:\n        por_que = ("),
+    dict(id="e82-lista-sin-plazo-del-cierre", pruebas=[LISTA_E82, CORTA_E82],
+         viejo="    esperar(page, 0.6)\n    try:\n        despues = _msc_listas_de_puertos(page)\n",
+         nuevo="    esperar(page, 0)\n    try:\n        despues = _msc_listas_de_puertos(page)\n"),
+    dict(id="e82-lista-espera-siempre", pruebas=[CERRADAS_E82],
+         viejo="    if not abiertas:\n        return\n", nuevo="    esperar(page, 0.6)\n    if not abiertas:\n        return\n"),
+    dict(id="e82-lista-lectura-fallida-corta", pruebas=[CERRADAS_E82],
+         viejo='        reg.info(f"listas de sugerencias de los puertos: no pude leerlas ({str(e)[:60]}); sigo")\n        return\n',
+         nuevo='        raise ObjetivoNoEncontrado("Search Schedule de MSC", "las listas de los puertos")\n'),
+    dict(id="e82-lista-solo-el-destino", pruebas=[LISTA_E82],
+         viejo='MSC_PUERTOS = (("POLId", "Port of Load"), ("PODId", "Port of Discharge"))\n',
+         nuevo='MSC_PUERTOS = (("PODId", "Port of Discharge"),)\n'),
+    dict(id="e82-js-lista-sin-aria", pruebas=[JS_LISTAS_E82],
+         viejo="    return [!!(campo && campo.getAttribute('aria-expanded') === 'true') || seVe, campo ? campo.value : null];\n",
+         nuevo="    return [seVe, campo ? campo.value : null];\n"),
+    dict(id="e82-js-lista-sin-verla", pruebas=[JS_LISTAS_E82],
+         viejo="    const seVe = !!(lista && lista.getClientRects().length);\n", nuevo="    const seVe = false;\n"),
+    dict(id="e82-js-cierre-elige", pruebas=[JS_LISTAS_E82],
+         viejo="    w.close();\n    return 'cerrada';\n", nuevo="    w.select(0);\n    w.close();\n    return 'cerrada';\n"),
+    dict(id="e82-js-cierre-otro-widget", pruebas=[JS_LISTAS_E82],
+         viejo=".data('kendoComboBox') : null;\n", nuevo=".data('kendoDropDownList') : null;\n"),
+]
