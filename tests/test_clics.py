@@ -8747,6 +8747,12 @@ class TestShipperMaersk(ConRegistro):
                "abierto": False}
     NADA = "no pulsé nada más y la reserva no se envió"
 
+    def args(self):
+        """Lo que reciben los JavaScript del Shipper: los textos medidos, con el título genérico de la pantalla nueva
+        (encargo 83), y la empresa."""
+        return {"titulo": "Shipper", "generico": "Search/Add party", "empresa": self.mod.MK_EMPRESA, "agregar": "Add",
+                "cerrar": "Close"}
+
     def shipper(self, pagina):
         """Corre _mk_shipper en una corrida nueva; al terminar la prueba, la página no tiene que haber recibido nada
         prohibido."""
@@ -8759,6 +8765,8 @@ class TestShipperMaersk(ConRegistro):
 
     def test_la_empresa_y_el_titulo_son_los_medidos(self):
         self.assertEqual((self.mod.MK_SHIPPER, self.mod.MK_AGREGAR, self.mod.MK_CERRAR), ("Shipper", "Add", "Close"))
+        # El título de la pantalla nueva, medido en los 2 HTML del 23-10 (encargo 83).
+        self.assertEqual(self.mod.MK_BUSCADOR_GENERICO, "Search/Add party")
         self.assertEqual(hashlib.sha256(self.mod.MK_EMPRESA.encode("utf-8")).hexdigest()[:16], "811b369c26aead3f")
         self.assertEqual((self.mod.MK_ESPERA_SHIPPER, self.mod.MK_ESPERA_BUSCADOR), (5, 10))
 
@@ -8767,8 +8775,7 @@ class TestShipperMaersk(ConRegistro):
         r, det, log, _ = self.shipper(pagina)
         self.assertEqual((r, det, pagina.esperas, pagina.clics, pagina.pulsar),
                          (None, ["shipper=" + self.mod.MK_EMPRESA], 0, [], []))
-        self.assertEqual(pagina.args, [({"titulo": "Shipper", "empresa": self.mod.MK_EMPRESA, "agregar": "Add",
-                                         "cerrar": "Close"},)])
+        self.assertEqual(pagina.args, [(self.args(),)])
         self.assertIn(f"Shipper: {self.mod.MK_EMPRESA} ya viene en la tarjeta «Shipper»; no pulsé nada", log)
 
     def test_espera_la_tarjeta_con_la_empresa(self):
@@ -8808,7 +8815,7 @@ class TestShipperMaersk(ConRegistro):
         self.assertEqual((r, det, pagina.clics), (None, ["shipper=" + self.mod.MK_EMPRESA], ["agregar", "resultado"]))
         # 9 esperas por la tarjeta (5 s), 2 por el buscador (la lista, quieta en dos lecturas) y ninguna al comprobar.
         self.assertEqual(pagina.esperas, 11)
-        args = {"titulo": "Shipper", "empresa": self.mod.MK_EMPRESA, "agregar": "Add", "cerrar": "Close"}
+        args = self.args()
         self.assertEqual(pagina.pulsar, [dict(args, que="agregar"), dict(args, que="resultado")])
         self.assertEqual(pagina.capturas, [("mk_f30_buscador.png", False)])
         for linea in ("Shipper: pulsé el «Add» de la tarjeta «Shipper»",
@@ -8844,6 +8851,73 @@ class TestShipperMaersk(ConRegistro):
         r, det, _, _ = self.shipper(pagina)
         self.assertEqual((r, det, pagina.clics, pagina.esperas),
                          (None, ["shipper=" + self.mod.MK_EMPRESA], ["agregar", "resultado"], 11))
+        # También el de la pantalla nueva (encargo 83): sin él en la primera lectura, espera otra.
+        pagina = PaginaShipper(self.mod, self.CERRADO, abierto=[sin_titulo, dict(sin_titulo, titulo_nuevo=True)],
+                               elegido=self.ELEGIDO)
+        r, det, _, _ = self.shipper(pagina)
+        self.assertEqual((r, det, pagina.clics, pagina.esperas),
+                         (None, ["shipper=" + self.mod.MK_EMPRESA], ["agregar", "resultado"], 11))
+
+    ABIERTO_NUEVO = dict(ABIERTO, titulo=False, titulo_nuevo=True)
+
+    def test_la_pantalla_nueva_elige_con_la_misma_regla(self):
+        # El buscador titulado «Search/Add party» (decisión de Marcelo, encargo 83, CICLO-maersk-buscador-nuevo.md):
+        # medido en 2 de 25 filas del 23-10, con la misma lista que el de siempre. Elige el único resultado con la
+        # empresa, con la lista quieta, y comprueba después la tarjeta «Shipper», como en el de siempre; lo anota.
+        e = self.mod.MK_EMPRESA
+        nueva = (f"Shipper: el buscador se abrió con la pantalla «Search/Add party», sin el título «Shipper»; elijo "
+                 f"con la misma regla, y después compruebo la tarjeta «Shipper»")
+        pagina = PaginaShipper(self.mod, self.CERRADO, abierto=[self.CERRADO, self.ABIERTO_NUEVO],
+                               elegido=self.ELEGIDO)
+        r, det, log, _ = self.shipper(pagina)
+        self.assertEqual((r, det, pagina.clics, pagina.esperas),
+                         (None, ["shipper=" + e], ["agregar", "resultado"], 11))
+        self.assertEqual(pagina.pulsar, [dict(self.args(), que="agregar"), dict(self.args(), que="resultado")])
+        self.assertEqual(pagina.capturas, [("mk_f30_buscador.png", False)])
+        for linea in (nueva, f"Shipper: pulsé el resultado con {e} del buscador",
+                      f"Shipper: elegí a {e} en el buscador, y la tarjeta «Shipper» lo muestra"):
+            self.assertIn(linea, log)
+        # El de siempre no dice nada de la pantalla nueva: en lo que ve la pantalla de su corrida (el log.txt de la
+        # sandbox de la clase lo comparten sus pruebas).
+        pagina = PaginaShipper(self.mod, self.CERRADO, abierto=self.ABIERTO, elegido=self.ELEGIDO)
+        r, _, _, vistas = self.shipper(pagina)
+        self.assertIsNone(r)
+        self.assertNotIn("Search/Add party", "\n".join(vistas))
+        # Con los dos títulos a la vez, manda el de siempre: elige y no lo anota (revisión de código del encargo 83).
+        pagina = PaginaShipper(self.mod, self.CERRADO, abierto=dict(self.ABIERTO, titulo_nuevo=True),
+                               elegido=self.ELEGIDO)
+        r, _, _, vistas = self.shipper(pagina)
+        self.assertEqual((r, pagina.clics), (None, ["agregar", "resultado"]))
+        self.assertNotIn("Search/Add party", "\n".join(vistas))
+        # Con su «Close» y con su casilla, como el de siempre.
+        sigue = dict(self.ELEGIDO, resultados=3, abierto=True, cerrar=1)
+        pagina = PaginaShipper(self.mod, self.CERRADO, abierto=self.ABIERTO_NUEVO, elegido=sigue, cerrado=self.ELEGIDO)
+        r, _, _, _ = self.shipper(pagina)
+        self.assertEqual((r, pagina.clics), (None, ["agregar", "resultado", "cerrar"]))
+        pagina = PaginaShipper(self.mod, self.CERRADO, abierto=self.ABIERTO_NUEVO,
+                               elegido=dict(self.SIN_ELEGIR, titulo=False, titulo_nuevo=True), marcado=self.ELEGIDO,
+                               casilla=self.COINCIDEN)
+        r, _, _, _ = self.shipper(pagina)
+        self.assertEqual((r, pagina.clics), (None, ["agregar", "resultado", "casilla"]))
+
+    def test_la_pantalla_nueva_sin_un_resultado_unico_corta(self):
+        # Sin un solo resultado con la empresa, o si la tarjeta no lo muestra después, NO ENVIADA, como en el de
+        # siempre (encargo 83).
+        e = self.mod.MK_EMPRESA
+        add = "pulsé el «Add» de la tarjeta «Shipper», pero"
+        casos = ((dict(abierto=dict(self.ABIERTO_NUEVO, con_empresa=0)),
+                  f"{add} en el buscador no hay un solo resultado con {e} (había 0 de 3)", ["agregar"], 28),
+                 (dict(abierto=dict(self.ABIERTO_NUEVO, con_empresa=2)),
+                  f"{add} en el buscador no hay un solo resultado con {e} (había 2 de 3)", ["agregar"], 10),
+                 (dict(abierto=self.ABIERTO_NUEVO, elegido=dict(self.ELEGIDO, n=2, empresa=None)),
+                  f"pulsé el resultado con {e} del buscador, pero la tarjeta «Shipper» no lo muestra",
+                  ["agregar", "resultado"], 19))
+        for opciones, que, clics, esperas in casos:
+            with self.subTest(que=que):
+                pagina = PaginaShipper(self.mod, self.CERRADO, **opciones)
+                r, det, _, _ = self.shipper(pagina)
+                self.assertEqual((r, det, pagina.clics, pagina.esperas),
+                                 (("NO ENVIADA", f"MAERSK: {que}; {self.NADA}"), [], clics, esperas))
 
     def test_si_no_queda_elegido_corta_sin_otro_clic(self):
         e = self.mod.MK_EMPRESA
@@ -8860,7 +8934,7 @@ class TestShipperMaersk(ConRegistro):
             (dict(abierto=leer), f"{add} el buscador de partes no mostró resultados en 10 s (no pude leer la página: "
                                  f"RuntimeError: la página se cerró)", ["agregar"], 28),
             (dict(abierto=dict(self.ABIERTO, titulo=False)), f"{add} el buscador que se abrió no está titulado "
-                                                             f"«Shipper»", ["agregar"], 10),
+                                                             f"«Shipper» ni «Search/Add party»", ["agregar"], 10),
             # Sin un resultado con la empresa, lo espera los 10 s: los resultados pueden llegar de a poco.
             (dict(abierto=dict(self.ABIERTO, con_empresa=0)), f"{add} en el buscador no hay un solo resultado con {e} "
                                                               f"(había 0 de 3)", ["agregar"], 28),
@@ -8921,7 +8995,7 @@ class TestShipperMaersk(ConRegistro):
                          (None, ["shipper=" + self.mod.MK_EMPRESA], ["agregar", "resultado", "cerrar"]))
         # 9 esperas por la tarjeta, 1 por el buscador, 9 con él abierto después del resultado y ninguna al cerrarlo.
         self.assertEqual(pagina.esperas, 19)
-        args = {"titulo": "Shipper", "empresa": self.mod.MK_EMPRESA, "agregar": "Add", "cerrar": "Close"}
+        args = self.args()
         self.assertEqual(pagina.pulsar[-1], dict(args, que="cerrar"))
         # Antes del «Close», la evidencia de ese estado, que ninguna corrida guardó (revisión del encargo 39).
         self.assertEqual(pagina.capturas, [("mk_f30_buscador.png", False), ("mk_f30_cerrar.png", False)])
@@ -8975,7 +9049,7 @@ class TestShipperMaersk(ConRegistro):
         # lo vuelve a comprobar; si queda con el buscador abierto, lo cierra con su «Close», como después del resultado.
         e = self.mod.MK_EMPRESA
         sigue = dict(self.ELEGIDO, resultados=3, abierto=True, cerrar=1)
-        args = ({"titulo": "Shipper", "empresa": e, "agregar": "Add", "cerrar": "Close"},)
+        args = (self.args(),)
         casos = ((dict(marcado=self.ELEGIDO), ["agregar", "resultado", "casilla"], 19,
                   ["mk_f30_buscador.png", "mk_f30_casilla.png"]),
                  (dict(marcado=sigue, cerrado=self.ELEGIDO), ["agregar", "resultado", "casilla", "cerrar"], 28,
@@ -9024,7 +9098,7 @@ class TestShipperMaersk(ConRegistro):
         e = self.mod.MK_EMPRESA
         no_la = (f"pulsé el resultado con {e} del buscador, pero la tarjeta «Shipper» no lo muestra, y no pulsé la "
                  f"casilla del resultado")
-        casos = (({"casilla": "titulo"}, "el buscador ya no está titulado «Shipper»"),
+        casos = (({"casilla": "titulo"}, "el buscador ya no está titulado «Shipper» ni «Search/Add party»"),
                  ({"casilla": "resultado"}, f"no hay un solo resultado con {e} a la vista"),
                  ({"casilla": "posicion"}, "en su contenedor, las casillas y los resultados no van alternados"),
                  ({"casilla": "codigo"}, "la tarjeta del resultado no muestra un solo código con cifras"),
@@ -9092,7 +9166,11 @@ const resultado = (nombre, codigo) => el('label', {class: 'party-card__label'}, 
   {shadow: [el('p', {class: 'party__info'}, [nombre, ' ', el('span', {class: 'party__code'}, [codigo])])]})]);
 const buscador = (hijos, titulo = 'Shipper') => el('mc-c-party-finder', {}, [], {shadow: [el('mc-modal', {}, [
   el('span', {slot: 'heading'}, [titulo]), el('div', {class: 'party-search-results'}, hijos)])]});
-const a = {titulo: 'Shipper', empresa: EMPRESA, agregar: 'Add', cerrar: 'Close'};
+// La pantalla nueva (encargo 83): su título, en un span del encabezado.
+const buscadorNuevo = hijos => el('mc-c-party-finder', {}, [], {shadow: [el('mc-modal', {}, [
+  el('span', {slot: 'heading'}, [el('span', {}, ['Search/Add party'])]),
+  el('div', {class: 'party-search-results'}, hijos)])]});
+const a = {titulo: 'Shipper', generico: 'Search/Add party', empresa: EMPRESA, agregar: 'Add', cerrar: 'Close'};
 const r = [];
 const leer = () => { global.clics = []; const c = leerC(a); r.push([c.casilla, c.marcada, marcar(a), global.clics]); };
 const tres = (c2 = {}) => [casilla('px-0123-777', 'c1'), resultado('PARTE UNO', '****777'),
@@ -9136,13 +9214,20 @@ pagina(tarjeta(''), buscador([casilla('px-000-0123', 'c1'), resultado(NOMBRE, '*
 leer();
 pagina(tarjeta(''), tarjeta(''), buscador(tres()));
 leer();
+// 12. La pantalla nueva (encargo 83): la misma casilla; 13. con dos resultados con la empresa, ninguna.
+pagina(tarjeta(''), buscadorNuevo(tres()));
+leer();
+pagina(tarjeta(''), buscadorNuevo([casilla('px-000-0123', 'c1'), resultado(NOMBRE, '***-0123'),
+                                   casilla('px-000-0555', 'c2'), resultado('SALMONES ' + EMPRESA, '****555')]));
+leer();
 console.log(JSON.stringify(r));
 """)
         self.assertEqual(correr_node(self, guion), [
             ["coinciden", False, True, ["c2"]], ["coinciden", False, False, []], ["coinciden", True, True, ["c2"]],
             ["posicion", None, False, []], ["codigo", None, False, []], ["cifras", None, False, []],
             ["distintas", None, False, []], ["titulo", None, False, []], ["resultado", None, False, []],
-            ["posicion", None, False, []], ["posicion", None, False, []], ["coinciden", False, False, []]])
+            ["posicion", None, False, []], ["posicion", None, False, []], ["coinciden", False, False, []],
+            ["coinciden", False, True, ["c2"]], ["resultado", None, False, []]])
 
     def test_js_shipper(self):
         # La forma medida el 27-09: cada parte es un mc-c-party-card con su title y el nombre del cliente en su
@@ -9166,7 +9251,7 @@ const buscadorCon = (titulo, hijos, visto) => el('mc-c-party-finder', {}, [], {s
   el('span', {slot: 'heading'}, [el('span', {}, [titulo])], visto ? {} : {invisible: true}), el('div', {}, hijos)])]});
 const buscador = (titulo, nombres, visto, extra = []) =>
   buscadorCon(titulo, nombres.map((n, i) => resultado(n, 'r' + i, visto)).concat(extra), visto);
-const a = {titulo: 'Shipper', empresa: EMPRESA, agregar: 'Add', cerrar: 'Close'};
+const a = {titulo: 'Shipper', generico: 'Search/Add party', empresa: EMPRESA, agregar: 'Add', cerrar: 'Close'};
 const pulsa = que => { const e = p(Object.assign({que}, a)); return e ? e.getAttribute('data-prueba') : null; };
 const r = [];
 const leer = () => r.push([f(a), pulsa('agregar'), pulsa('resultado'), pulsa('cerrar')]);
@@ -9244,12 +9329,40 @@ pagina(tarjeta('Shipper', NOMBRE), tarjeta('Shipper', NOMBRE), buscadorConCerrar
 leer();
 pagina(tarjeta('Booked By', NOMBRE), buscadorConCerrar([cerrarBtn('x')]));
 leer();
+// 21. La pantalla nueva (encargo 83), como se midió el 23-10: en el encabezado, un span con «Search/Add party» y la
+// barra de pestañas («Favourite», «Search»); los resultados, como en el de siempre. 22. El título genérico con otra
+// cosa en su span, 23. suelto en el encabezado, sin su span, o 24. en otro elemento: no cuenta.
+const encabezadoNuevo = (titulo, hijo = 'span') => el('span', {slot: 'heading'}, [el(hijo, {}, [titulo]),
+  el('div', {class: 'party-finder-tab-bar'}, [el('mc-tab', {label: 'Favourite'}, ['Favourite']),
+                                              el('mc-tab', {label: 'Search'}, ['Search'])])]);
+const buscadorNuevo = encabezado => el('mc-c-party-finder', {}, [], {shadow: [el('mc-modal', {}, [encabezado,
+  el('div', {}, [resultado('PARTE UNO', 'r0', true), resultado(NOMBRE, 'r1', true),
+                 resultado('PARTE DOS', 'r2', true)])])]});
+pagina(tarjeta('Shipper', '', {}, agregar('add')), buscadorNuevo(encabezadoNuevo('Search/Add party')));
+leer();
+pagina(tarjeta('Shipper', '', {}, agregar('add')), buscadorNuevo(encabezadoNuevo('Search/Add party now')));
+leer();
+pagina(tarjeta('Shipper', '', {}, agregar('add')),
+       buscadorNuevo(el('span', {slot: 'heading'}, ['Search/Add party'])));
+leer();
+pagina(tarjeta('Shipper', '', {}, agregar('add')), buscadorNuevo(encabezadoNuevo('Search/Add party', 'div')));
+leer();
+// 25. Con su encabezado oculto, o 26. con el encabezado del título genérico fuera del buscador, tampoco (revisión de
+// código del encargo 83).
+pagina(tarjeta('Shipper', '', {}, agregar('add')), buscadorNuevo(el('span', {slot: 'heading'},
+  [el('span', {}, ['Search/Add party'])], {invisible: true})));
+leer();
+pagina(tarjeta('Shipper', '', {}, agregar('add')), encabezadoNuevo('Search/Add party'),
+       buscadorNuevo(el('span', {slot: 'heading'}, [el('span', {}, ['Otra cosa'])])));
+leer();
 console.log(JSON.stringify(r));
 """)
 
-        def lectura(n=1, empresa=False, agregar=0, resultados=0, con_empresa=0, titulo=False, abierto=False, cerrar=0):
+        def lectura(n=1, empresa=False, agregar=0, resultados=0, con_empresa=0, titulo=False, abierto=False, cerrar=0,
+                    titulo_nuevo=False):
             return {"n": n, "empresa": empresa, "agregar": agregar, "resultados": resultados,
-                    "con_empresa": con_empresa, "titulo": titulo, "abierto": abierto, "cerrar": cerrar}
+                    "con_empresa": con_empresa, "titulo": titulo, "titulo_nuevo": titulo_nuevo, "abierto": abierto,
+                    "cerrar": cerrar}
         self.assertEqual(correr_node(self, guion), [
             [lectura(empresa=True), None, None, None],
             [lectura(agregar=1), "add", None, None],
@@ -9275,6 +9388,13 @@ console.log(JSON.stringify(r));
              None],
             [lectura(n=0, empresa=None, resultados=1, con_empresa=1, titulo=True, abierto=True, cerrar=1), None, "r0",
              None],
+            # 21-26: la pantalla nueva (encargo 83).
+            [lectura(agregar=1, resultados=3, con_empresa=1, titulo_nuevo=True, abierto=True), "add", "r1", None],
+            [lectura(agregar=1, resultados=3, con_empresa=1, abierto=True), "add", None, None],
+            [lectura(agregar=1, resultados=3, con_empresa=1, abierto=True), "add", None, None],
+            [lectura(agregar=1, resultados=3, con_empresa=1, abierto=True), "add", None, None],
+            [lectura(agregar=1, resultados=3, con_empresa=1, abierto=True), "add", None, None],
+            [lectura(agregar=1, resultados=3, con_empresa=1, abierto=True), "add", None, None],
         ])
 
     def test_despues_del_shipper_no_pulsa_escape(self):

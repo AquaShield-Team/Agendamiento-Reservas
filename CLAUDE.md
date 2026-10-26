@@ -579,7 +579,8 @@ cerrado:
   pulsar nada.
   - **Si no trae a AQUACHILE, lo elige con dos clics** (decisión de Marcelo, encargo 38,
     `CICLO-maersk-shipper-y-cortes.md`; `_mk_elegir_shipper`): el único «Add» a la vista de esa tarjeta, por su texto
-    (`MK_AGREGAR`), y en el buscador de partes titulado «Shipper» el único resultado a la vista con AQUACHILE. Cada clic
+    (`MK_AGREGAR`), y en el buscador de partes titulado «Shipper» (o, desde el encargo 83, en la pantalla nueva titulada
+    «Search/Add party»: abajo) el único resultado a la vista con AQUACHILE. Cada clic
     va sobre lo que `_JS_MK_SHIPPER_PULSAR` vuelve a leer justo antes. Antes de elegir espera, hasta
     `MK_ESPERA_BUSCADOR` s, que la lista tenga un resultado con AQUACHILE y se quede quieta en dos lecturas
     (`_mk_resultados_quietos`: llega de a poco; si no se queda quieta, decide con la última lectura), y deja
@@ -625,6 +626,30 @@ cerrado:
     del Shipper se pulsaba la tecla Escape, y se quitó (decisión de Marcelo); no está medido si el buscador se cerraba
     por ella o solo. Si la tarjeta no queda con AQUACHILE, ni con su casilla, o el buscador sigue abierto y su «Close»
     no lo cierra, la reserva queda NO ENVIADA ahí, y su HTML lo mide.
+  - **La pantalla nueva del buscador, titulada «Search/Add party»** (decisión de Marcelo, encargo 83,
+    `CICLO-maersk-buscador-nuevo.md`; `MK_BUSCADOR_GENERICO`). El 23-10, en el equipo de un colega, el «Add» de la
+    tarjeta «Shipper» la abrió en 2 de 25 filas, y quedaron NO ENVIADA por la regla del título (encargo 38; las
+    diagnosticó el encargo 82).
+    - Medido en sus 2 HTML contra uno de siempre, con su árbol entero: el mismo componente (`mc-c-party-finder`), los
+      mismos resultados (label, tarjeta y casilla de opción alternados), el mismo «Close», el mismo «Cancel» y el mismo
+      «Click a card to add party.». Solo cambian el título y el texto de la primera pestaña («Favourite», en vez de
+      «Previously used»). Ningún botón para crear ni editar una parte.
+    - Se reconoce por un span del encabezado que dice, entero, «Search/Add party» (`titulo_nuevo` de `_JS_MK_SHIPPER`):
+      solo el span, porque el encabezado trae también las pestañas. Se elige con la misma regla que en el de siempre:
+      el único resultado con AQUACHILE, con la lista quieta (el título nuevo también tiene que quedarse quieto), su
+      casilla y su «Close» si hacen falta, y después la tarjeta «Shipper» tiene que mostrarlo. Si no, NO ENVIADA.
+      log.txt lo dice («el buscador se abrió con la pantalla «Search/Add party»…»). Con los dos títulos a la vez, manda
+      el de siempre, y no lo anota.
+    - **Ese título no nombra la parte** (revisión de código del encargo 83): que el buscador sea el del Shipper lo dicen
+      el «Add» que se acaba de pulsar, el de la única tarjeta «Shipper», y la comprobación final, que esa tarjeta
+      muestre a AQUACHILE. Si el buscador fuera de otra parte, AQUACHILE iría a esa parte y la fila quedaría NO ENVIADA
+      por la comprobación final (hipotético: no se vio).
+    - Medido sin red con el JavaScript del programa, en los 25 HTML del buscador del 23-10: las 23 de siempre dan
+      «Shipper» y no el título nuevo, y las 2 nuevas, al revés; las 25, un solo resultado con AQUACHILE, el que se
+      pulsaría, y su casilla coincide. Las 2 páginas del buscador de `logs/` de este equipo (20 HTML, con sus marcos)
+      dan lo mismo que antes. Que el clic elija a AQUACHILE en la pantalla nueva no está probado en el portal.
+    - Lo vigilan `test_clics.TestShipperMaersk` (`test_la_pantalla_nueva_elige_con_la_misma_regla`,
+      `test_la_pantalla_nueva_sin_un_resultado_unico_corta`, `test_js_shipper` y `test_js_casilla`).
   - En el encargo 37 cortaba sin pulsar nada (FRENO, cerrado): el HTML del 27-09 es de después de los clics de antes, y
     lo más probable es que ellos eligieran a AQUACHILE, porque el Shipper viene vacío (no medido).
   - Un HTML guardado en un corte es de después de todo lo que el programa pulsó antes: no es el estado de partida. Así

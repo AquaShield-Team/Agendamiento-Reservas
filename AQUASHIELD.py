@@ -10536,13 +10536,25 @@ def _mk_referencia_de_retiro(page, reg, det, texto):
 # nada la une al resultado salvo su posición y las cifras visibles del código: si el clic en el resultado no lo elige,
 # se pulsa solo si las dos apuntan a la misma (decisión de Marcelo, CICLO-maersk-busqueda-vacia.md; en el encargo 39 era
 # un FRENO); si no, corta.
+# La pantalla nueva del buscador (decisión de Marcelo, encargo 83, CICLO-maersk-buscador-nuevo.md): el 23-10, en el
+# equipo de un colega, el «Add» de la tarjeta «Shipper» abrió en 2 de 25 filas el buscador titulado «Search/Add party»,
+# sin el nombre de la parte. Medido en sus 2 HTML contra uno de siempre, con su árbol entero: el mismo componente, con
+# los mismos resultados (label, tarjeta y casilla de opción alternados), el mismo «Close», el mismo «Cancel» y el mismo
+# «Click a card to add party.»; solo cambian su título y el texto de la primera pestaña («Favourite», en vez de
+# «Previously used»). Ningún botón para crear ni editar una parte. Se reconoce por su título entero, en el span del
+# título (el encabezado trae también las pestañas), y se elige con la misma regla. Ese título no nombra la parte: que
+# el buscador sea el del Shipper lo dicen el «Add» que se acaba de pulsar, el de la única tarjeta «Shipper», y la
+# comprobación final, que la tarjeta «Shipper» muestre a AQUACHILE (revisión de código del encargo 83). Que el clic
+# elija a AQUACHILE en la pantalla nueva no está probado en el portal.
 MK_SHIPPER = "Shipper"
+MK_BUSCADOR_GENERICO = "Search/Add party"
 MK_EMPRESA = "AQUACHILE"
 MK_AGREGAR = "Add"
 MK_CERRAR = "Close"
 MK_ESPERA_SHIPPER = 5          # s que espera la tarjeta «Shipper» con AQUACHILE (hipótesis, sin medir)
 MK_ESPERA_BUSCADOR = 10        # s que espera en el buscador un resultado con AQUACHILE, quieto (hipótesis, sin medir)
-_MK_ARGS_SHIPPER = {"titulo": MK_SHIPPER, "empresa": MK_EMPRESA, "agregar": MK_AGREGAR, "cerrar": MK_CERRAR}
+_MK_ARGS_SHIPPER = {"titulo": MK_SHIPPER, "generico": MK_BUSCADOR_GENERICO, "empresa": MK_EMPRESA,
+                    "agregar": MK_AGREGAR, "cerrar": MK_CERRAR}
 
 # Lo que leen _JS_MK_SHIPPER y _JS_MK_SHIPPER_PULSAR, con la palabra entera de la nave (_JS_TRAE_LA_NAVE).
 _JS_MK_SHIPPER_LEER = r"""
@@ -10584,6 +10596,10 @@ _JS_MK_SHIPPER_LEER = r"""
                                              && conTarjeta(x));
         const encabezados = todos.filter(x => mkAtr(x.el, 'slot') === 'heading' && enBuscador(x) && mkVisible(x.el));
         const titulo = encabezados.some(x => _palabraEn(mkTextoHondo(x.el), String(a.titulo).toUpperCase(), 0) >= 0);
+        // La pantalla nueva (encargo 83): un span del encabezado que dice, entero, el título genérico. Solo el span: el
+        // encabezado trae también las pestañas.
+        const tituloNuevo = encabezados.some(x => [...(x.el.children || [])].some(
+            c => mkTag(c) === 'span' && mkTextoHondo(c) === String(a.generico).toUpperCase()));
         // Su «Close»: el mc-button a la vista del buscador con ese label (medido el 27-09: uno solo en la página, en la
         // cabecera de la ventana del buscador, con data-cy="close" y el texto oculto).
         const cerrar = todos.filter(x => enBuscador(x) && mkTag(x.el) === 'mc-button'
@@ -10595,7 +10611,7 @@ _JS_MK_SHIPPER_LEER = r"""
         // tienen que ser la misma. Si no, 'por' dice por qué no la hay.
         const esCasilla = e => mkTag(e) === 'input' && mkAtr(e, 'type').toLowerCase() === 'radio';
         const casilla = (() => {
-            if (!titulo) return {el: null, por: 'titulo'};
+            if (!titulo && !tituloNuevo) return {el: null, por: 'titulo'};
             if (conLaEmpresa.length !== 1) return {el: null, por: 'resultado'};
             const [lb] = conLaEmpresa;
             const hijos = [...((lb.parentElement && lb.parentElement.children) || [])];
@@ -10613,7 +10629,7 @@ _JS_MK_SHIPPER_LEER = r"""
                                                               : {el: null, por: 'distintas'};
         })();
         return {tarjetas, agregar: agregar.map(x => x.el), resultados: resultados.map(x => x.el),
-                conEmpresa: conLaEmpresa, titulo, cerrar: cerrar.map(x => x.el),
+                conEmpresa: conLaEmpresa, titulo, tituloNuevo, cerrar: cerrar.map(x => x.el),
                 abierto: encabezados.length > 0 || resultados.length > 0, casilla: casilla.el, casillaPor: casilla.por,
                 empresa: tarjetas.length === 1 ? conEmpresa(t) : null};
     }
@@ -10621,16 +10637,18 @@ _JS_MK_SHIPPER_LEER = r"""
 _JS_MK_SHIPPER = "(a) => {" + _JS_MK_RECORRER + _JS_TRAE_LA_NAVE + _JS_MK_SHIPPER_LEER + r"""
     const s = mkShipper(a);
     return {n: s.tarjetas.length, empresa: s.empresa, agregar: s.agregar.length, resultados: s.resultados.length,
-            con_empresa: s.conEmpresa.length, titulo: s.titulo, abierto: s.abierto, cerrar: s.cerrar.length};
+            con_empresa: s.conEmpresa.length, titulo: s.titulo, titulo_nuevo: s.tituloNuevo, abierto: s.abierto,
+            cerrar: s.cerrar.length};
 }"""
 # Lo que pulsa cada clic, leído otra vez justo antes: con a.que «agregar», el «Add» de la tarjeta; con «resultado», el
-# resultado con la empresa en el buscador titulado con el Shipper; con «cerrar», el «Close» del buscador, solo si la
-# tarjeta ya muestra a la empresa (CICLO-maersk-cuatro-puntos.md). Solo si es uno; si no, null.
+# resultado con la empresa en el buscador titulado con el Shipper o con el título genérico de la pantalla nueva
+# (encargo 83); con «cerrar», el «Close» del buscador, solo si la tarjeta ya muestra a la empresa
+# (CICLO-maersk-cuatro-puntos.md). Solo si es uno; si no, null.
 _JS_MK_SHIPPER_PULSAR = "(a) => {" + _JS_MK_RECORRER + _JS_TRAE_LA_NAVE + _JS_MK_SHIPPER_LEER + r"""
     const s = mkShipper(a);
     const lista = a.que === 'agregar' ? s.agregar
                 : a.que === 'cerrar' ? (s.empresa === true ? s.cerrar : [])
-                : (s.titulo ? s.conEmpresa : []);
+                : (s.titulo || s.tituloNuevo ? s.conEmpresa : []);
     const [uno] = lista;
     return lista.length === 1 ? uno : null;
 }"""
@@ -10675,7 +10693,7 @@ def _mk_resultados_quietos():
     def quietos(r):
         nonlocal anterior
         listo = bool(r.get("con_empresa")) and all(r.get(k) == anterior.get(k)
-                                                   for k in ("resultados", "con_empresa", "titulo"))
+                                                   for k in ("resultados", "con_empresa", "titulo", "titulo_nuevo"))
         anterior = r
         return listo
     return quietos
@@ -10717,14 +10735,16 @@ def _mk_elegir_shipper(page, reg, det, f):
     """Elige a AQUACHILE como Shipper con los clics que decidió Marcelo (CICLO-maersk-shipper-y-cortes.md):
     pulsa el «Add» de la tarjeta «Shipper»; espera hasta MK_ESPERA_BUSCADOR s a que el buscador de partes muestre un
     resultado con AQUACHILE y su lista se quede quieta (_mk_resultados_quietos: llegan de a poco), y deja su evidencia
-    (mk_f<fila>_buscador); en el buscador titulado «Shipper», pulsa el único resultado a la vista con AQUACHILE; y
-    comprueba, hasta MK_ESPERA_SHIPPER s, que la tarjeta lo muestre y que el buscador se haya cerrado. Si la única
-    tarjeta no lo muestra, pulsa la casilla de ese resultado, solo si su posición y las cifras de su código apuntan a
-    la misma, y lo vuelve a comprobar (_mk_marcar_casilla; decisión de Marcelo, CICLO-maersk-busqueda-vacia.md); si la
-    tarjeta lo muestra y el buscador sigue abierto, lo cierra con su «Close» (_mk_cerrar_buscador; decisión de Marcelo,
-    CICLO-maersk-cuatro-puntos.md). Cada clic va sobre lo que su JavaScript vuelve a leer justo antes. Si algo de eso
-    no se cumple, corta sin otro clic (_mk_shipper_corte): buscar o cambiar de pestaña serían clics que no están
-    permitidos. Devuelve None, o el corte."""
+    (mk_f<fila>_buscador); en el buscador titulado «Shipper», o en la pantalla nueva titulada «Search/Add party»
+    (MK_BUSCADOR_GENERICO; decisión de Marcelo, encargo 83, CICLO-maersk-buscador-nuevo.md; no probada en el portal),
+    pulsa el único resultado a la vista con AQUACHILE; y comprueba, hasta MK_ESPERA_SHIPPER s, que la tarjeta lo
+    muestre y que el buscador se haya cerrado. Si la única tarjeta no lo muestra, pulsa la casilla de ese resultado,
+    solo si su posición y las cifras de su código apuntan a la misma, y lo vuelve a comprobar (_mk_marcar_casilla;
+    decisión de Marcelo, CICLO-maersk-busqueda-vacia.md); si la tarjeta lo muestra y el buscador sigue abierto, lo
+    cierra con su «Close» (_mk_cerrar_buscador; decisión de Marcelo, CICLO-maersk-cuatro-puntos.md). Cada clic va sobre
+    lo que su JavaScript vuelve a leer justo antes. Si algo de eso no se cumple, corta sin otro clic
+    (_mk_shipper_corte): buscar o cambiar de pestaña serían clics que no están permitidos. Devuelve None, o el
+    corte."""
     agregar = f"el «{MK_AGREGAR}» de la tarjeta «{MK_SHIPPER}»"
     corte = _mk_pulsar_en_el_shipper(page, reg, f, "agregar", agregar)
     if corte:
@@ -10736,9 +10756,12 @@ def _mk_elegir_shipper(page, reg, det, f):
                                                f"{MK_ESPERA_BUSCADOR} s{leer}")
     _evidencia_antes_de_la_guarda(page, reg, f"mk_f{f}_buscador", "con el buscador del Shipper abierto",
                                   completa=False)
-    if not r.get("titulo"):
+    if not (r.get("titulo") or r.get("titulo_nuevo")):
         return _mk_shipper_corte(page, reg, f, f"pulsé {agregar}, pero el buscador que se abrió no está titulado "
-                                               f"«{MK_SHIPPER}»")
+                                               f"«{MK_SHIPPER}» ni «{MK_BUSCADOR_GENERICO}»")
+    if not r.get("titulo"):
+        reg.info(f"Shipper: el buscador se abrió con la pantalla «{MK_BUSCADOR_GENERICO}», sin el título "
+                 f"«{MK_SHIPPER}»; elijo con la misma regla, y después compruebo la tarjeta «{MK_SHIPPER}»")
     if r.get("con_empresa") != 1:
         cuantos = f"había {r.get('con_empresa') or 0} de {r.get('resultados')}"
         return _mk_shipper_corte(page, reg, f, f"pulsé {agregar}, pero en el buscador no hay un solo resultado con "
@@ -10805,7 +10828,7 @@ def _mk_cerrar_buscador(page, reg, f, r):
 # CICLO-maersk-busqueda-vacia.md). Medido en el HTML del 27-09: la posición y las cifras del código apuntan a la misma
 # casilla en los 3 resultados. Va con un clic de JavaScript en el input, como la casilla de los términos, porque su
 # estilo no está en el HTML guardado y no se sabe si se ve; no está probado en el portal.
-MK_SIN_CASILLA = {"titulo": f"el buscador ya no está titulado «{MK_SHIPPER}»",
+MK_SIN_CASILLA = {"titulo": f"el buscador ya no está titulado «{MK_SHIPPER}» ni «{MK_BUSCADOR_GENERICO}»",
                   "resultado": f"no hay un solo resultado con {MK_EMPRESA} a la vista",
                   "posicion": "en su contenedor, las casillas y los resultados no van alternados",
                   "codigo": "la tarjeta del resultado no muestra un solo código con cifras",

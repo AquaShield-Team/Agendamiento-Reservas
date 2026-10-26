@@ -4595,7 +4595,7 @@ MUTACIONES += [
     dict(id="mk-shipper-pulsa-sin-decir-que", pruebas=[SH_DOS],
          viejo="dict(_MK_ARGS_SHIPPER, que=que)", nuevo="dict(_MK_ARGS_SHIPPER)"),
     dict(id="mk-shipper-sin-titulo-sigue", pruebas=[SH_CORTA],
-         viejo="    if not r.get(\"titulo\"):\n        return _mk_shipper_corte(",
+         viejo="    if not (r.get(\"titulo\") or r.get(\"titulo_nuevo\")):\n        return _mk_shipper_corte(",
          nuevo="    if False:\n        return _mk_shipper_corte("),
     dict(id="mk-shipper-varios-resultados-sirven", pruebas=[SH_CORTA],
          viejo="    if r.get(\"con_empresa\") != 1:\n", nuevo="    if not r.get(\"con_empresa\"):\n"),
@@ -4641,7 +4641,7 @@ MUTACIONES += [
          viejo="encabezados.some(x => _palabraEn(mkTextoHondo(x.el), String(a.titulo).toUpperCase(), 0) >= 0)",
          nuevo="encabezados.length > 0"),
     dict(id="mk-shipper-js-pulsa-sin-titulo", pruebas=[SH_JS],
-         viejo="(s.titulo ? s.conEmpresa : [])", nuevo="s.conEmpresa"),
+         viejo="(s.titulo || s.tituloNuevo ? s.conEmpresa : [])", nuevo="s.conEmpresa"),
     dict(id="mk-shipper-js-pulsa-varios", pruebas=[SH_JS],
          viejo="    return lista.length === 1 ? uno : null;\n", nuevo="    return uno || null;\n"),
     dict(id="mk-shipper-js-empresa-parte-de-palabra", pruebas=[SH_JS],
@@ -4683,8 +4683,8 @@ MUTACIONES += [
          viejo="_mk_leer_shipper(page, _mk_resultados_quietos(), MK_ESPERA_BUSCADOR)",
          nuevo="_mk_leer_shipper(page, lambda x: x.get(\"con_empresa\"), MK_ESPERA_BUSCADOR)"),
     dict(id="mk-shipper-quieta-sin-el-titulo", pruebas=[SH_MK + "test_la_lista_quieta_tambien_con_su_titulo"],
-         viejo="for k in (\"resultados\", \"con_empresa\", \"titulo\"))",
-         nuevo="for k in (\"resultados\", \"con_empresa\"))"),
+         viejo="for k in (\"resultados\", \"con_empresa\", \"titulo\", \"titulo_nuevo\"))",
+         nuevo="for k in (\"resultados\", \"con_empresa\", \"titulo_nuevo\"))"),
     dict(id="mk-shipper-dice-elegi", pruebas=[SH_CORTA],
          viejo="f\"pulsé {pulsado}, pero {que}\"",
          nuevo="f\"elegí a {MK_EMPRESA} en el buscador, pero {que}\""),
@@ -4912,7 +4912,7 @@ MUTACIONES += [
     dict(id="mk-casilla-cualquier-input", pruebas=[SH_CASILLA_JS],
          viejo="mkTag(e) === 'input' && mkAtr(e, 'type').toLowerCase() === 'radio'", nuevo="mkTag(e) === 'input'"),
     dict(id="mk-casilla-sin-titulo", pruebas=[SH_CASILLA_JS],
-         viejo="            if (!titulo) return {el: null, por: 'titulo'};\n", nuevo=""),
+         viejo="            if (!titulo && !tituloNuevo) return {el: null, por: 'titulo'};\n", nuevo=""),
     dict(id="mk-casilla-con-varios-resultados", pruebas=[SH_CASILLA_JS],
          viejo="if (conLaEmpresa.length !== 1) return", nuevo="if (!conLaEmpresa.length) return"),
     dict(id="mk-casilla-sin-codigo", pruebas=[SH_CASILLA_JS],
@@ -9493,4 +9493,70 @@ MUTACIONES += [
          nuevo='        if not (elegido and elegido != "sin-salmon"):\n'),
     dict(id="e82-hs-otra-vez-sin-borrar", pruebas=[HS_E82],
          viejo=OTRA_VEZ_E82, nuevo=OTRA_VEZ_E82.replace("_msc_escribir_hs(page, inp, hscode)", "inp.press_sequentially(str(hscode), delay=120)")),
+]
+
+# --- Encargo 83 (CICLO-maersk-buscador-nuevo.md), decisión de Marcelo: la pantalla nueva del buscador del Shipper de
+# MAERSK, titulada «Search/Add party», se acepta con la misma regla (un solo resultado con la empresa, la lista quieta,
+# y después la tarjeta «Shipper» lo muestra). Sin aceptarla, aceptando otro título (con otra cosa en su span, suelto en
+# el encabezado o en otro elemento, oculto o fuera del buscador), sin elegir en ella, sin su casilla, sin el título en
+# la lista quieta, sin anotarlo o anotándolo de más, o sin el resultado único ---
+SH = "test_clics.TestShipperMaersk."
+NUEVA_E83 = SH + "test_la_pantalla_nueva_elige_con_la_misma_regla"
+UNICO_E83 = SH + "test_la_pantalla_nueva_sin_un_resultado_unico_corta"
+QUIETA_E83 = SH + "test_la_lista_quieta_tambien_con_su_titulo"
+JS_E83 = SH + "test_js_shipper"
+CASILLA_E83 = SH + "test_js_casilla"
+MEDIDOS_E83 = SH + "test_la_empresa_y_el_titulo_son_los_medidos"
+
+MUTACIONES += [
+    dict(id="e83-nueva-no-se-acepta", pruebas=[NUEVA_E83, UNICO_E83],
+         viejo='    if not (r.get("titulo") or r.get("titulo_nuevo")):\n', nuevo='    if not r.get("titulo"):\n'),
+    dict(id="e83-nueva-sin-resultado-unico", pruebas=[UNICO_E83],
+         viejo='    if r.get("con_empresa") != 1:\n        cuantos = ',
+         nuevo='    if r.get("con_empresa") != 1 and not r.get("titulo_nuevo"):\n        cuantos = '),
+    dict(id="e83-nueva-sin-aviso", pruebas=[NUEVA_E83],
+         viejo='    if not r.get("titulo"):\n        reg.info(f"Shipper: el buscador se abrió con la pantalla',
+         nuevo='    if False:\n        reg.info(f"Shipper: el buscador se abrió con la pantalla'),
+    dict(id="e83-aviso-tambien-en-el-de-siempre", pruebas=[NUEVA_E83],
+         viejo='    if not r.get("titulo"):\n        reg.info(f"Shipper: el buscador se abrió con la pantalla',
+         nuevo='    if True:\n        reg.info(f"Shipper: el buscador se abrió con la pantalla'),
+    dict(id="e83-quieta-sin-titulo-nuevo", pruebas=[QUIETA_E83],
+         viejo='for k in ("resultados", "con_empresa", "titulo", "titulo_nuevo"))',
+         nuevo='for k in ("resultados", "con_empresa", "titulo"))'),
+    dict(id="e83-otro-titulo-generico", pruebas=[MEDIDOS_E83, SH + "test_con_la_empresa_no_pulsa_nada"],
+         viejo='MK_BUSCADOR_GENERICO = "Search/Add party"\n', nuevo='MK_BUSCADOR_GENERICO = "Search party"\n'),
+    dict(id="e83-js-pulsar-sin-la-nueva", pruebas=[JS_E83],
+         viejo="                : (s.titulo || s.tituloNuevo ? s.conEmpresa : []);\n",
+         nuevo="                : (s.titulo ? s.conEmpresa : []);\n"),
+    dict(id="e83-js-titulo-por-parte", pruebas=[JS_E83],
+         viejo="            c => mkTag(c) === 'span' && mkTextoHondo(c) === String(a.generico).toUpperCase()));\n",
+         nuevo=("            c => mkTag(c) === 'span'\n"
+                "                 && mkTextoHondo(c).includes(String(a.generico).toUpperCase())));\n")),
+    dict(id="e83-js-titulo-en-cualquier-hijo", pruebas=[JS_E83],
+         viejo="            c => mkTag(c) === 'span' && mkTextoHondo(c) === String(a.generico).toUpperCase()));\n",
+         nuevo="            c => mkTextoHondo(c) === String(a.generico).toUpperCase()));\n"),
+    dict(id="e83-js-titulo-en-todo-el-encabezado", pruebas=[JS_E83],
+         viejo=("        const tituloNuevo = encabezados.some(x => [...(x.el.children || [])].some(\n"
+                "            c => mkTag(c) === 'span' && mkTextoHondo(c) === String(a.generico).toUpperCase()));\n"),
+         nuevo=("        const tituloNuevo = encabezados.some(x => mkTextoHondo(x.el).startsWith(\n"
+                "            String(a.generico).toUpperCase()));\n")),
+    # De la revisión de código: el título genérico de un encabezado fuera del buscador, o de uno oculto; y el aviso de
+    # la pantalla nueva también con los dos títulos a la vista.
+    dict(id="e83-js-titulo-fuera-del-buscador", pruebas=[JS_E83],
+         viejo="        const tituloNuevo = encabezados.some(x => ",
+         nuevo=("        const tituloNuevo = todos.filter(x => mkAtr(x.el, 'slot') === 'heading' && mkVisible(x.el))"
+                ".some(x => ")),
+    dict(id="e83-js-titulo-oculto", pruebas=[JS_E83],
+         viejo="        const tituloNuevo = encabezados.some(x => ",
+         nuevo=("        const tituloNuevo = todos.filter(x => mkAtr(x.el, 'slot') === 'heading' && enBuscador(x))"
+                ".some(x => ")),
+    dict(id="e83-aviso-con-los-dos-titulos", pruebas=[NUEVA_E83],
+         viejo='    if not r.get("titulo"):\n        reg.info(f"Shipper: el buscador se abrió con la pantalla',
+         nuevo='    if r.get("titulo_nuevo"):\n        reg.info(f"Shipper: el buscador se abrió con la pantalla'),
+    dict(id="e83-js-lectura-sin-titulo-nuevo", pruebas=[JS_E83],
+         viejo="titulo: s.titulo, titulo_nuevo: s.tituloNuevo, abierto: s.abierto,",
+         nuevo="titulo: s.titulo, abierto: s.abierto,"),
+    dict(id="e83-js-casilla-sin-la-nueva", pruebas=[CASILLA_E83],
+         viejo="            if (!titulo && !tituloNuevo) return {el: null, por: 'titulo'};\n",
+         nuevo="            if (!titulo) return {el: null, por: 'titulo'};\n"),
 ]
