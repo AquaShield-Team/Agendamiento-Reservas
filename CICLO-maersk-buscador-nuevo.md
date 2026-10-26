@@ -2,8 +2,9 @@
 
 **Fecha:** 2026-10-26 · **Método:** `metodo-ciclo` v38, en Modo autónomo (por omisión).
 
-Base: `Agendamiento Reservas` @ `613039d` · árbol limpio · `origin/main` en `c647a88` (los tres commits del encargo 82,
-sin subir).
+Base: `Agendamiento Reservas` @ `613039d` · árbol limpio. `origin/main` no lo medí al empezar; al cerrar,
+`origin/main` y `origin/estable` estaban en `613039d` (los commits del encargo 82, que subió Marcelo; medido con
+`git fetch`).
 
 **Commits,** en `main` y sin push (lo pidió el encargo, y el repo es público):
 - `32740e9`: MAERSK acepta la pantalla nueva del buscador del Shipper, con la misma regla;
