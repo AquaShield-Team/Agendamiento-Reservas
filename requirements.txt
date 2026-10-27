@@ -1,0 +1,57 @@
+# Dependencias de AQUASHIELD (AQUASHIELD.py). Las instala preparar_entorno.py en el entorno propio del
+# programa, .venv, y no en el Python del equipo, con el pip del equipo:
+#
+#   python -m pip --python .venv\Scripts\python.exe install --require-hashes --only-binary=:all: -r requirements.txt
+#
+# Cada paquete va con su version fija (las que corren en el equipo de desarrollo) y con el sha256 de cada una de
+# sus ruedas para Windows, leidos de PyPI el 2026-10-26. pip no instala un archivo cuyo hash no este aca: lo que
+# baje tiene que ser byte a byte lo que PyPI publico. Estan los paquetes que usa el programa y los que piden ellos
+# (pip exige todos en este modo). Para subir una version se resuelve de nuevo en un venv sin paquetes y se leen
+# los hashes de PyPI (CICLO-entorno-propio.md).
+#
+# Cubre Python 3.11 a 3.14 en Windows de 64 bits (win_amd64). No cubre Python 3.15, ni Windows de 32 bits, ni
+# ARM: greenlet 3.3.1 no publica ruedas para ellos, y pip no instala nada en ese modo. Ahi preparar_entorno.py
+# abre el programa con el Python del equipo si ya tiene las librerias, y si no, lo dice.
+# Avisos de seguridad: consultados el 2026-10-26 en la base de avisos de GitHub (ecosistema pip) para cada
+# paquete en su version fija: 0 avisos en los 9, con una version vieja conocida como control positivo.
+# Solo ASCII: pip lee este archivo con la pagina de codigos del equipo.
+
+et-xmlfile==2.0.0 \
+    --hash=sha256:7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa
+    # lo pide openpyxl
+
+greenlet==3.3.1 \
+    --hash=sha256:32e4ca9777c5addcbf42ff3915d99030d8e00173a56f80001fb3875998fe410b \
+    --hash=sha256:cc98b9c4e4870fa983436afa999d4eb16b12872fab7071423d5262fa7120d57a \
+    --hash=sha256:27289986f4e5b0edec7b5a91063c109f0276abb09a7e9bdab08437525977c946 \
+    --hash=sha256:96aff77af063b607f2489473484e39a0bbae730f2ea90c9e5606c9b73c44174a
+    # lo pide playwright
+
+holidays==0.105 \
+    --hash=sha256:7fbd87770f1128eb24514fbb4c3ec6afa1c72d65c346713dbc13c2d0297df481
+    # feriados de Chile (opcional)
+
+openpyxl==3.1.5 \
+    --hash=sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2
+    # lee y escribe la planilla
+
+playwright==1.58.0 \
+    --hash=sha256:1e03be090e75a0fabbdaeab65ce17c308c425d879fa48bb1d7986f96bfad0b99 \
+    --hash=sha256:a2bf639d0ce33b3ba38de777e08697b0d8f3dc07ab6802e4ac53fb65e3907af8
+    # maneja el navegador
+
+pyee==13.0.0 \
+    --hash=sha256:48195a3cddb3b1515ce0695ed76036b5ccc2ef3a9f963ff9f77aec0139845498
+    # lo pide playwright
+
+python-dateutil==2.9.0.post0 \
+    --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
+    # lo pide holidays
+
+six==1.17.0 \
+    --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274
+    # lo pide python-dateutil
+
+typing-extensions==4.15.0 \
+    --hash=sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548
+    # lo pide playwright y pyee

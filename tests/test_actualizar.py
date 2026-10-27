@@ -22,10 +22,12 @@ from pathlib import Path
 import soporte
 
 ACTUALIZAR = soporte.FUENTES / "actualizar.py"
+PREPARADOR = soporte.FUENTES / "preparar_entorno.py"
+REQUISITOS = soporte.FUENTES / "requirements.txt"
 IDENTIDAD = ["-c", "user.name=Prueba Inventada", "-c", "user.email=prueba@ejemplo.invalid", "-c",
              "core.autocrlf=false", "-c", "init.defaultBranch=main"]
 GITIGNORE = ("/*\nconfig.json\nperfiles/\nlogs/\n*.xlsx\n!/.gitignore\n!/.gitattributes\n!/AQUASHIELD.py\n"
-             "!/actualizar.py\n!/LEEME.md\n")
+             "!/actualizar.py\n!/preparar_entorno.py\n!/requirements.txt\n!/LEEME.md\n")
 
 
 def carpeta_corta(prefijo):
@@ -325,9 +327,17 @@ def sin_bloque(bat):
 
 
 def sin_chequeo(bat):
-    """El mismo .bat sin el chequeo de las librerías (el control)."""
-    sin = re.sub(r"  REM Sin playwright u openpyxl.*?\n  \)\n\n", "", bat, count=1, flags=re.S)
-    assert sin != bat, "no encontré el chequeo de las librerías en el .bat"
+    """El mismo .bat sin el freno del código 11 de preparar_entorno.py, el de «no se puede abrir» (el control)."""
+    sin = bat.replace("  if errorlevel 11 (\n    echo.\n    pause\n    exit /b 1\n  )\n", "", 1)
+    assert sin != bat, "no encontré el freno del código 11 en el .bat"
+    return sin
+
+
+def sin_red_de_seguridad(bat):
+    """El mismo .bat sin la mirada al Python del equipo cuando preparar_entorno.py falla por algo imprevisto (el control)."""
+    sin = bat.replace('    python -c "import playwright.sync_api, openpyxl" 2>nul\n    if errorlevel 1 (\n',
+                      "    if 1==0 (\n", 1)
+    assert sin != bat, "no encontré la mirada al Python del equipo en el .bat"
     return sin
 
 
@@ -342,11 +352,14 @@ def correr(args, cwd, env_extra, timeout=60):
 
 
 class TestLosLanzadores(unittest.TestCase):
-    """Los dos .bat corren el actualizador antes de abrir el panel, en un solo bloque que cmd lee entero."""
+    """Los dos .bat corren el actualizador y el preparador del entorno antes de abrir el panel, en un solo bloque que
+    cmd lee entero."""
+    BATS = (("Iniciar AQUASHIELD.bat", "AQUASHIELD.py"), ("Iniciar AQUASHIELD_EMISION.bat", "AQUASHIELD_EMISION.py"))
+    PYTHON_3_11 = 'python -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>nul'
+    PATH_DEL_VENV = r'set "PATH=%~dp0.venv\Scripts;%PATH:"=%"'
 
     def test_el_bat_actualiza_antes_de_abrir_y_todo_en_un_bloque(self):
-        for nombre, programa in (("Iniciar AQUASHIELD.bat", "AQUASHIELD.py"),
-                                 ("Iniciar AQUASHIELD_EMISION.bat", "AQUASHIELD_EMISION.py")):
+        for nombre, programa in self.BATS:
             with self.subTest(bat=nombre):
                 b = (soporte.FUENTES / nombre).read_bytes()
                 self.assertTrue(all(c < 128 for c in b), "el .bat va en ASCII")
@@ -356,24 +369,44 @@ class TestLosLanzadores(unittest.TestCase):
                 self.assertEqual([x for x in lineas[:abre] if not x.upper().startswith("REM")],
                                  ["@echo off", 'cd /d "%~dp0"'])
                 self.assertEqual(lineas[cierra + 1:], [])
-                self.assertEqual(bloque[-2:], [f'start "" pythonw "{programa}"', "exit /b 0"])
+                inicio = f'start "" pythonw "{programa}"'
+                self.assertEqual(bloque[-2:], [inicio, "exit /b 0"])
                 i = bloque.index("python actualizar.py")
                 self.assertEqual(bloque[i + 1:i + 5], ["if errorlevel 3 (", "pause", "exit /b 3", ")"])
-                self.assertLess(i, min(k for k, x in enumerate(bloque) if "pip install" in x))
                 # Un paréntesis en un comentario del bloque lo cerraría antes de tiempo, y uno en un echo, también.
                 self.assertEqual([x for x in bloque if x.upper().startswith(("REM", "ECHO"))
                                   and ("(" in x or ")" in x)], [])
-                # Sin playwright u openpyxl el panel no abre: después de instalarlas y antes de abrirlo, el .bat lo dice
-                # y espera una tecla (encargo 61). Antes de holidays, que sin red no frena el arranque (test_consola).
-                k = bloque.index('python -c "import playwright, openpyxl" 2>nul')
-                fin = bloque.index(")", k)
-                self.assertEqual(bloque[k + 1], "if errorlevel 1 (")
-                self.assertEqual(bloque[fin - 2:fin], ["pause", "exit /b 1"])
-                self.assertIn("echo   python -m pip install --user playwright openpyxl", bloque[k:fin])
-                instala = [n for n, x in enumerate(bloque) if x.startswith("python") and "pip install" in x]
-                self.assertEqual([("playwright" in bloque[n], "openpyxl" in bloque[n]) for n in instala if n < k],
-                                 [(True, False), (False, True)])
-                self.assertLess(fin, bloque.index(f'start "" pythonw "{programa}"'))
+                # Sin Python 3.11 o más nuevo no hay actualizador ni preparador: se mira antes, y se ofrece instalarlo.
+                self.assertLess(bloque.index(self.PYTHON_3_11), i)
+                # El preparador va después del actualizador (la versión nueva puede traer otros requisitos) y antes de
+                # abrir. Con el código 11 no se abre; con el 10 se abre con el Python del equipo; con 0, con el .venv.
+                k = bloque.index("python -I preparar_entorno.py")
+                self.assertLess(i, k)
+                # Un código negativo o de 12 en adelante pasa a 1, la falla imprevista; el 11, no abrir; el 10, el del equipo.
+                self.assertEqual(bloque[k + 1:k + 9], ["if not errorlevel 0 cmd /c exit 1", "if errorlevel 12 cmd /c exit 1",
+                                                       "if errorlevel 11 (", "echo.", "pause", "exit /b 1", ")",
+                                                       "if errorlevel 10 ("])
+                self.assertLess(bloque.index(self.PATH_DEL_VENV, k), bloque.index(inicio))
+                # Python se ofrece de 64 bits: en un equipo ARM64 winget traería el ARM64, que requirements.txt no cubre.
+                self.assertEqual([("--architecture x64" in x) for x in bloque if x.startswith("winget install --id Python")],
+                                 [True])
+                # El .bat ya no instala nada por su cuenta: lo hace el preparador, con hash.
+                self.assertEqual([x for x in bloque if "pip" in x.lower() and not x.upper().startswith(("REM", "ECHO"))],
+                                 [])
+
+    def test_los_dos_bat_son_el_mismo_salvo_el_modo(self):
+        # Un arreglo en uno que no llega al otro deja a quien emite con un lanzador distinto del que se probó.
+        seguro, emision = [(soporte.FUENTES / n).read_bytes().decode("ascii").split("\n") for n, _ in self.BATS]
+        self.assertEqual(len(seguro), len(emision))
+        self.assertEqual([(a.strip(), b.strip()) for a, b in zip(seguro, emision) if a != b], [
+            ("REM  AQUASHIELD - Lanzador Principal (Modo Seguro)", "REM  AQUASHIELD - Lanzador Principal (Modo Emision Real)"),
+            ("REM  Doble clic para abrir el panel de control web.",
+             "REM  Doble clic para abrir el panel en modo emision sin consola."),
+            ("REM  Las reservas se completan al 100% y se detienen antes de emitir.",
+             "REM  Las reservas seleccionadas se enviaran y confirmaran formalmente."),
+            ("title AquaShield - Modulo Reservas", "title AquaShield - Modulo Reservas - EMISION"),
+            ("REM Abre el panel, sin ventana negra de consola", "REM Abre el panel en modo emision, sin ventana negra de consola"),
+            ('start "" pythonw "AQUASHIELD.py"', 'start "" pythonw "AQUASHIELD_EMISION.py"')])
 
     def test_en_cmd_abre_la_version_nueva_aunque_la_actualizacion_reescriba_el_bat(self):
         # El camino real: cmd corre el .bat en un clon inventado, y la actualización que corre adentro le agrega 40
@@ -400,8 +433,11 @@ class TestLosLanzadores(unittest.TestCase):
         shutil.copyfile(ACTUALIZAR, r.trabajo / "actualizar.py")
         sustituto = ('import pathlib\nVERSION = "{}"\nwith open(pathlib.Path(__file__).resolve().parent / '
                      '"marca.txt", "a", encoding="utf-8") as f:\n    f.write(VERSION + "\\n")\n')
-        (r.trabajo / ".gitignore").write_bytes((GITIGNORE + f"!/{nombre}\n!/{programa}\n").encode())
-        r.publicar("con el .bat", {nombre: bat, programa: sustituto.format(1)})
+        # El preparador, aquí, dice que abra con el Python del equipo (10): esta prueba es de cómo cmd lee el .bat. Lo
+        # que hace el preparador de verdad, en test_entorno.
+        preparador = "import sys\nsys.exit(10)\n"
+        (r.trabajo / ".gitignore").write_bytes((GITIGNORE + f"!/{nombre}\n!/{programa}\n!/preparar_entorno.py\n").encode())
+        r.publicar("con el .bat", {nombre: bat, programa: sustituto.format(1), "preparar_entorno.py": preparador})
         r.git(r.trabajo, "push", "-q", "origin", "main:estable")
         r.git(r.clon, "pull", "-q", "--ff-only")
         lineas = bat.split("\n")
@@ -419,38 +455,123 @@ class TestLosLanzadores(unittest.TestCase):
         errores = [x for x in error.splitlines() if "no se reconoce" in x or "inesperado" in x]
         return codigo, (marca.read_text(encoding="utf-8").split() if marca.exists() else None), errores
 
+    def python_del_path(self):
+        """El `python` que encuentra cmd en el PATH, el que corre el .bat. No el de "python" en un Popen: Windows busca
+        primero en la carpeta del programa que lo lanza, y aquí es la del Python de las pruebas, que trae las librerías."""
+        python = shutil.which("python")
+        if python is None:
+            self.skipTest("no hay un python en el PATH")
+        return python
+
+    def entorno_sin_red(self, raiz):
+        """Pip sin red de verdad: le pregunta a un puerto local donde nadie escucha. Sin la configuración ni la caché de
+        quien corre la prueba."""
+        # PYTHONUSERBASE vacío: el Python de la Store, que corre estas pruebas, deja puesto el suyo en el entorno de sus
+        # hijos, y -E no lo ignora (medido el 2026-10-26: el Python de python.org importaba el playwright de la Store).
+        (raiz / "u").mkdir(exist_ok=True)
+        return {"PYTHONUSERBASE": str(raiz / "u"), "PIP_INDEX_URL": "http://127.0.0.1:9/simple", "PIP_RETRIES": "0",
+                "PIP_TIMEOUT": "3", "PIP_DISABLE_PIP_VERSION_CHECK": "1", "PIP_NO_INPUT": "1",
+                "PIP_CONFIG_FILE": os.devnull, "PIP_CACHE_DIR": str(raiz / "cache"),
+                "GIT_CEILING_DIRECTORIES": str(raiz)}
+
+    def carpeta_del_programa(self, raiz, nombre, programa, bat, preparador=None):
+        """Una carpeta con el .bat, el actualizador, el preparador (el de verdad, o el que se diga) y un programa
+        sustituto que anota que abrió."""
+        carpeta = raiz / f"p{len(list(raiz.glob('p*')))}"
+        carpeta.mkdir()
+        shutil.copyfile(ACTUALIZAR, carpeta / "actualizar.py")
+        if preparador is None:
+            shutil.copyfile(PREPARADOR, carpeta / "preparar_entorno.py")
+            shutil.copyfile(REQUISITOS, carpeta / "requirements.txt")
+        else:
+            (carpeta / "preparar_entorno.py").write_bytes(preparador.encode())
+        sustituto = 'import pathlib\n(pathlib.Path(__file__).resolve().parent / "marca.txt").write_text("abrio")\n'
+        (carpeta / programa).write_bytes(sustituto.encode())
+        (carpeta / nombre).write_bytes(bat.encode("ascii"))
+        return carpeta
+
+    def abrio(self, carpeta, espera):
+        """True si el programa sustituto anotó que abrió (pythonw corre aparte: se espera su marca)."""
+        for _ in range(int(espera * 2)):
+            if (carpeta / "marca.txt").exists():
+                return True
+            time.sleep(0.5)
+        return False
+
     def test_sin_las_librerias_lo_dice_y_no_abre(self):
         # Medido en el encargo 61, en un clon nuevo con un Python sin las librerías de este equipo y sin red: pip no las
-        # instala, pythonw muere al importar playwright, y el .bat salía sin decir nada: no se abría ningún panel. Ahora
-        # lo dice y espera una tecla. Control: el mismo .bat sin el chequeo abre el programa igual (aquí, un sustituto
-        # que anota que abrió). Sin red de verdad: pip le pregunta a un puerto local donde nadie escucha.
+        # instala, pythonw muere al importar playwright, y el .bat salía sin decir nada: no se abría ningún panel. Desde
+        # el encargo 84 lo dice el preparador (preparar_entorno.py) y el .bat no abre y espera una tecla. Control: el
+        # mismo .bat sin ese freno abre el programa igual (aquí, un sustituto que anota que abrió).
         raiz = carpeta_corta("aq_lib_")
         self.addCleanup(borrar, raiz)
-        (raiz / "u").mkdir()
-        env = {"PYTHONUSERBASE": str(raiz / "u"), "PIP_INDEX_URL": "http://127.0.0.1:9/simple", "PIP_RETRIES": "0",
-               "PIP_TIMEOUT": "3", "PIP_DISABLE_PIP_VERSION_CHECK": "1", "PIP_NO_INPUT": "1",
-               "PIP_CACHE_DIR": str(raiz / "cache"), "GIT_CEILING_DIRECTORIES": str(raiz)}
-        if correr(["python", "-c", "import playwright, openpyxl"], raiz, env)[0] == 0:
-            self.skipTest("este Python trae playwright y openpyxl fuera de la carpeta de paquetes del usuario")
-        sustituto = ('import pathlib\n(pathlib.Path(__file__).resolve().parent / "marca.txt").write_text("abrio")\n')
-        for nombre, programa in (("Iniciar AQUASHIELD.bat", "AQUASHIELD.py"),
-                                 ("Iniciar AQUASHIELD_EMISION.bat", "AQUASHIELD_EMISION.py")):
+        env = self.entorno_sin_red(raiz)
+        if correr([self.python_del_path(), "-E", "-c", "import playwright.sync_api, openpyxl"], raiz, env)[0] == 0:
+            self.skipTest("el python del PATH trae playwright y openpyxl: el preparador abriría con él")
+        for nombre, programa in self.BATS:
             bat = (soporte.FUENTES / nombre).read_bytes().decode("ascii")
-            for chequeo in (True, False):
-                with self.subTest(bat=nombre, chequeo=chequeo):
-                    carpeta = raiz / f"{programa[:-3]}_{chequeo}"
-                    carpeta.mkdir()
-                    shutil.copyfile(ACTUALIZAR, carpeta / "actualizar.py")
-                    (carpeta / programa).write_bytes(sustituto.encode())
-                    (carpeta / nombre).write_bytes((bat if chequeo else sin_chequeo(bat)).encode("ascii"))
+            for freno in (True, False):
+                with self.subTest(bat=nombre, freno=freno):
+                    carpeta = self.carpeta_del_programa(raiz, nombre, programa, bat if freno else sin_chequeo(bat))
                     _, salida, _ = correr(["cmd", "/d", "/c", str(carpeta / nombre)], carpeta, env, timeout=180)
-                    marca = carpeta / "marca.txt"
-                    for _ in range(6 if chequeo else 60):     # pythonw corre aparte: se espera su marca
-                        if marca.exists():
-                            break
-                        time.sleep(0.5)
-                    dice = "AQUASHIELD no puede abrir: faltan las librerias playwright u openpyxl de Python" in salida
-                    self.assertEqual((dice, marca.exists()), (True, False) if chequeo else (False, True))
+                    dice = "No abrí AQUASHIELD: faltan «playwright» y «openpyxl» y no se pudo instalar." in salida
+                    self.assertEqual((dice, self.abrio(carpeta, 3 if freno else 30)), (True, not freno), salida)
+
+    def test_si_el_preparador_falla_por_algo_imprevisto_abre_solo_con_un_python_completo(self):
+        # Un error del propio preparador (un archivo roto en una actualización, por ejemplo) no deja sin abrir a quien ya
+        # tenía todo en el Python del equipo, y no abre un panel que moriría al importar playwright. Las librerías del
+        # equipo, aquí, son módulos inventados en PYTHONPATH.
+        raiz = carpeta_corta("aq_imp_")
+        self.addCleanup(borrar, raiz)
+        env = self.entorno_sin_red(raiz)
+        falsas = raiz / "falsas"
+        for ruta in ("playwright/__init__.py", "playwright/sync_api.py", "openpyxl/__init__.py"):
+            (falsas / ruta).parent.mkdir(parents=True, exist_ok=True)
+            (falsas / ruta).write_bytes(b"")
+        con, sin = dict(env, PYTHONPATH=str(falsas)), dict(env, PYTHONPATH=str(raiz / "nada"))
+        if correr([self.python_del_path(), "-c", "import playwright.sync_api, openpyxl"], raiz, sin)[0] == 0:
+            self.skipTest("el python del PATH trae playwright y openpyxl")
+        nombre, programa = self.BATS[0]
+        bat = (soporte.FUENTES / nombre).read_bytes().decode("ascii")
+        roto, sale_255 = "import sys\nsys.exit(1)\n", "import sys\nsys.exit(255)\n"
+        # El 255 (y todo código de 12 en adelante) es también una falla imprevista, no el 11 de «no se puede abrir».
+        for caso, entorno, bat_probado, abre, preparador in (
+                ("python completo", con, bat, True, roto),
+                ("python sin las librerias", sin, bat, False, roto),
+                ("control: sin la mirada", sin, sin_red_de_seguridad(bat), True, roto),
+                ("codigo 255 con python completo", con, bat, True, sale_255),
+                ("codigo 255 con python sin las librerias", sin, bat, False, sale_255)):
+            with self.subTest(caso=caso):
+                carpeta = self.carpeta_del_programa(raiz, nombre, programa, bat_probado, preparador=preparador)
+                _, salida, _ = correr(["cmd", "/d", "/c", str(carpeta / nombre)], carpeta, entorno, timeout=180)
+                dice = "fallo la preparacion de las librerias" in salida
+                self.assertEqual((self.abrio(carpeta, 30 if abre else 3), dice), (abre, not abre), salida)
+
+    def test_sin_git_pregunta_una_sola_vez(self):
+        # Sin Git (y con un winget que no instala nada), cada inicio esperaba la respuesta de `choice` hasta 60 s en una
+        # consola de verdad (revisión de código del encargo 84; con la entrada de las pruebas, vacía, contesta enseguida y
+        # no se ve). Ahora pregunta una vez y deja una marca en logs\. El PATH de la prueba trae solo el Python, el sistema
+        # y el winget falso.
+        raiz = carpeta_corta("aq_git_")
+        self.addCleanup(borrar, raiz)
+        python = self.python_del_path()
+        raiz_windows = os.environ["SystemRoot"]
+        falso = raiz / "winget_falso"
+        falso.mkdir()
+        (falso / "winget.cmd").write_bytes(b"@echo WINGET_FALSO %*\r\n@exit /b 1\r\n")
+        env = dict(self.entorno_sin_red(raiz), PATH=os.pathsep.join([os.path.dirname(python), str(falso),
+                                                                      os.path.join(raiz_windows, "System32"), raiz_windows]))
+        nombre, programa = self.BATS[0]
+        bat = (soporte.FUENTES / nombre).read_bytes().decode("ascii")
+        carpeta = self.carpeta_del_programa(raiz, nombre, programa, bat, preparador="import sys\nsys.exit(10)\n")
+        dicen = []
+        for vez in (1, 2):
+            (carpeta / "marca.txt").unlink(missing_ok=True)
+            _, salida, _ = correr(["cmd", "/d", "/c", str(carpeta / nombre)], carpeta, env, timeout=180)
+            self.assertTrue(self.abrio(carpeta, 30), salida)
+            dicen.append("Este equipo no tiene Git" in salida)
+        self.assertEqual(dicen, [True, False])
+        self.assertTrue((carpeta / "logs" / ".git-preguntado").is_file())
 
     def test_gitignore_versiona_el_actualizador(self):
         lineas = (soporte.FUENTES / ".gitignore").read_text(encoding="utf-8").splitlines()

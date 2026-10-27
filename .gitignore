@@ -39,6 +39,10 @@ _para_borrar/
 !/AQUASHIELD.py
 !/AQUASHIELD_EMISION.py
 !/actualizar.py
+# El entorno propio del programa (encargo 84): su preparador y sus dependencias con hash. La carpeta .venv que arma
+# queda fuera, como todo lo de la raiz que no se nombra aqui.
+!/preparar_entorno.py
+!/requirements.txt
 !/Iniciar AQUASHIELD.bat
 !/Iniciar AQUASHIELD_EMISION.bat
 !/config.example.json

@@ -25,9 +25,11 @@ from pathlib import Path
 
 TESTS = Path(__file__).resolve().parent
 RAIZ = TESTS.parent
-# El actualizador y la lista de lo que se versiona, desde el encargo 60: sus pruebas los leen de soporte.FUENTES.
+# El actualizador y la lista de lo que se versiona, desde el encargo 60, y el preparador del entorno con sus
+# dependencias, desde el encargo 84: sus pruebas los leen de soporte.FUENTES.
 FUENTES_PROGRAMA = ["AQUASHIELD.py", "AQUASHIELD_EMISION.py", "Iniciar AQUASHIELD.bat",
-                    "Iniciar AQUASHIELD_EMISION.bat", "config.example.json", "actualizar.py", ".gitignore"]
+                    "Iniciar AQUASHIELD_EMISION.bat", "config.example.json", "actualizar.py", "preparar_entorno.py",
+                    "requirements.txt", ".gitignore"]
 PLANILLA_TEMPORAL_REAL = Path(tempfile.gettempdir()) / "aquashield_planilla.xlsx"
 TRABAJO = Path(tempfile.mkdtemp(prefix="aquashield_mut_"))
 
@@ -110,6 +112,7 @@ def listar_pruebas():
 def preparar_fuentes(destino, mutacion=None):
     destino.mkdir(parents=True)
     for n in FUENTES_PROGRAMA:
+        (destino / n).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(RAIZ / n, destino / n)
     if mutacion:
         archivo = mutacion.get("archivo", "AQUASHIELD.py")

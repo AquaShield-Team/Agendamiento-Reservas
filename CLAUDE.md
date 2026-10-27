@@ -7,8 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 AQUASHIELD · Agendamiento de Reservas (AquaChile): robot que lee una planilla Excel de reservas y, con
 Playwright sobre el Chrome instalado, entra a seis portales navieros (ONE, MSC, CMA-CGM, COSCO,
 HYUNDAI/HMM y MAERSK), arma cada booking y devuelve la planilla con el estado y el N° de reserva.
-Todo el programa vive en **un solo archivo, `AQUASHIELD.py` (~16 000 líneas)**. No hay
-`requirements.txt` ni linter; hay una red de verificación offline en `tests/` (ver su sección).
+Todo el programa vive en **un solo archivo, `AQUASHIELD.py` (~17 600 líneas)**. No hay linter; hay un
+`requirements.txt` con hash y su `preparar_entorno.py` (desde el encargo 84, ver «Ejecutar y verificar») y una red de
+verificación offline en `tests/` (ver su sección).
 
 **Qué asegura una reserva** (decisión de Marcelo, encargo 50, `CICLO-msc-segundo-intento.md`): solo el espacio de los
 contenedores en la nave. Después, la agencia de aduana pone en ella el cliente, el peso y el producto correctos. Por eso
@@ -965,13 +966,54 @@ cerrado:
 
 ## Ejecutar y verificar
 
-Requiere Python 3.13 (de Microsoft Store en esta máquina), `playwright`, `openpyxl` y `holidays` (los `.bat` los
-instalan si faltan; holidays con `--timeout 5 --retries 0`, para no frenar el arranque sin red: así se rinde en unos
-6 s, y sin esos límites tardó 69 s, medido el 2026-09-29). `opencv-python` + `numpy` solo para el puzzle de COSCO
-(import perezoso). Después de instalar playwright y openpyxl, y antes de holidays, los `.bat` comprueban que se
-importen: si no, dicen qué falta y cómo instalarlo a mano, y esperan una tecla sin abrir el panel (encargo 61). Hasta
-ahí, sin red en el primer arranque, pip fallaba, `pythonw` moría al importar playwright y la ventana se cerraba sin
-decir nada (medido en un clon nuevo con un Python limpio).
+Requiere Python de 64 bits, de 3.11 a 3.14 (el programa se prueba con 3.13), `playwright`, `openpyxl` y `holidays`.
+**Desde el encargo 84 el programa arma su propio entorno, sin terminal y sin permisos de administrador**
+(`CICLO-entorno-propio.md`; decisión de Marcelo): los dos `.bat` corren `preparar_entorno.py` después de `actualizar.py`
+y antes de abrir el panel, y ya no instalan nada con `pip` por su cuenta.
+- **Qué hace:** crea `.venv` en la carpeta del programa (`python -I -m venv --without-pip`, unos 3 s) y le instala
+  `requirements.txt` con el pip del equipo (`pip --python`, con `--require-hashes` y `--only-binary=:all:`): cada
+  paquete en una versión fija y con el sha256 de cada rueda, así que pip no instala un archivo que no sea byte a byte el
+  de PyPI y no corre código de instalación de ningún paquete. Primera vez, con un Python sin librerías: 43 s, 121 MB
+  (medido el 2026-10-26 con el Python 3.13.15 de python.org). Las siguientes: 2 s, sin imprimir nada (solo comprueba
+  que cada librería se importe, `faltan`).
+- **Cómo abre:** con 0, el `.bat` pone `.venv\Scripts` primero en el PATH, así que la línea `start "" pythonw
+  "AQUASHIELD.py"` (que `test_candado` fotografía) queda igual y abre con el `pythonw` del `.venv`. Con 10, no pudo
+  dejar el `.venv` pero el Python del equipo ya tiene `playwright.sync_api` y `openpyxl`: abre con ese, como hasta el
+  encargo 83. Con 11, no se puede abrir: lo dice y espera una tecla. Con cualquier otro código (de 1 a 9, de 12 en
+  adelante o negativo: una falla del propio preparador; el `.bat` pasa los de 12 en adelante al 1) abre solo si el
+  Python del equipo ya importa las dos librerías. El PATH se arma sin las comillas que traiga (`%PATH:"=%`): una
+  entrada entre comillas con un paréntesis en el nombre, como la de Program Files x86, cerraba el bloque del `.bat`
+  antes de correr nada (medido en la revisión de código del encargo 84; el `.bat` anterior abría con ese PATH).
+- **Qué no hace:** no usa los `.exe` que pip deja en `Scripts` (Defender los bloquea, regla `01443614`); no toca un
+  `.venv` que no armó él (lleva `.aquashield-entorno` adentro); no sigue una unión o un enlace con ese nombre; si un
+  archivo bajado no coincide con su hash, no abre ni con el Python del equipo; y si dos ventanas se abren a la vez
+  (el doble clic de quien ve que tarda), la segunda espera a la primera (un mutex por carpeta).
+- **Sin red:** pip tarda unos 65 s en rendirse (medido por la revisión de código del encargo 84, con una dirección
+  que no contesta). Tras una falla de estos mismos requisitos, durante 30 minutos (`PAUSA_REINTENTO`) no vuelve a
+  esperarlo si el programa puede abrir sin él: con lo necesario ya en el `.venv` o en el Python del equipo. Si no hay
+  con qué abrir, lo intenta en cada inicio. Al vencer el plazo de pip (`PLAZO_PIP`) se cierra el árbol de procesos
+  (`cerrar_arbol`): `pip --python` corre pip otra vez con el Python del `.venv`, y matar solo al de afuera dejaba la
+  tubería abierta hasta que el de adentro terminara.
+- **Cobertura de `requirements.txt`:** Python 3.11 a 3.14 en `win-amd64` (la plataforma de `sysconfig`: un Python x64
+  emulado en un equipo ARM64 sirve) y con GIL. No cubre 3.15, Windows de 32 bits, ARM nativo ni el Python sin GIL
+  (3.14t baja ruedas `cp314t` que no están en los hashes, y pip lo diría como un hash alterado): greenlet 3.3.1 no
+  publica ruedas para ellos, y ahí no instala (`fuera_de_cobertura`) y abre con el Python del equipo si ya lo tiene
+  todo. Avisos de seguridad de las 9 versiones fijas, consultados el 2026-10-26 en la base de GitHub, con una versión
+  vieja conocida como control: 0.
+- **`opencv-python` y `numpy` no están** (el puzzle de COSCO; import perezoso dentro de `_calcular_offset_cosco`): sin
+  ellos `resolver_cosco_puzzle` cae en su `except` y, tras tres intentos, el login pide el paso manual
+  (`pausa_manual`). Sumarlos es una decisión de Marcelo (`CICLO-entorno-propio.md`). `test_entorno.TestRequirements` fija
+  que toda otra librería de afuera que importe `AQUASHIELD.py` esté en `requirements.txt`.
+- **Los `.bat`** también comprueban Python (3.11 o más nuevo) y Git, y ofrecen instalarlos con winget solo para el
+  usuario y con `choice` antes (60 s, por omisión no instala nada). Python se pide de 64 bits (`--architecture x64`: en
+  un equipo ARM64 winget traería el ARM64, que `requirements.txt` no cubre). Git se pregunta **una sola vez**, con la
+  marca `logs\.git-preguntado`: en una consola de verdad `choice` espera sus 60 s en cada inicio, y las pruebas no lo
+  ven (con la entrada vacía contesta enseguida). El manifiesto de winget de Git trae `elevatesSelf`, así que no se
+  promete «sin permisos de administrador» para Git: si Windows los pide y la persona no los tiene, no se instala (la revisión de seguridad del encargo 84 lo corrigió: antes decía «si los pide, no instala nada», y con permisos sí instala). Siguen en un solo bloque, en ASCII
+  y con LF.
+  Hasta el encargo 83, sin red en el primer arranque pip fallaba, `pythonw` moría al importar playwright y la ventana
+  se cerraba sin decir nada (medido en el encargo 61 en un clon nuevo con un Python limpio); el 2026-10-26 el
+  `python` del PATH de este equipo era el 3.13.15 de python.org, sin las librerías que tiene el de la Store.
 
 ```bash
 python AQUASHIELD.py                          # panel web en http://127.0.0.1:8765 (modo normal)

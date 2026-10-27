@@ -1074,34 +1074,27 @@ class TestLeeme(unittest.TestCase):
         texto = ruta.read_text(encoding="utf-8")
         nombrados = sorted(set(re.findall(r"`([^`]+\.(?:bat|exe|py))`", texto)))
         self.assertEqual(nombrados, ["AQUASHIELD.py", "AQUASHIELD_EMISION.py", "Iniciar AQUASHIELD.bat",
-                                     "Iniciar AQUASHIELD_EMISION.bat", "actualizar.py"])
+                                     "Iniciar AQUASHIELD_EMISION.bat", "actualizar.py", "preparar_entorno.py"])
         self.assertEqual([n for n in nombrados if not (soporte.FUENTES / n).exists()], [])
         self.assertNotIn(".exe", texto)
 
 
 class TestLanzadores(unittest.TestCase):
-    """Los dos lanzadores instalan holidays si falta, antes de abrir el panel: los feriados de Chile de la fecha de
-    retiro de MAERSK (decisión de Marcelo, CICLO-maersk-cuatro-puntos.md). Sin red no frenan el arranque: con
-    --timeout 5 y --retries 0, pip se rindió en 6 s ante un índice que no responde, y sin esos límites en 69 s, con 5
-    reintentos (medido el 2026-09-29). Si igual no queda, el programa avisa y sigue de lunes a viernes."""
-    LINEA = ('python -c "import holidays" 2>nul || python -m pip install --user --disable-pip-version-check '
-             '--timeout 5 --retries 0 holidays')
+    """Los dos lanzadores ya no instalan nada por su cuenta: desde el encargo 84 lo hace preparar_entorno.py, con
+    requirements.txt y su hash, también holidays (los feriados de Chile de la fecha de retiro de MAERSK, decisión de
+    Marcelo, CICLO-maersk-cuatro-puntos.md). Que sin red no frene el arranque lo vigila test_entorno: con solo
+    holidays sin instalar, el entorno propio se usa igual, y el programa avisa y sigue de lunes a viernes."""
 
-    def test_instalan_holidays_sin_frenar_el_arranque(self):
+    def test_no_instalan_con_pip_y_llaman_al_preparador_antes_de_abrir(self):
         for nombre, programa in (("Iniciar AQUASHIELD.bat", "AQUASHIELD.py"),
                                  ("Iniciar AQUASHIELD_EMISION.bat", "AQUASHIELD_EMISION.py")):
             with self.subTest(lanzador=nombre):
-                # De soporte.FUENTES: el censo deja ahí el .bat mutado. Desde el encargo 60 la lógica va en un bloque,
-                # con sangría.
+                # De soporte.FUENTES: el censo deja ahí el .bat mutado.
                 lineas = [l.strip() for l in (soporte.FUENTES / nombre).read_text(encoding="utf-8").split("\n")]
-                instala = [i for i, l in enumerate(lineas) if "holidays" in l and not l.upper().startswith("REM")]
-                abre = [i for i, l in enumerate(lineas) if l == f'start "" pythonw "{programa}"']
-                self.assertEqual([lineas[i] for i in instala], [self.LINEA])
-                self.assertEqual(len(abre), 1)
-                self.assertLess(instala[0], abre[0])
-                # Entre la instalación y el panel, nada que lo detenga.
-                entre = [l for l in lineas[instala[0] + 1:abre[0]] if l.strip() and not l.upper().startswith("REM")]
-                self.assertEqual([l for l in entre if re.search(r"\b(exit|pause|goto|errorlevel)\b", l, re.I)], [])
+                codigo = [l for l in lineas if l and not l.upper().startswith(("REM", "ECHO"))]
+                self.assertEqual([l for l in codigo if "pip" in l.lower() or "holidays" in l.lower()], [])
+                self.assertEqual(codigo.count("python -I preparar_entorno.py"), 1)
+                self.assertLess(codigo.index("python -I preparar_entorno.py"), codigo.index(f'start "" pythonw "{programa}"'))
 
 
 if __name__ == "__main__":

@@ -6,8 +6,11 @@ cada fila y, si se emitió, su N° de reserva.
 
 ## Uso normal
 
-1. Doble clic a **`Iniciar AQUASHIELD.bat`**. La primera vez instala Playwright, openpyxl y holidays (los feriados de
-   Chile para la fecha de retiro de MAERSK) si faltan; sin red, holidays queda para otra vez y el panel abre igual.
+1. Doble clic a **`Iniciar AQUASHIELD.bat`**. La primera vez deja listas sus librerías (Playwright, openpyxl y holidays,
+   los feriados de Chile para la fecha de retiro de MAERSK) en una carpeta propia, `.venv`, sin que abras una terminal
+   ni pidas permisos de administrador: hace falta internet y tarda de uno a dos minutos, y la ventana negra lo va
+   diciendo. Las veces siguientes solo comprueba que estén (unos 2 segundos). Sin internet, abre igual si el Python del
+   equipo ya las tiene; si no, lo dice y espera una tecla (ver «Instalar y mantenerlo al día»).
    Después abre el panel en el navegador, en `http://127.0.0.1:8765` o, si ese puerto lo tiene otro programa, en el
    siguiente libre, hasta el 8768: a ese programa no lo cierra, y el registro del panel lo dice. Si ya hay un panel de
    AQUASHIELD abierto en alguno de esos cuatro puertos, lo trata como si estuviera en el 8765.
@@ -80,16 +83,24 @@ El programa se instala como un clon del repositorio, en la rama **`estable`**. E
 después de probar; los cambios de cada día van a `main`, que los equipos de uso no reciben. El repositorio es público:
 no hace falta una cuenta de GitHub, y el programa nunca pide ni guarda una clave para actualizarse.
 
-**Para instalarlo** hacen falta Python 3.13, Git for Windows y Chrome. En PowerShell, en la carpeta donde quieras
-dejarlo (aquí, `C:\AQUASHIELD`):
+**Para instalarlo** hacen falta Python de 64 bits (de 3.11 a 3.14; el programa se probó con 3.13), Git for Windows y
+Chrome. Si al abrir falta Python o Git, la ventana negra lo dice y, si el equipo tiene winget, ofrece instalarlo solo
+para tu usuario: pregunta antes y, sin respuesta en un minuto, no instala nada. Python se instala sin permisos de
+administrador; Git puede pedirlos, y si no los tienes no se instala y te dice cómo hacerlo. La pregunta por Git se hace una
+sola vez. En PowerShell, en la carpeta donde quieras dejarlo (aquí, `C:\AQUASHIELD`):
 
 ```
 git clone -b estable https://github.com/AquaShield-Team/Agendamiento-Reservas.git "C:\AQUASHIELD"
 ```
 
 Si git contesta «Remote branch estable not found», Marcelo todavía no creó la rama: avísale. Después, abre
-`Iniciar AQUASHIELD.bat` con doble clic. La primera vez, la ventana negra instala las librerías de Python que faltan
-(hace falta internet); si no puede, lo dice y espera una tecla, sin abrir el panel. Al abrirse, el panel crea
+`Iniciar AQUASHIELD.bat` con doble clic. La primera vez, la ventana negra arma el entorno propio del programa
+(`preparar_entorno.py`): crea la carpeta `.venv` y le instala ahí las librerías de `requirements.txt`, cada una en una
+versión fija y con su hash, así que pip no instala un archivo que no sea el que publicó PyPI. Hace falta internet; si
+no puede, abre con el Python del equipo solo si este ya tiene Playwright y openpyxl, y si no, lo dice y espera una
+tecla, sin abrir el panel. Si TI cambia o reinstala el Python del equipo, el `.venv` se rehace solo en el inicio
+siguiente; si quieres rehacerlo a mano, cierra el programa y borra la carpeta `.venv`. Lo que pasó queda en
+`logs\entorno.log`: si te manda un mensaje, mándaselo a quien te dio el programa junto con ese archivo. Al abrirse, el panel crea
 `config.json` desde `config.example.json`, sin credenciales, y lo dice en un aviso bajo la nota del modo: escribe las
 tuyas en Credenciales (ver «Credenciales y opciones»). Si al panel le falta algo para empezar, ese aviso dice qué y cómo
 resolverlo.
@@ -179,6 +190,9 @@ En la plantilla vienen vacíos. Si falta una de esas llaves, el programa sigue s
 | `AQUASHIELD.py` | El programa. |
 | `AQUASHIELD_EMISION.py` | Arranca el programa en modo emisión. |
 | `actualizar.py` | Trae la última versión de la rama `estable` al abrir (lo corren los dos lanzadores). |
+| `preparar_entorno.py` | Deja listas las librerías en la carpeta `.venv`, con `requirements.txt`, antes de abrir (lo corren los dos lanzadores). |
+| `requirements.txt` | Las librerías del programa, cada una en una versión fija y con el hash de sus archivos. |
+| `.venv\` | El entorno propio del programa (unos 120 MB). Se arma solo; puedes borrarlo con el programa cerrado. |
 | `config.json` | Credenciales y opciones. No lo compartas: trae las claves. |
 | `config.example.json` | Plantilla de `config.json`, sin credenciales. |
 | `logs\` | Una carpeta por corrida, con `log.txt`, las capturas y el HTML de la evidencia. Trae datos reales. |
