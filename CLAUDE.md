@@ -988,6 +988,13 @@ y antes de abrir el panel, y ya no instalan nada con `pip` por su cuenta.
   `.venv` que no armó él (lleva `.aquashield-entorno` adentro); no sigue una unión o un enlace con ese nombre; si un
   archivo bajado no coincide con su hash, no abre ni con el Python del equipo; y si dos ventanas se abren a la vez
   (el doble clic de quien ve que tarda), la segunda espera a la primera (un mutex por carpeta).
+  - **El hash cubre solo el `.venv` que arma el programa.** Un `.venv` que no es suyo (sin la marca) y cuyo Python arranca
+    con las dos librerías se usa tal cual, sin esa garantía, y su carpeta `Scripts` queda primera en el PATH del panel: el
+    mismo límite de confianza que la carpeta del programa (revisión de seguridad del encargo 84; lo fija
+    `test_un_venv_ajeno_con_todo_se_usa_sin_instalar`). Si seguir usándolo es lo que quieres, lo decides tú.
+  - **La segunda ventana espera hasta 20 minutos** (`ESPERA_OTRA_VENTANA`) si otra del mismo usuario, en la misma
+    carpeta, retiene el mutex; después sigue sin exclusión. Y un `.venv` apartado que resultó ser una unión se queda en
+    `logs\` sin anotarse (residuales de esa revisión).
 - **Sin red:** pip tarda unos 65 s en rendirse (medido por la revisión de código del encargo 84, con una dirección
   que no contesta). Tras una falla de estos mismos requisitos, durante 30 minutos (`PAUSA_REINTENTO`) no vuelve a
   esperarlo si el programa puede abrir sin él: con lo necesario ya en el `.venv` o en el Python del equipo. Si no hay
@@ -1115,7 +1122,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 853 pruebas al 2026-10-16 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 999 pruebas al 2026-10-27 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
