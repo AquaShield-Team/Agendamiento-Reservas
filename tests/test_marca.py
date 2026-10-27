@@ -8,6 +8,7 @@ la skill no ve y lo que se rompería sin avisar:
 - el HTML trae el header, el pie y el JS del bloque una sola vez y en su orden (el JS, después del pie y antes de app.js,
   que lee sus claves al cargar), y app.js ya no maneja el tema ni el nombre de usuario;
 - las dos funciones que el bloque no trae (Credenciales y Cerrar AQUASHIELD) siguen con sus id, en la barra de contexto;
+- la insignia de EMISIÓN va llena en los dos temas, y la de MODO SEGURO, con borde (encargo 85), leído en la cascada;
 - la receta que pasa el tema viejo («aq-tema», con «claro» u «oscuro») a la clave del bloque, corrida en Node;
 - la declaración de estados (tests/marca/aquashield-estados.json) es usable y calza con lo que app.js lee de la API;
 - el extractor arma el panel como archivos.
@@ -25,6 +26,114 @@ import soporte
 MARCA = soporte.FUENTES / "tests" / "marca"
 VERSION_DEL_BLOQUE = "v48"
 N = iter(range(1, 10_000))
+
+
+def _sin_comentarios(css):
+    return re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+
+
+def _especificidad(selector):
+    """(ids, clases y pseudoclases, elementos) de un selector; :not() cuenta lo que lleva adentro, como en CSS."""
+    sin_not = re.sub(r":not\(([^)]*)\)", r" \1 ", selector)
+    return (len(re.findall(r"#[\w-]+", sin_not)), len(re.findall(r"[.:][\w-]+", sin_not)),
+            len(re.findall(r"(?:^|[\s>+~])([a-zA-Z][\w-]*)", sin_not)))
+
+
+def _calza(caso, selector, tema_claro):
+    """Si el selector calza con <span class="modo-insignia emision"> (o seguro) dentro del <body> de ese tema. Solo sabe
+    leer las formas que usan las reglas de las insignias: una forma nueva hace caer la prueba en vez de pasar callada."""
+    partes = selector.split()
+    ultima, antes = partes[-1], partes[:-1]
+    caso.assertRegex(ultima, r"^(\.modo-insignia)(\.(emision|seguro))?$", f"forma que esta prueba no sabe leer: {selector}")
+    for p in antes:
+        caso.assertIn(p, ("body", "body.light-theme", "body:not(.light-theme)"),
+                      f"forma que esta prueba no sabe leer: {selector}")
+        if (p == "body.light-theme" and not tema_claro) or (p == "body:not(.light-theme)" and tema_claro):
+            return None
+    return ultima
+
+
+# Las propiedades que esta prueba sabe leer en una regla de la insignia. Otra (background-color, border-top-color…)
+# podría pisar el fondo o el borde con otro nombre, y la prueba no lo vería: cae (revisión de código del encargo 85).
+PROPIEDADES_DE_LA_INSIGNIA = ("display", "padding", "border-radius", "border", "border-width", "border-color",
+                              "font-family", "font-weight", "font-size", "color", "background")
+LO_QUE_NO_ES_COLOR_DE_BORDE = re.compile(r"\b(\d+(\.\d+)?(px|em|rem)?|thin|medium|thick|none|hidden|dotted|dashed|"
+                                         r"solid|double|groove|ridge|inset|outset)\b")
+
+
+def estilo_de_la_insignia(caso, css, modo, tema_claro):
+    """{propiedad: valor} que gana en <span class="modo-insignia {modo}"> en ese tema, con la cascada de las reglas que
+    nombran a la insignia: especificidad y, a igual especificidad, la última. El atajo «border» cuenta también como su
+    «border-color» (sin un color, currentcolor). Lee solo esas reglas, y aborta ante una regla dentro de @media, con
+    !important o con una propiedad que no sabe leer. Una regla genérica que alcanzaría a la insignia sin nombrarla la
+    mira reglas_genericas_sobre_la_nota; el contraste en píxel de la página entera, el verificador de la skill."""
+    css = _sin_comentarios(css)
+    ganadoras = {}
+    for orden, m in enumerate(re.finditer(r"([^{}]+)\{([^{}]*)\}", css)):
+        # también la que nombra solo .emision o .seguro: _calza no sabe leerla, y la prueba cae (revisión de seguridad
+        # del encargo 85: «body:not(.light-theme) .emision» le quitaba el relleno en oscuro sin nombrar a la insignia)
+        if not re.search(r"\.(modo-insignia|emision|seguro)(?![\w-])", m.group(1)):
+            continue
+        profundidad = css[:m.start()].count("{") - css[:m.start()].count("}")
+        caso.assertEqual(profundidad, 0, f"una regla de la insignia dentro de un @media: {m.group(1).strip()}")
+        caso.assertNotIn("!important", m.group(2))
+        for selector in (s.strip() for s in m.group(1).split(",")):
+            ultima = _calza(caso, selector, tema_claro)
+            if ultima is None or ultima not in (".modo-insignia", f".modo-insignia.{modo}"):
+                continue
+            for decl in m.group(2).split(";"):
+                if ":" in decl:
+                    prop, valor = (x.strip() for x in decl.split(":", 1))
+                    caso.assertIn(prop, PROPIEDADES_DE_LA_INSIGNIA,
+                                  f"propiedad que esta prueba no sabe leer: {prop} en {selector}")
+                    clave = (_especificidad(selector), orden)
+                    pares = [(prop, valor)]
+                    if prop == "border":
+                        pares.append(("border-color",
+                                      LO_QUE_NO_ES_COLOR_DE_BORDE.sub("", valor).strip() or "currentcolor"))
+                    for p, v in pares:
+                        if p not in ganadoras or clave >= ganadoras[p][0]:
+                            ganadoras[p] = (clave, v)
+    return {p: v for p, (_, v) in ganadoras.items()}
+
+
+def reglas_genericas_sobre_la_nota(css):
+    """Los selectores de las reglas con un fondo, un borde o un color que podrían alcanzar a la insignia sin nombrarla:
+    los que terminan en algo que no la distingue («*», «span», un selector de atributo, con o sin pseudoclases) sin otro
+    antepasado que el <html> o el <body> de un tema, y los que bajan por la nota del modo (#nota-modo, .rs-nota o
+    .rs-version) hasta algo así. Una regla así le quitaría el fondo lleno o le cambiaría el color del texto, y ni la
+    cascada de arriba ni el verificador lo verían (revisiones de código y de seguridad del encargo 85).
+    LÍMITE: una regla que baja por otro antepasado de la nota (.rs-panel span) no la ve."""
+    css = _sin_comentarios(css)
+    malos = []
+    for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
+        # el fondo, el color del texto y el borde (su color, su ancho o su estilo); no el border-radius ni el outline
+        if not re.search(r"(^|;)\s*(background(-[\w-]+)?|border(-(top|right|bottom|left))?(-(color|width|style))?|color)"
+                         r"\s*:", m.group(2)):
+            continue
+        for selector in (s.strip() for s in m.group(1).split(",")):
+            if "::" in selector or selector.startswith("@"):
+                continue
+            # un selector de atributo puede traer un «~» o espacios adentro: se vacía antes de cortar por combinadores
+            partes = re.split(r"\s*[>+~]\s*|\s+", re.sub(r"\[[^\]]*\]", "[a]", selector))
+            ultima, antes = partes[-1], partes[:-1]
+            alcanza = ultima and re.fullmatch(r"(\*|span)?(\[[^\]]*\])*(:[\w-]+(\([^)]*\))?)*", ultima) is not None
+            generica = alcanza and all(re.fullmatch(r"(html|body)(\.light-theme|:not\(\.light-theme\))?", p)
+                                       for p in antes)
+            por_la_nota = alcanza and re.search(r"#nota-modo|\.rs-nota|\.rs-version", selector)
+            if generica or por_la_nota:
+                malos.append(selector)
+    return malos
+
+
+def _contraste(a, b):
+    """La razón de contraste de WCAG entre dos colores #RRGGBB."""
+    def lum(h):
+        c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        c = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in c]
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    x, y = sorted((lum(a), lum(b)), reverse=True)
+    return (x + 0.05) / (y + 0.05)
 
 
 def correr_node(caso, guion):
@@ -90,16 +199,57 @@ class TestBloqueEnElPanel(soporte.CasoAQ):
 
     def test_las_insignias_del_modo_van_en_clases_con_los_colores_de_la_paleta(self):
         # Antes iban en blanco sobre #10b981 y #ef4444, que no son de la paleta: 2,54 y 3,76 de contraste (medido por el
-        # verificador de la skill). Ahora son clases del CSS, con el color de la paleta en el borde.
+        # verificador de la skill). Ahora son clases del CSS: MODO SEGURO, con el color de la paleta en el borde; EMISIÓN
+        # REAL, llena (la prueba que sigue).
         js, css = self.mod.JS_INDEX, self.mod.CSS_INDEX
         self.assertEqual(js.count('<span class="modo-insignia seguro">MODO SEGURO</span>'), 1)
         self.assertEqual(js.count('<span class="modo-insignia emision">EMISIÓN REAL</span>'), 1)
         for color in ("#ef4444", "#10b981"):
             with self.subTest(color=color):
                 self.assertNotIn(color, js)
-        for regla in (".modo-insignia.seguro {", ".modo-insignia.emision {"):
+        for regla in ("\n.modo-insignia.seguro {", "\n.modo-insignia.emision {"):
             with self.subTest(regla=regla):
                 self.assertEqual(css.count(regla), 1)
+
+    def test_en_modo_emision_la_insignia_va_llena_en_los_dos_temas(self):
+        # Decisión del dueño (encargo 85): el aviso de EMISIÓN se ve a la primera, con fondo lleno; un borde de 2 px no
+        # basta. La paleta no trae un rojo: es el óxido #A8441E, el ocre de error llevado a 16,5° y oscurecido, con texto
+        # blanco. Se mira la cascada en cada tema: hasta el encargo 84, una regla de oscuro les ponía el fondo neutro a
+        # las dos insignias. MODO SEGURO se queda con borde, y en oscuro, con el fondo neutro de v4.
+        css = self.mod.CSS_INDEX
+        self.assertEqual(reglas_genericas_sobre_la_nota(css), [])
+        for tema_claro in (True, False):
+            tema = "claro" if tema_claro else "oscuro"
+            emision = estilo_de_la_insignia(self, css, "emision", tema_claro)
+            seguro = estilo_de_la_insignia(self, css, "seguro", tema_claro)
+            with self.subTest(tema=tema, insignia="emision"):
+                self.assertEqual(emision.get("background"), "#A8441E")
+                self.assertEqual(emision.get("color"), "#FFFFFF")
+                # el ancho del borde es lo que la distingue de MODO SEGURO en el alto contraste de Windows, que les pone a
+                # las dos el mismo fondo y el mismo borde (medido por la revisión de seguridad del encargo 85)
+                self.assertEqual(emision.get("border-width"), "2px")
+                self.assertGreaterEqual(_contraste(emision["background"], emision["color"]), 4.5)
+                self.assertEqual(f'{_contraste(emision["background"], emision["color"]):.2f}', "5.98")
+            with self.subTest(tema=tema, insignia="seguro"):
+                self.assertEqual(seguro.get("border-color"), "var(--success)")
+                self.assertEqual(seguro.get("background"),
+                                 "rgba(108, 139, 139, 0.15)" if tema_claro else "rgba(30, 45, 59, 0.5)")
+        # El control de la guarda de las reglas genéricas: con cada forma que alcanzaría a la insignia sin nombrarla, la
+        # ve; con las que no la alcanzan o no pintan un fondo, no.
+        for regla in ("body:not(.light-theme) #nota-modo span { background: rgba(30, 45, 59, 0.5); }",
+                      ".rs-version * { background-color: #1E2D3B; }", "span { background: #1E2D3B; }",
+                      "[class~=emision] { background: none; }", "body .rs-nota > span:first-child { background: #000; }",
+                      "#nota-modo span { color: #1E2D3B; }"):
+            with self.subTest(control="la ve", regla=regla):
+                self.assertEqual(len(reglas_genericas_sobre_la_nota(regla)), 1)
+        for regla in (".feed-item > span { background: #000; }", ".rs-nota { background: #fff; }",
+                      ".rs-campo > span { color: #000; }", "*::before { background: #000; }", ".rs-nota b { color: #000; }"):
+            with self.subTest(control="no la ve", regla=regla):
+                self.assertEqual(reglas_genericas_sobre_la_nota(regla), [])
+        # y la cascada cae ante una regla que la alcanza por su segunda clase, sin nombrar a la insignia
+        with self.subTest(control="por la segunda clase"), self.assertRaises(AssertionError):
+            estilo_de_la_insignia(self, css + "\nbody:not(.light-theme) .emision { background: rgba(30, 45, 59, 0.5); }",
+                                  "emision", False)
 
     def test_credenciales_y_cerrar_siguen_con_sus_id_en_la_barra_de_contexto(self):
         html = self.mod.HTML_INDEX

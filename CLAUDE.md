@@ -1122,7 +1122,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 999 pruebas al 2026-10-27 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 1000 pruebas al 2026-10-27 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -1153,6 +1153,12 @@ segunda tardó 1.185 s (encargo 53).
   `puertos_seguidos` (del 20000 al 39999, con los cuatro seguidos libres): el lanzador prueba los puertos que siguen a
   su base, y los que reparte el sistema (desde el 49152) vienen seguidos (29 de 29, medido el 2026-10-05), así que dos
   pruebas en paralelo, como las del censo, quedarían en puertos vecinos (encargo 52).
+- **El temporal de la suite va en una ruta sin espacios** (encargo 85, `CICLO-insignia-emision.md`). Con `TEMP` y `TMP`
+  en una carpeta con un espacio, como `C:\dev\Agendamiento Reservas\.trabajo\…`, `test_entorno.TestElBatAbreConElEntornoPropio`
+  cae en sus 5 casos con el `.venv`: el `.bat` abre el Python del equipo. Con la misma carpeta por su nombre corto
+  (`C:\dev\AGENDA~1\…`), pasa (medido el 2026-10-27: 5 fallos en 20 s, y OK en 16 s). Lo probable, sin medir: la prueba le
+  da a pip su carpeta de ruedas en `PIP_FIND_LINKS`, y pip parte esa variable en los espacios. El preparador real no la
+  usa, y el caso de la prueba con la carpeta del programa con espacios pasa.
 - **Una prueba no espera con el reloj a que alguien suelte un puerto.** `test_puerto_que_se_suelta_mientras_pregunta`
   lo soltaba con un `threading.Timer` a los 2 s, mientras la segunda pregunta del lanzador esperaba: la pregunta
   volvía con el reset de la conexión y, con la CPU ocupada, el lanzador probaba el puerto antes de que Windows lo
@@ -1970,8 +1976,8 @@ marca va solo en lo que ve el operador, el panel y los lanzadores):
   widgets, la pastilla de progreso, las etiquetas y los títulos de etapa del registro, el número de reserva y la columna de
   operadores) pasó a 400: el navegador sintetizaba esa negrita (`peso-sintetizado`). Vendorizar la cara 700 queda como
   propuesta para Marcelo (`CICLO-entorno-propio.md`).
-- **El color de un estado:** el fondo de la fila en curso, la emitida, el chip de revisar, la pastilla de progreso y las
-  insignias del modo lleva su color solo en claro; en oscuro es el neutro `rgba(30, 45, 59, .5)` (`v4` de la skill). El
+- **El color de un estado:** el fondo de la fila en curso, la emitida, el chip de revisar, la pastilla de progreso y la
+  insignia de MODO SEGURO lleva su color solo en claro; en oscuro es el neutro `rgba(30, 45, 59, .5)` (`v4` de la skill). El
   color lo lleva el borde: el del chip, el de la insignia y el de la primera celda de la fila en curso; la fila emitida, solo
   su chip «emitida». El texto chico de un desenlace malo («no enviada», «revisar en portal», «sin cupo», «revisar»,
   «procesando…») va en `--text-primary`, en los dos temas, no en el ocre o el naranja (3,07 a 3,86 en claro); lo fija
@@ -1980,9 +1986,19 @@ marca va solo en lo que ve el operador, el panel y los lanzadores):
 - **Las insignias del modo** («MODO SEGURO» y «EMISIÓN REAL», que pinta `app.js` según `/api/config`) pasaron de estilos en
   línea a las clases `.modo-insignia.seguro` y `.modo-insignia.emision`. Iban en blanco sobre #10b981 y #ef4444, que no son
   de la paleta: 2,54 y 3,76 de contraste (medido el 2026-10-27 con `/api/config` en la API falsa; el verificador no las veía
-  antes porque esa dirección no estaba). Ahora el texto va en `--text-primary`, en PT Sans 700 (vendorizada), con el verde
-  agua del éxito en el borde del modo seguro y el naranja de la advertencia, a 2 px, en el de emisión; el 🔴 del título
-  sigue. **Es un cambio de cómo se ve el aviso de EMISIÓN** (antes, rojo lleno): si prefieres el rojo, decídelo tú.
+  antes porque esa dirección no estaba). Las dos van en PT Sans 700 (vendorizada), y el 🔴 del título sigue.
+  - **MODO SEGURO, con borde:** el texto en `--text-primary` y el verde agua del éxito en el borde.
+  - **EMISIÓN REAL, llena, en los dos temas** (decisión del dueño, encargo 85, `CICLO-insignia-emision.md`: el aviso de
+    emisión tiene que verse a la primera, y el borde naranja de 2 px del encargo 84 no bastaba). **La paleta de la skill no
+    trae un rojo:** su color de error es el ocre `#C76728` (naranja tierra, matiz 23,8°), que con texto blanco da 3,89. El
+    fondo es el óxido `#A8441E`, el ocre llevado a 16,5° (el borde de los ±8° con que el verificador acepta un derivado) y
+    oscurecido hasta que el texto blanco da **5,98**, medido en píxel en los dos temas. Es un color derivado, no el literal
+    del manual. Es opaco: la regla de oscuro de v4 (y `tinte-estado`) habla de la veladura, no de un fondo pintado; por eso la
+    regla del neutro en oscuro es solo de `.modo-insignia.seguro`. Su borde es de 2 px (el de MODO SEGURO, de 1): en el alto
+    contraste de Windows (`forced-colors`) las dos quedan con el mismo fondo, el mismo texto y el mismo color de borde, y el
+    ancho es lo único que las distingue además del texto (medido en Chromium por la revisión de seguridad). Lo vigila
+    `test_marca.TestBloqueEnElPanel.test_en_modo_emision_la_insignia_va_llena_en_los_dos_temas`, con la cascada de las
+    reglas de las insignias en cada tema.
 - **La nota del modo siempre a la vista:** la barra de contexto le quita 35 px de alto a la pantalla (con su relleno de 4 px;
   la primera versión, de 57 px, dejó la nota fuera de la vista en ventanas de 754 a 809 px de alto: lo midió la revisión de
   código del encargo 84). Por eso el panel izquierdo ya no se desplaza entero: se desplazan sus widgets
@@ -1999,7 +2015,9 @@ marca va solo en lo que ve el operador, el panel y los lanzadores):
 - **Medido el 2026-10-27** sobre el panel extraído (2 estados declarados: la tabla con filas y el modo de prueba, y el
   modo EMISIÓN): todos los chequeos en OK, salvo `tinte-estado` en SIN DECIDIR (4 superficies: los discos detrás de los
   íconos, declarados decorativos, no llevan texto en su instancia viva o están ocultos: «no hay par que medir»; no es un
-  hallazgo, pero tampoco una aprobación). `version` acepta v48. Los 9 tintes de estado declarados dan «gana sólo en CLARO,
-  que es lo que v4 prescribe».
+  hallazgo, pero tampoco una aprobación). `version` acepta v48. Con el encargo 85, las superficies del módulo que dan «gana
+  sólo en CLARO, que es lo que v4 prescribe» son 6 (la fila en curso, la emitida, los chips de curso y de revisar, la
+  pastilla de progreso y la insignia de MODO SEGURO), más las 2 veladuras del bloque: la insignia de EMISIÓN, opaca, ya no
+  es candidata de `tinte-estado`, y su texto lo mide `contraste-texto`, en OK en los dos temas.
 - **No se midió** en un portal ni con datos reales: la tabla se midió con la API falsa. El header, a menos de 720 px, se
   desplaza dentro de sí mismo (lo hace el bloque, no el panel); la página no desborda.

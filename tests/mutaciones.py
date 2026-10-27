@@ -9956,3 +9956,57 @@ MUTACIONES += [
     dict(id="e84-marca-extractor-sin-control", archivo=EXTRACTOR, pruebas=[TMX + "test_aborta_si_el_programa_no_trae_el_header_del_bloque"],
          viejo=' or "aquashield-header" not in consts["HTML_INDEX"]', nuevo=""),
 ]
+
+# Encargo 85: la insignia de EMISIÓN va llena en los dos temas; la de MODO SEGURO, con borde (test_marca).
+TEL = TMB + "test_en_modo_emision_la_insignia_va_llena_en_los_dos_temas"
+MUTACIONES += [
+    dict(id="e85-emision-vuelve-al-borde", pruebas=[TEL],
+         viejo=".modo-insignia.emision { background: #A8441E; border-color: #A8441E; border-width: 2px; color: #FFFFFF; }",
+         nuevo=".modo-insignia.emision { border-color: #A8441E; border-width: 2px; background: rgba(168, 68, 30, 0.12); }"),
+    dict(id="e85-emision-neutra-en-oscuro", pruebas=[TEL],
+         viejo="body:not(.light-theme) .modo-insignia.seguro {", nuevo="body:not(.light-theme) .modo-insignia {"),
+    dict(id="e85-emision-con-el-texto-del-tema", pruebas=[TEL],
+         viejo="border-width: 2px; color: #FFFFFF; }", nuevo="border-width: 2px; }"),
+    dict(id="e85-emision-en-el-ocre-de-la-paleta", pruebas=[TEL],
+         viejo="background: #A8441E; border-color: #A8441E;", nuevo="background: #C76728; border-color: #C76728;"),
+    dict(id="e85-emision-llena-solo-en-claro", pruebas=[TEL],
+         viejo="body:not(.light-theme) .modo-insignia.seguro { background: rgba(30, 45, 59, 0.5); }",
+         nuevo="body:not(.light-theme) .modo-insignia.seguro { background: rgba(30, 45, 59, 0.5); }\n"
+               "body:not(.light-theme) .modo-insignia.emision { background: rgba(30, 45, 59, 0.5); }"),
+    dict(id="e85-seguro-lleno", pruebas=[TEL],
+         viejo=".modo-insignia.seguro { border-color: var(--success); background: rgba(108, 139, 139, 0.15); }",
+         nuevo=".modo-insignia.seguro { border-color: var(--success); background: #6C8B8B; }"),
+]
+# Los huecos que encontró la revisión de código del encargo 85 en la prueba de la cascada: la forma larga de una
+# propiedad, el atajo «border», una regla genérica sobre la nota y el neutro de MODO SEGURO en oscuro.
+MUTACIONES += [
+    dict(id="e85-oscuro-con-background-color", pruebas=[TEL],
+         viejo="body:not(.light-theme) .modo-insignia.seguro { background: rgba(30, 45, 59, 0.5); }",
+         nuevo="body:not(.light-theme) .modo-insignia.seguro { background: rgba(30, 45, 59, 0.5); }\n"
+               "body:not(.light-theme) .modo-insignia { background-color: rgba(30, 45, 59, 0.5); }"),
+    dict(id="e85-borde-de-seguro-por-atajo", pruebas=[TEL],
+         viejo="body:not(.light-theme) .modo-insignia.seguro { background: rgba(30, 45, 59, 0.5); }",
+         nuevo="body:not(.light-theme) .modo-insignia.seguro { background: rgba(30, 45, 59, 0.5); }\n"
+               "body:not(.light-theme) .modo-insignia.seguro { border: 1px solid var(--border-main); }"),
+    dict(id="e85-regla-generica-sobre-la-nota", pruebas=[TEL],
+         viejo="body:not(.light-theme) .modo-insignia.seguro { background: rgba(30, 45, 59, 0.5); }",
+         nuevo="body:not(.light-theme) .modo-insignia.seguro { background: rgba(30, 45, 59, 0.5); }\n"
+               "body:not(.light-theme) #nota-modo span { background: rgba(30, 45, 59, 0.5); }"),
+    dict(id="e85-seguro-sin-neutro-en-oscuro", pruebas=[TEL],
+         viejo="body:not(.light-theme) .modo-insignia.seguro { background: rgba(30, 45, 59, 0.5); }\n",
+         nuevo=""),
+]
+# Los dos bajos de la revisión de seguridad del encargo 85: el borde de 2 px (lo único que distingue a las dos
+# insignias en el alto contraste de Windows) y las reglas que las alcanzan sin nombrar «modo-insignia».
+MUTACIONES += [
+    dict(id="e85-emision-con-borde-de-1px", pruebas=[TEL],
+         viejo="border-color: #A8441E; border-width: 2px;", nuevo="border-color: #A8441E;"),
+    dict(id="e85-oscuro-por-la-segunda-clase", pruebas=[TEL],
+         viejo="body:not(.light-theme) .modo-insignia.seguro { background: rgba(30, 45, 59, 0.5); }",
+         nuevo="body:not(.light-theme) .modo-insignia.seguro { background: rgba(30, 45, 59, 0.5); }\n"
+               "body:not(.light-theme) .emision { background: rgba(30, 45, 59, 0.5); }"),
+    dict(id="e85-texto-oscuro-desde-la-nota", pruebas=[TEL],
+         viejo="body:not(.light-theme) .modo-insignia.seguro { background: rgba(30, 45, 59, 0.5); }",
+         nuevo="body:not(.light-theme) .modo-insignia.seguro { background: rgba(30, 45, 59, 0.5); }\n"
+               "#nota-modo span { color: #1E2D3B; }"),
+]

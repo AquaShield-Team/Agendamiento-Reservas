@@ -17862,17 +17862,21 @@ body {
     .context-bar .context-spacer { display: none; }
 }
 
-/* LAS INSIGNIAS DEL MODO de la nota del panel (las pinta app.js según /api/config). El texto va en --text-primary; el color de
-   la paleta, en el borde. En oscuro el fondo de un estado no lleva su color (aquashield.md, v4): es el neutro. */
+/* LAS INSIGNIAS DEL MODO de la nota del panel (las pinta app.js según /api/config). La de MODO SEGURO lleva el texto en
+   --text-primary y el color de la paleta en el borde; en oscuro su fondo es el neutro (aquashield.md, v4). */
 .modo-insignia {
     display: inline-block; padding: 2px 6px; border-radius: 4px; border: 1px solid;
     font-family: var(--font); font-weight: 700; font-size: 10px; color: var(--text-primary);
 }
 /* aquashield:estado el panel corre en modo de prueba: cada reserva se llena y se detiene antes de confirmar */
 .modo-insignia.seguro { border-color: var(--success); background: rgba(108, 139, 139, 0.15); }
+body:not(.light-theme) .modo-insignia.seguro { background: rgba(30, 45, 59, 0.5); }
+/* La de EMISIÓN va LLENA y en los dos temas, para que se vea a la primera (decisión del dueño, encargo 85). La paleta no
+   trae un rojo: es el ocre de error (#C76728) llevado a 16,5°, en el borde de los ±8° de la paleta, y oscurecido hasta que
+   el texto blanco da 5,98. Es opaco: no es la veladura que v4 retira del oscuro. El borde de 2 px la sigue distinguiendo de
+   MODO SEGURO en el alto contraste de Windows, que les pone a las dos el mismo fondo y el mismo color de borde. */
 /* aquashield:estado el panel corre en modo EMISIÓN: las reservas se envían y se confirman ante las navieras */
-.modo-insignia.emision { border-color: var(--warning); border-width: 2px; background: rgba(235, 95, 10, 0.12); }
-body:not(.light-theme) .modo-insignia { background: rgba(30, 45, 59, 0.5); }
+.modo-insignia.emision { background: #A8441E; border-color: #A8441E; border-width: 2px; color: #FFFFFF; }
 """
 
 # Fuentes vendorizadas (PT Sans, Quicksand, JetBrains Mono) incrustadas en
