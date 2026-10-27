@@ -15487,6 +15487,7 @@ HTML_INDEX = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="aquashield-sesion" content="">
+<meta name="aquashield-bloque" content="v48">
 <title>AquaShield · Módulo Reservas</title>
 <!-- El favicon sale del bloque estandar: isotipo oficial en data: URI con
      viewBox cuadrado. Ademas evita el 404 de /favicon.ico que el navegador
@@ -15498,44 +15499,90 @@ HTML_INDEX = r"""<!doctype html>
 <body class="light-theme">
 
 <main class="workspace-root">
-  <!-- Header estandar AQUASHIELD: logo | plataforma | divisor | modulo -->
-  <header class="workspace-header">
-    <div class="header-left">
-      <div class="brand-logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3799 1507" role="img" aria-label="Logotipo AquaChile"> <g fill="currentColor"> <path d="M2227.4,1437.7C2234.4,1414.4 2243.1,1391.1 2253.1,1368.1C2269.8,1391.5 2288.0,1415.0 2307.2,1437.7C2288.0,1460.3 2269.8,1483.8 2253.1,1507.2C2243.1,1484.1 2234.4,1461.0 2227.4,1437.7M2307.3,411.6C2288.0,388.7 2269.8,365.6 2253.1,342.0C2243.1,365.2 2234.4,388.4 2227.4,411.6C2234.4,434.8 2243.1,458.1 2253.1,481.2C2269.8,457.6 2288.0,434.4 2307.3,411.6M2307.3,69.6C2288.0,46.8 2269.8,23.6 2253.1,0.0C2243.1,23.2 2234.4,46.5 2227.4,69.6C2234.4,92.7 2243.1,116.2 2253.1,139.1C2269.8,115.6 2288.0,92.4 2307.3,69.6M2377.0,336.5C2410.0,304.1 2446.3,271.8 2485.2,240.6C2446.3,209.4 2410.0,177.3 2377.0,144.6C2351.0,176.0 2327.5,208.1 2307.0,240.6C2327.5,273.2 2351.0,305.3 2377.0,336.5M2307.3,753.6C2288.0,730.9 2269.8,707.6 2253.1,684.1C2243.1,707.2 2234.4,730.4 2227.4,753.6C2234.4,776.8 2243.1,800.3 2253.1,823.3C2269.8,799.6 2288.0,776.4 2307.3,753.6M2307.3,1095.6C2288.0,1072.7 2269.8,1049.6 2253.1,1026.1C2243.1,1049.2 2234.4,1072.4 2227.4,1095.7C2234.4,1118.9 2243.1,1142.2 2253.1,1165.3C2269.8,1141.6 2288.0,1118.4 2307.3,1095.6M2377.0,1020.6C2410.0,988.1 2446.3,956.0 2485.2,924.6C2446.3,893.4 2410.0,861.3 2377.0,828.6C2351.0,860.1 2327.5,892.2 2307.0,924.6C2327.5,957.3 2351.0,989.3 2377.0,1020.6M2377.0,1362.7C2410.0,1330.1 2446.3,1298.1 2485.2,1266.8C2446.3,1235.4 2410.0,1203.2 2377.0,1170.5C2351.0,1202.0 2327.5,1234.1 2307.0,1266.8C2327.5,1299.3 2350.9,1331.4 2377.0,1362.7M2569.6,1203.2C2622.8,1165.7 2680.2,1129.8 2741.1,1095.7C2680.2,1061.5 2622.8,1025.6 2569.6,988.1C2524.3,1023.1 2482.9,1059.1 2446.0,1095.7C2482.9,1132.2 2524.3,1168.4 2569.6,1203.2M2377.0,486.6C2351.0,518.0 2327.5,550.2 2307.0,582.6C2327.5,615.3 2351.0,647.4 2377.0,678.6C2410.0,646.2 2446.3,614.0 2485.2,582.6C2446.3,551.4 2410.0,519.1 2377.0,486.6M2569.6,861.3C2622.8,823.6 2680.2,787.8 2741.1,753.6C2680.2,719.4 2622.8,683.5 2569.6,646.2C2524.3,681.0 2482.9,717.1 2446.0,753.6C2482.9,790.3 2524.3,826.3 2569.6,861.3M2850.6,1038.3C2934.7,997.0 3024.5,958.9 3118.8,924.6C3024.5,890.3 2934.7,852.4 2850.6,811.0C2781.7,846.6 2717.2,884.8 2657.7,924.7C2717.2,964.7 2781.7,1002.5 2850.6,1038.3M2569.6,519.1C2622.8,481.6 2680.2,445.6 2741.1,411.6C2680.2,377.6 2622.8,341.6 2569.6,304.1C2524.3,339.1 2482.9,375.0 2446.0,411.6C2482.8,448.3 2524.3,484.3 2569.6,519.1M2850.6,696.2C2934.8,654.9 3024.6,616.9 3118.8,582.6C3024.5,548.3 2934.8,510.4 2850.6,469.1C2781.7,504.6 2717.2,542.7 2657.7,582.6C2717.2,622.6 2781.7,660.6 2850.6,696.2M3279.7,870.9C3443.6,820.8 3618.1,781.7 3799.2,753.6C3618.1,725.5 3443.6,686.2 3279.7,636.4C3170.6,670.9 3066.6,710.1 2969.7,753.6C3066.6,797.1 3170.5,836.4 3279.7,870.9Z"/> <path d="M250.1,851.6C235.8,847.6 230.6,840.1 225.1,825.6L149.6,623.8C146.5,615.2 141.2,594.7 141.2,594.4L140.8,593.0L116.7,593.0L116.2,594.4C116.2,594.7 110.6,615.0 107.0,623.8L25.4,825.6C19.8,839.5 15.6,846.7 1.3,851.7L0.0,852.2L0.0,860.8L2.1,860.8C5.5,860.8 12.6,860.6 19.5,860.4C25.7,860.2 31.6,860.1 34.0,860.1C36.8,860.1 42.5,860.2 48.2,860.5C53.6,860.6 58.9,860.8 61.3,860.8L63.3,860.8L63.3,852.1L61.8,851.7C51.6,848.4 47.3,843.1 48.7,835.6C49.1,833.6 53.0,819.7 54.6,816.1L68.0,783.6L168.8,783.6L183.6,821.8C184.9,824.5 188.0,833.8 188.4,836.9C189.3,841.8 188.9,848.0 177.5,851.7L176.1,852.1L176.1,860.8L178.1,860.8C181.2,860.8 188.7,860.6 196.0,860.4C203.3,860.2 210.6,860.1 213.5,860.1C216.6,860.1 224.1,860.2 231.6,860.4C239.1,860.6 246.5,860.8 249.6,860.8L251.6,860.8L251.6,852.0L250.1,851.6M75.6,762.1L119.3,653.9L160.1,762.1L75.6,762.1Z"/> <path d="M710.3,664.2L712.3,664.2L712.3,672.9L710.9,673.3C697.1,676.8 695.3,682.9 695.3,687.7L695.3,788.8C695.3,836.8 663.9,862.2 604.5,862.2C552.6,862.2 524.1,836.2 524.1,788.8L524.1,688.0C524.1,682.5 519.0,675.5 509.4,673.3L507.8,673.0L507.8,664.2L509.7,664.2C512.9,664.2 519.6,664.3 526.3,664.5C532.8,664.7 539.1,664.9 541.9,664.9C544.3,664.9 549.8,664.8 555.6,664.5C562.2,664.3 569.1,664.2 572.3,664.2L574.3,664.2L574.3,673.0L572.7,673.3C563.1,675.1 558.9,683.1 558.9,688.0L558.9,795.9C558.9,828.9 585.7,844.0 610.5,844.0C641.7,844.0 673.4,829.1 673.4,795.9L673.4,687.7C673.4,680.3 668.3,675.4 658.0,673.3L656.4,673.0L656.4,664.2L658.4,664.2C660.6,664.2 665.3,664.3 670.2,664.4C675.7,664.7 681.4,664.9 684.4,664.9C686.9,664.9 692.5,664.7 697.9,664.4C703.1,664.3 708.2,664.2 710.3,664.2Z"/> <path d="M1192.4,804.5L1201.1,804.5L1198.3,850.4L1195.7,850.7C1194.3,850.7 1188.9,851.6 1178.6,853.7C1177.3,854.0 1175.6,854.4 1173.7,854.9C1160.5,858.3 1135.5,864.4 1111.2,864.4C1027.3,864.4 973.2,810.6 973.2,727.5C973.2,647.0 1030.0,590.8 1111.2,590.8C1132.4,590.8 1156.0,596.7 1168.6,599.9C1171.0,600.5 1173.0,600.9 1174.6,601.4C1185.3,603.6 1191.1,604.1 1192.4,604.1L1194.2,604.1L1197.0,650.4L1188.2,650.4L1187.7,649.3C1182.6,638.8 1174.5,630.3 1163.7,623.7C1150.3,615.7 1131.1,611.0 1111.2,611.0C1053.2,611.0 1014.2,657.8 1014.2,727.5C1014.2,783.5 1051.3,844.1 1111.2,844.1C1134.7,844.1 1153.7,839.8 1167.8,831.4C1178.3,825.1 1186.6,816.2 1191.8,805.7L1192.4,804.5Z"/> <path d="M1448.8,665.7L1450.8,665.7L1450.8,674.4L1449.3,674.8C1441.5,676.5 1436.6,683.6 1436.6,689.2L1436.6,837.3C1436.6,842.6 1441.3,849.4 1449.3,851.6L1450.8,852.0L1450.8,860.8L1448.8,860.8C1446.6,860.8 1440.8,860.6 1434.8,860.5C1428.7,860.2 1422.5,860.1 1420.0,860.1C1416.9,860.1 1410.0,860.3 1403.5,860.5C1397.6,860.6 1392.0,860.8 1390.0,860.8L1388.0,860.8L1388.0,852.0L1389.4,851.6C1397.0,849.8 1401.8,842.8 1401.8,837.3L1401.8,767.9L1288.5,767.9L1288.5,837.3C1288.5,842.5 1292.9,849.4 1301.1,851.6L1302.6,852.0L1302.6,860.8L1300.7,860.8C1298.5,860.8 1292.9,860.6 1286.9,860.5C1280.3,860.3 1273.2,860.1 1270.3,860.1C1267.8,860.1 1261.5,860.2 1255.4,860.5C1249.6,860.6 1243.9,860.8 1241.8,860.8L1239.8,860.8L1239.8,852.0L1241.3,851.6C1249.0,849.8 1253.6,842.8 1253.6,837.3L1253.6,689.2C1253.6,683.8 1249.3,676.9 1241.3,674.8L1239.8,674.3L1239.8,665.7L1241.8,665.7C1243.9,665.7 1249.6,665.8 1255.4,665.9C1261.5,666.1 1267.8,666.3 1270.3,666.3C1273.2,666.3 1280.3,666.1 1286.9,665.9C1292.9,665.8 1298.5,665.7 1300.7,665.7L1302.6,665.7L1302.6,674.4L1301.1,674.8C1293.2,676.5 1288.5,683.6 1288.5,689.2L1288.5,747.5L1401.8,747.5L1401.8,689.2C1401.8,683.5 1397.5,676.5 1389.5,674.8L1388.0,674.4L1388.0,665.7L1390.0,665.7C1392.0,665.7 1397.6,665.8 1403.5,665.9C1410.0,666.1 1416.9,666.3 1420.0,666.3C1422.5,666.3 1428.7,666.1 1434.8,665.9C1440.8,665.8 1446.6,665.7 1448.8,665.7Z"/> <path d="M1581.9,665.7L1583.7,665.7L1583.7,674.4L1582.3,674.8C1571.2,677.5 1566.3,682.0 1566.3,689.2L1566.3,837.3C1566.3,844.3 1571.6,849.1 1582.2,851.6L1583.7,852.0L1583.7,860.8L1581.9,860.8C1579.7,860.8 1573.1,860.6 1566.3,860.5C1559.3,860.2 1552.3,860.1 1549.8,860.1C1546.8,860.1 1538.9,860.3 1531.4,860.5C1524.7,860.6 1518.6,860.8 1516.5,860.8L1514.4,860.8L1514.4,851.9L1516.1,851.6C1526.4,849.5 1531.6,844.7 1531.6,837.3L1531.6,689.2C1531.6,681.7 1526.4,676.8 1516.1,674.8L1514.4,674.4L1514.4,665.7L1516.5,665.7C1518.6,665.7 1524.7,665.8 1531.4,665.9C1538.9,666.1 1546.8,666.3 1549.8,666.3C1552.3,666.3 1559.3,666.1 1566.3,665.9C1573.1,665.8 1579.7,665.7 1581.9,665.7Z"/> <path d="M1792.6,815.3L1801.2,817.5L1795.3,860.8L1793.5,860.6C1775.4,859.0 1764.1,859.0 1743.8,859.0L1682.0,859.0C1679.2,859.0 1673.2,859.3 1667.1,859.5C1660.5,859.7 1653.9,859.8 1650.8,859.8L1648.8,859.8L1648.8,850.9L1650.4,850.6C1659.9,848.9 1664.2,841.6 1664.2,835.6L1664.2,688.2C1664.2,680.5 1659.3,675.8 1649.2,673.8L1647.6,673.4L1647.6,664.6L1649.6,664.6C1651.7,664.6 1657.9,664.8 1664.4,665.0C1671.5,665.2 1679.1,665.3 1682.0,665.3C1684.5,665.3 1691.8,665.2 1698.8,665.0C1705.4,664.8 1711.9,664.6 1713.9,664.6L1716.0,664.6L1716.0,673.4L1714.5,673.8C1700.8,677.3 1699.0,683.4 1699.0,688.2L1699.0,838.8L1755.9,838.8C1774.1,838.8 1783.6,833.0 1791.9,816.7L1792.6,815.3Z"/> <path d="M1999.0,824.2L1993.3,861.9L1991.4,861.8C1973.2,860.3 1962.7,860.3 1941.7,860.3L1879.9,860.3C1877.2,860.3 1871.0,860.4 1864.9,860.6C1858.4,860.8 1851.8,861.0 1848.8,861.0L1846.7,861.0L1846.7,852.1L1848.3,851.8C1857.8,850.0 1862.1,842.7 1862.1,836.8L1862.1,689.4C1862.1,684.8 1858.4,676.8 1848.4,675.0L1846.7,674.6L1846.7,665.9L1973.3,665.9C1977.7,665.9 1983.3,665.2 1986.4,663.9L1987.1,663.8L1994.5,663.8L1993.6,705.3L1984.9,705.3L1984.5,703.9C1980.1,691.7 1969.2,684.8 1954.7,684.8L1897.0,684.8L1897.0,749.8L1947.8,749.8C1955.8,749.8 1961.6,746.6 1965.6,740.3L1966.1,739.3L1974.6,739.3L1974.5,741.4C1974.2,746.2 1974.2,755.6 1974.2,758.6C1974.2,760.2 1974.2,762.6 1974.3,765.5C1974.4,769.0 1974.5,773.2 1974.5,776.1L1974.5,778.1L1966.2,778.1L1965.6,777.2C1961.6,771.1 1955.7,768.1 1947.8,768.1L1897.0,768.1L1897.0,841.7L1953.7,841.7C1972.1,841.7 1983.6,836.0 1989.8,823.6L1990.5,822.2L1999.0,824.2Z"/> <path d="M939.4,852.1C927.4,848.9 923.5,841.9 919.2,832.5L858.8,688.0C856.4,682.1 852.0,666.0 852.0,665.9L851.5,664.4L828.6,664.4L828.2,665.9C828.2,666.1 824.2,682.1 821.5,688.0L755.1,832.0C750.4,842.2 746.1,849.5 736.4,852.1L735.3,852.3L735.3,860.5L764.5,860.5C766.3,860.5 769.9,860.6 774.0,860.6C779.0,860.7 784.6,860.8 787.9,860.8L789.9,860.8L789.9,852.6L788.4,852.2C779.9,849.5 777.6,844.5 778.1,841.7C778.5,840.0 780.7,833.8 781.7,831.6L793.2,805.8L870.2,805.8L881.9,831.6C884.5,838.5 885.2,840.9 885.4,841.8C886.0,844.5 885.6,849.5 877.1,852.2L875.7,852.6L875.7,860.8L877.7,860.8C881.5,860.8 888.5,860.7 895.0,860.6C900.4,860.6 905.4,860.5 907.7,860.5C909.9,860.5 915.2,860.6 920.9,860.6C927.8,860.7 935.2,860.8 938.8,860.8L940.9,860.8L940.9,852.5L939.4,852.1M802.0,785.9L832.9,716.9L862.1,785.9L802.0,785.9Z"/> <path d="M436.3,884.7L409.5,853.6C424.0,848.6 437.0,840.6 447.6,830.2C466.0,811.8 476.2,786.8 476.2,759.9C476.2,733.0 466.0,708.1 447.6,689.8C428.1,670.4 401.5,660.2 370.8,660.2C340.4,660.2 312.8,670.7 293.5,689.8C274.9,708.1 264.6,733.0 264.6,759.9C264.6,786.8 274.9,811.8 293.5,830.2C312.8,849.3 340.1,859.8 370.4,859.9L403.2,898.2C417.1,914.2 426.8,915.7 447.4,915.7C449.4,915.7 451.4,915.8 453.8,915.7L461.8,915.7L463.3,915.7L463.3,907.9L462.5,907.4C455.2,903.5 446.4,896.6 436.3,884.7M370.8,842.6C319.5,842.6 301.3,798.0 301.3,759.9C301.3,721.9 319.5,677.5 370.8,677.5C421.5,677.5 439.5,721.9 439.5,759.9C439.5,798.0 421.5,842.6 370.8,842.6Z"/> </g> </svg></div>
-      <div class="platform-name">
-        <h1>AQUASHIELD</h1>
-        <p class="subtitle">by AquaChile</p>
+  <!-- Header estándar AQUASHIELD [aquachile-brand v48]: el bloque, tal cual; solo cambia el nombre del módulo. -->
+  <header class="aquashield-header">
+  
+      <div class="header-left">
+  
+          <!-- 1 · Logo oficial AquaChile (vector del manual, pág. 9).
+                   Proporción 3799/1507 = 2.5209 contra la grilla 141X/56X =
+                   2.5179 del manual: 0.12% de desvío, redondeo del vector.
+                   NO redibujar, NO estirar, NO rotar, NO sombrear. -->
+          <div class="brand-logo">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3799 1507" role="img" aria-label="Logotipo AquaChile">
+              <!-- Logotipo oficial completo (palabra + isotipo), extraido del vector original del Manual de Marca AQC (pag. 9). Recolorear via fill. -->
+              <g fill="currentColor">
+              <path d="M2227.4,1437.7C2234.4,1414.4 2243.1,1391.1 2253.1,1368.1C2269.8,1391.5 2288.0,1415.0 2307.2,1437.7C2288.0,1460.3 2269.8,1483.8 2253.1,1507.2C2243.1,1484.1 2234.4,1461.0 2227.4,1437.7M2307.3,411.6C2288.0,388.7 2269.8,365.6 2253.1,342.0C2243.1,365.2 2234.4,388.4 2227.4,411.6C2234.4,434.8 2243.1,458.1 2253.1,481.2C2269.8,457.6 2288.0,434.4 2307.3,411.6M2307.3,69.6C2288.0,46.8 2269.8,23.6 2253.1,0.0C2243.1,23.2 2234.4,46.5 2227.4,69.6C2234.4,92.7 2243.1,116.2 2253.1,139.1C2269.8,115.6 2288.0,92.4 2307.3,69.6M2377.0,336.5C2410.0,304.1 2446.3,271.8 2485.2,240.6C2446.3,209.4 2410.0,177.3 2377.0,144.6C2351.0,176.0 2327.5,208.1 2307.0,240.6C2327.5,273.2 2351.0,305.3 2377.0,336.5M2307.3,753.6C2288.0,730.9 2269.8,707.6 2253.1,684.1C2243.1,707.2 2234.4,730.4 2227.4,753.6C2234.4,776.8 2243.1,800.3 2253.1,823.3C2269.8,799.6 2288.0,776.4 2307.3,753.6M2307.3,1095.6C2288.0,1072.7 2269.8,1049.6 2253.1,1026.1C2243.1,1049.2 2234.4,1072.4 2227.4,1095.7C2234.4,1118.9 2243.1,1142.2 2253.1,1165.3C2269.8,1141.6 2288.0,1118.4 2307.3,1095.6M2377.0,1020.6C2410.0,988.1 2446.3,956.0 2485.2,924.6C2446.3,893.4 2410.0,861.3 2377.0,828.6C2351.0,860.1 2327.5,892.2 2307.0,924.6C2327.5,957.3 2351.0,989.3 2377.0,1020.6M2377.0,1362.7C2410.0,1330.1 2446.3,1298.1 2485.2,1266.8C2446.3,1235.4 2410.0,1203.2 2377.0,1170.5C2351.0,1202.0 2327.5,1234.1 2307.0,1266.8C2327.5,1299.3 2350.9,1331.4 2377.0,1362.7M2569.6,1203.2C2622.8,1165.7 2680.2,1129.8 2741.1,1095.7C2680.2,1061.5 2622.8,1025.6 2569.6,988.1C2524.3,1023.1 2482.9,1059.1 2446.0,1095.7C2482.9,1132.2 2524.3,1168.4 2569.6,1203.2M2377.0,486.6C2351.0,518.0 2327.5,550.2 2307.0,582.6C2327.5,615.3 2351.0,647.4 2377.0,678.6C2410.0,646.2 2446.3,614.0 2485.2,582.6C2446.3,551.4 2410.0,519.1 2377.0,486.6M2569.6,861.3C2622.8,823.6 2680.2,787.8 2741.1,753.6C2680.2,719.4 2622.8,683.5 2569.6,646.2C2524.3,681.0 2482.9,717.1 2446.0,753.6C2482.9,790.3 2524.3,826.3 2569.6,861.3M2850.6,1038.3C2934.7,997.0 3024.5,958.9 3118.8,924.6C3024.5,890.3 2934.7,852.4 2850.6,811.0C2781.7,846.6 2717.2,884.8 2657.7,924.7C2717.2,964.7 2781.7,1002.5 2850.6,1038.3M2569.6,519.1C2622.8,481.6 2680.2,445.6 2741.1,411.6C2680.2,377.6 2622.8,341.6 2569.6,304.1C2524.3,339.1 2482.9,375.0 2446.0,411.6C2482.8,448.3 2524.3,484.3 2569.6,519.1M2850.6,696.2C2934.8,654.9 3024.6,616.9 3118.8,582.6C3024.5,548.3 2934.8,510.4 2850.6,469.1C2781.7,504.6 2717.2,542.7 2657.7,582.6C2717.2,622.6 2781.7,660.6 2850.6,696.2M3279.7,870.9C3443.6,820.8 3618.1,781.7 3799.2,753.6C3618.1,725.5 3443.6,686.2 3279.7,636.4C3170.6,670.9 3066.6,710.1 2969.7,753.6C3066.6,797.1 3170.5,836.4 3279.7,870.9Z"/>
+              <path d="M250.1,851.6C235.8,847.6 230.6,840.1 225.1,825.6L149.6,623.8C146.5,615.2 141.2,594.7 141.2,594.4L140.8,593.0L116.7,593.0L116.2,594.4C116.2,594.7 110.6,615.0 107.0,623.8L25.4,825.6C19.8,839.5 15.6,846.7 1.3,851.7L0.0,852.2L0.0,860.8L2.1,860.8C5.5,860.8 12.6,860.6 19.5,860.4C25.7,860.2 31.6,860.1 34.0,860.1C36.8,860.1 42.5,860.2 48.2,860.5C53.6,860.6 58.9,860.8 61.3,860.8L63.3,860.8L63.3,852.1L61.8,851.7C51.6,848.4 47.3,843.1 48.7,835.6C49.1,833.6 53.0,819.7 54.6,816.1L68.0,783.6L168.8,783.6L183.6,821.8C184.9,824.5 188.0,833.8 188.4,836.9C189.3,841.8 188.9,848.0 177.5,851.7L176.1,852.1L176.1,860.8L178.1,860.8C181.2,860.8 188.7,860.6 196.0,860.4C203.3,860.2 210.6,860.1 213.5,860.1C216.6,860.1 224.1,860.2 231.6,860.4C239.1,860.6 246.5,860.8 249.6,860.8L251.6,860.8L251.6,852.0L250.1,851.6M75.6,762.1L119.3,653.9L160.1,762.1L75.6,762.1Z"/>
+              <path d="M710.3,664.2L712.3,664.2L712.3,672.9L710.9,673.3C697.1,676.8 695.3,682.9 695.3,687.7L695.3,788.8C695.3,836.8 663.9,862.2 604.5,862.2C552.6,862.2 524.1,836.2 524.1,788.8L524.1,688.0C524.1,682.5 519.0,675.5 509.4,673.3L507.8,673.0L507.8,664.2L509.7,664.2C512.9,664.2 519.6,664.3 526.3,664.5C532.8,664.7 539.1,664.9 541.9,664.9C544.3,664.9 549.8,664.8 555.6,664.5C562.2,664.3 569.1,664.2 572.3,664.2L574.3,664.2L574.3,673.0L572.7,673.3C563.1,675.1 558.9,683.1 558.9,688.0L558.9,795.9C558.9,828.9 585.7,844.0 610.5,844.0C641.7,844.0 673.4,829.1 673.4,795.9L673.4,687.7C673.4,680.3 668.3,675.4 658.0,673.3L656.4,673.0L656.4,664.2L658.4,664.2C660.6,664.2 665.3,664.3 670.2,664.4C675.7,664.7 681.4,664.9 684.4,664.9C686.9,664.9 692.5,664.7 697.9,664.4C703.1,664.3 708.2,664.2 710.3,664.2Z"/>
+              <path d="M1192.4,804.5L1201.1,804.5L1198.3,850.4L1195.7,850.7C1194.3,850.7 1188.9,851.6 1178.6,853.7C1177.3,854.0 1175.6,854.4 1173.7,854.9C1160.5,858.3 1135.5,864.4 1111.2,864.4C1027.3,864.4 973.2,810.6 973.2,727.5C973.2,647.0 1030.0,590.8 1111.2,590.8C1132.4,590.8 1156.0,596.7 1168.6,599.9C1171.0,600.5 1173.0,600.9 1174.6,601.4C1185.3,603.6 1191.1,604.1 1192.4,604.1L1194.2,604.1L1197.0,650.4L1188.2,650.4L1187.7,649.3C1182.6,638.8 1174.5,630.3 1163.7,623.7C1150.3,615.7 1131.1,611.0 1111.2,611.0C1053.2,611.0 1014.2,657.8 1014.2,727.5C1014.2,783.5 1051.3,844.1 1111.2,844.1C1134.7,844.1 1153.7,839.8 1167.8,831.4C1178.3,825.1 1186.6,816.2 1191.8,805.7L1192.4,804.5Z"/>
+              <path d="M1448.8,665.7L1450.8,665.7L1450.8,674.4L1449.3,674.8C1441.5,676.5 1436.6,683.6 1436.6,689.2L1436.6,837.3C1436.6,842.6 1441.3,849.4 1449.3,851.6L1450.8,852.0L1450.8,860.8L1448.8,860.8C1446.6,860.8 1440.8,860.6 1434.8,860.5C1428.7,860.2 1422.5,860.1 1420.0,860.1C1416.9,860.1 1410.0,860.3 1403.5,860.5C1397.6,860.6 1392.0,860.8 1390.0,860.8L1388.0,860.8L1388.0,852.0L1389.4,851.6C1397.0,849.8 1401.8,842.8 1401.8,837.3L1401.8,767.9L1288.5,767.9L1288.5,837.3C1288.5,842.5 1292.9,849.4 1301.1,851.6L1302.6,852.0L1302.6,860.8L1300.7,860.8C1298.5,860.8 1292.9,860.6 1286.9,860.5C1280.3,860.3 1273.2,860.1 1270.3,860.1C1267.8,860.1 1261.5,860.2 1255.4,860.5C1249.6,860.6 1243.9,860.8 1241.8,860.8L1239.8,860.8L1239.8,852.0L1241.3,851.6C1249.0,849.8 1253.6,842.8 1253.6,837.3L1253.6,689.2C1253.6,683.8 1249.3,676.9 1241.3,674.8L1239.8,674.3L1239.8,665.7L1241.8,665.7C1243.9,665.7 1249.6,665.8 1255.4,665.9C1261.5,666.1 1267.8,666.3 1270.3,666.3C1273.2,666.3 1280.3,666.1 1286.9,665.9C1292.9,665.8 1298.5,665.7 1300.7,665.7L1302.6,665.7L1302.6,674.4L1301.1,674.8C1293.2,676.5 1288.5,683.6 1288.5,689.2L1288.5,747.5L1401.8,747.5L1401.8,689.2C1401.8,683.5 1397.5,676.5 1389.5,674.8L1388.0,674.4L1388.0,665.7L1390.0,665.7C1392.0,665.7 1397.6,665.8 1403.5,665.9C1410.0,666.1 1416.9,666.3 1420.0,666.3C1422.5,666.3 1428.7,666.1 1434.8,665.9C1440.8,665.8 1446.6,665.7 1448.8,665.7Z"/>
+              <path d="M1581.9,665.7L1583.7,665.7L1583.7,674.4L1582.3,674.8C1571.2,677.5 1566.3,682.0 1566.3,689.2L1566.3,837.3C1566.3,844.3 1571.6,849.1 1582.2,851.6L1583.7,852.0L1583.7,860.8L1581.9,860.8C1579.7,860.8 1573.1,860.6 1566.3,860.5C1559.3,860.2 1552.3,860.1 1549.8,860.1C1546.8,860.1 1538.9,860.3 1531.4,860.5C1524.7,860.6 1518.6,860.8 1516.5,860.8L1514.4,860.8L1514.4,851.9L1516.1,851.6C1526.4,849.5 1531.6,844.7 1531.6,837.3L1531.6,689.2C1531.6,681.7 1526.4,676.8 1516.1,674.8L1514.4,674.4L1514.4,665.7L1516.5,665.7C1518.6,665.7 1524.7,665.8 1531.4,665.9C1538.9,666.1 1546.8,666.3 1549.8,666.3C1552.3,666.3 1559.3,666.1 1566.3,665.9C1573.1,665.8 1579.7,665.7 1581.9,665.7Z"/>
+              <path d="M1792.6,815.3L1801.2,817.5L1795.3,860.8L1793.5,860.6C1775.4,859.0 1764.1,859.0 1743.8,859.0L1682.0,859.0C1679.2,859.0 1673.2,859.3 1667.1,859.5C1660.5,859.7 1653.9,859.8 1650.8,859.8L1648.8,859.8L1648.8,850.9L1650.4,850.6C1659.9,848.9 1664.2,841.6 1664.2,835.6L1664.2,688.2C1664.2,680.5 1659.3,675.8 1649.2,673.8L1647.6,673.4L1647.6,664.6L1649.6,664.6C1651.7,664.6 1657.9,664.8 1664.4,665.0C1671.5,665.2 1679.1,665.3 1682.0,665.3C1684.5,665.3 1691.8,665.2 1698.8,665.0C1705.4,664.8 1711.9,664.6 1713.9,664.6L1716.0,664.6L1716.0,673.4L1714.5,673.8C1700.8,677.3 1699.0,683.4 1699.0,688.2L1699.0,838.8L1755.9,838.8C1774.1,838.8 1783.6,833.0 1791.9,816.7L1792.6,815.3Z"/>
+              <path d="M1999.0,824.2L1993.3,861.9L1991.4,861.8C1973.2,860.3 1962.7,860.3 1941.7,860.3L1879.9,860.3C1877.2,860.3 1871.0,860.4 1864.9,860.6C1858.4,860.8 1851.8,861.0 1848.8,861.0L1846.7,861.0L1846.7,852.1L1848.3,851.8C1857.8,850.0 1862.1,842.7 1862.1,836.8L1862.1,689.4C1862.1,684.8 1858.4,676.8 1848.4,675.0L1846.7,674.6L1846.7,665.9L1973.3,665.9C1977.7,665.9 1983.3,665.2 1986.4,663.9L1987.1,663.8L1994.5,663.8L1993.6,705.3L1984.9,705.3L1984.5,703.9C1980.1,691.7 1969.2,684.8 1954.7,684.8L1897.0,684.8L1897.0,749.8L1947.8,749.8C1955.8,749.8 1961.6,746.6 1965.6,740.3L1966.1,739.3L1974.6,739.3L1974.5,741.4C1974.2,746.2 1974.2,755.6 1974.2,758.6C1974.2,760.2 1974.2,762.6 1974.3,765.5C1974.4,769.0 1974.5,773.2 1974.5,776.1L1974.5,778.1L1966.2,778.1L1965.6,777.2C1961.6,771.1 1955.7,768.1 1947.8,768.1L1897.0,768.1L1897.0,841.7L1953.7,841.7C1972.1,841.7 1983.6,836.0 1989.8,823.6L1990.5,822.2L1999.0,824.2Z"/>
+              <path d="M939.4,852.1C927.4,848.9 923.5,841.9 919.2,832.5L858.8,688.0C856.4,682.1 852.0,666.0 852.0,665.9L851.5,664.4L828.6,664.4L828.2,665.9C828.2,666.1 824.2,682.1 821.5,688.0L755.1,832.0C750.4,842.2 746.1,849.5 736.4,852.1L735.3,852.3L735.3,860.5L764.5,860.5C766.3,860.5 769.9,860.6 774.0,860.6C779.0,860.7 784.6,860.8 787.9,860.8L789.9,860.8L789.9,852.6L788.4,852.2C779.9,849.5 777.6,844.5 778.1,841.7C778.5,840.0 780.7,833.8 781.7,831.6L793.2,805.8L870.2,805.8L881.9,831.6C884.5,838.5 885.2,840.9 885.4,841.8C886.0,844.5 885.6,849.5 877.1,852.2L875.7,852.6L875.7,860.8L877.7,860.8C881.5,860.8 888.5,860.7 895.0,860.6C900.4,860.6 905.4,860.5 907.7,860.5C909.9,860.5 915.2,860.6 920.9,860.6C927.8,860.7 935.2,860.8 938.8,860.8L940.9,860.8L940.9,852.5L939.4,852.1M802.0,785.9L832.9,716.9L862.1,785.9L802.0,785.9Z"/>
+              <path d="M436.3,884.7L409.5,853.6C424.0,848.6 437.0,840.6 447.6,830.2C466.0,811.8 476.2,786.8 476.2,759.9C476.2,733.0 466.0,708.1 447.6,689.8C428.1,670.4 401.5,660.2 370.8,660.2C340.4,660.2 312.8,670.7 293.5,689.8C274.9,708.1 264.6,733.0 264.6,759.9C264.6,786.8 274.9,811.8 293.5,830.2C312.8,849.3 340.1,859.8 370.4,859.9L403.2,898.2C417.1,914.2 426.8,915.7 447.4,915.7C449.4,915.7 451.4,915.8 453.8,915.7L461.8,915.7L463.3,915.7L463.3,907.9L462.5,907.4C455.2,903.5 446.4,896.6 436.3,884.7M370.8,842.6C319.5,842.6 301.3,798.0 301.3,759.9C301.3,721.9 319.5,677.5 370.8,677.5C421.5,677.5 439.5,721.9 439.5,759.9C439.5,798.0 421.5,842.6 370.8,842.6Z"/>
+              </g>
+              </svg>
+          </div>
+  
+          <!-- 2 · Plataforma (2 líneas SIEMPRE) -->
+          <div class="platform-name">
+              <h1>AQUASHIELD</h1>
+              <p class="subtitle">by AquaChile</p>
+          </div>
+  
+          <!-- 3 · Divisor -->
+          <div class="header-separator"></div>
+  
+          <!-- 4 · Módulo (2 líneas SIEMPRE) -->
+          <div>
+              <p class="module-label">Módulo</p>
+              <h2 class="module-name">RESERVAS</h2>   <!-- ✎ EDITAR 1: nombre del módulo -->
+          </div>
       </div>
-      <div class="header-separator"></div>
-      <div>
-        <p class="module-label">Módulo</p>
-        <h2 class="module-name">RESERVAS</h2>
+  
+      <div class="header-right">
+  
+          <!-- 5 · Toggle de tema. Los dos íconos están en el DOM; el CSS elige. -->
+          <button class="theme-toggle-minimal" type="button"
+                  aria-label="Cambiar tema claro u oscuro"
+                  onclick="aquashieldToggleTheme()">
+              <svg class="ash-ico ash-ico-moon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>
+              </svg>
+              <svg class="ash-ico ash-ico-sun" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4"/>
+                  <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+              </svg>
+          </button>
+  
+          <!-- 6 · Nombre de usuario editable + avatar -->
+          <div class="user-profile">
+              <span id="user-name" contenteditable="true" spellcheck="false"
+                    role="textbox" aria-label="Tu nombre de usuario"
+                    title="Clic para editar tu nombre">Usuario</span>
+              <div class="avatar" aria-hidden="true">
+                  <svg class="ash-ico" viewBox="0 0 24 24">
+                      <circle cx="12" cy="7" r="4"/>
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  </svg>
+              </div>
+          </div>
       </div>
-    </div>
-    <div class="header-right">
-      <button class="theme-toggle-minimal" id="tema" aria-label="Cambiar tema claro u oscuro">
-        <svg class="ic-luna" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-        <svg class="ic-sol" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-      </button>
-      <button class="theme-toggle-minimal" id="btn-cred" aria-label="Credenciales de los portales" title="Credenciales de los portales">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>
-      </button>
-      <div class="user-profile">
-        <!-- Nombre editable, igual que en los demas modulos. NO es el operador:
-             el operador es el perfil de Chrome con el que se entra a los portales
-             y se elige en el panel. Esto es quien esta usando la app, y se guarda
-             en localStorage['mars_reservas_usuario'] (prefijo mars_<modulo>_ por
-             el estandar v8: las paginas de la plataforma comparten origen). -->
-        <span class="mono" id="user-name" contenteditable="true" spellcheck="false"
-              role="textbox" aria-label="Tu nombre de usuario"
-              title="Clic para editar tu nombre">Usuario</span>
-        <div class="avatar" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
-      </div>
-      <button class="theme-toggle-minimal" id="btn-salir" title="Cerrar AQUASHIELD y apagar servidor" aria-label="Cerrar AQUASHIELD" style="color:#e05252; margin-left:6px;">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
-      </button>
-    </div>
   </header>
+  <!-- BARRA DE CONTEXTO — casa de las dos funciones del GRUPO (b) del Paso 2 de la migración: las que el bloque
+       estándar NO provee. Franja PROPIA, fuera de los 64px del header: no toca el bloque y no pierde nada. Los id se
+       conservan a propósito: el cableado de app.js (abrirCred y /api/apagar) no cambia. -->
+  <div class="context-bar" id="context-bar">
+    <span class="context-spacer"></span>
+    <button class="rs-btn plano" id="btn-cred" type="button" title="Credenciales de los portales" aria-label="Credenciales de los portales">
+      <svg class="ash-ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg><span>Credenciales</span>
+    </button>
+    <button class="rs-btn plano rs-salir" id="btn-salir" type="button" title="Cerrar AQUASHIELD y apagar servidor" aria-label="Cerrar AQUASHIELD">
+      <svg class="ash-ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg><span>Cerrar AQUASHIELD</span>
+    </button>
+  </div>
 
   <div class="workspace-content">
     <section class="mars-section active">
@@ -15622,7 +15669,7 @@ HTML_INDEX = r"""<!doctype html>
               </div>
               <div style="display:flex; align-items:center; gap:14px;">
                 <span class="rs-estado" id="estado" style="font-size:12px; font-weight:600;">Listo para empezar</span>
-                <span class="cuenta"><a href="#" id="todas">todas</a> · <a href="#" id="ninguna">ninguna</a></span>
+                <span class="cuenta"><a href="#" id="todas">todas</a><a href="#" id="ninguna">ninguna</a></span>
               </div>
             </div>
             <div class="rs-tabla-wrap"><table id="tabla"><thead></thead><tbody></tbody></table></div>
@@ -15679,6 +15726,142 @@ HTML_INDEX = r"""<!doctype html>
 </dialog>
 
 <div id="toast-container"></div>
+<!-- JS del bloque estándar [aquachile-brand v48]: DESPUÉS del pie y ANTES de app.js, que lee sus claves al cargar. -->
+<script>
+(function () {
+    "use strict";
+
+    /* ✎ EDITAR 4 — prefijo de localStorage. OBLIGATORIO, y la convención es
+
+              mars_<modulo>_<clave>        p. ej.  mars_congelado_theme
+
+       o sea: "mars_" fijo (la plataforma), el nombre del módulo en MINÚSCULA, y la
+       clave la agrega el código de abajo. Acá va sólo el prefijo, terminado en "_".
+
+       REEMPLAZAR {{modulo}}. Las llaves están para que el valor NO sea copiable tal
+       cual: si quedan, se ven en el disco. Un placeholder plausible ("modulo_") se
+       copia entero y vuelve a colisionar, que es lo que pasó con "mars_" en v7.
+
+       LOS DOS NIVELES SON NECESARIOS. "mars_" solo NO alcanza: es el prefijo de la
+       PLATAFORMA, así que dos módulos que lo adopten colisionan igual — y sin el
+       nombre del módulo la clave tampoco dice de quién es al mirar el storage.
+
+       POR QUÉ IMPORTA, y es el defecto que menos se ve: TODAS las páginas file://
+       comparten UN SOLO origen. Si dos módulos usan la misma clave, COMPARTEN EL
+       TEMA — cambias a oscuro en uno y se cambia en el otro. Al copiar el bloque no
+       se nota nada; sólo aparece usando los módulos, y nadie lo atribuye a esto.
+
+       No es hipotético: medido el 2026-08-22, CUATRO módulos de la plataforma usan
+       la clave pelada `theme` y por lo tanto ya se pisan entre sí. Ver el aviso en
+       references/auditoria.md, Paso 1.
+
+       VALE PARA TODAS LAS CLAVES DEL MÓDULO, no sólo el tema: el usuario, los
+       ajustes, lo que aparezca después. Que la convención las cubra por definición
+       es más barato que auditarlas de a una. */
+    const ASH_PREFIX = "mars_reservas_";
+
+    /* Migración de claves viejas → mars_reservas_<clave> (aquachile-brand, encargo 84). Corre en cada carga hasta que la
+       MARCA existe. El tema se guardaba en «aq-tema» con «claro» u «oscuro», una clave PRIVADA de este panel: se copia
+       normalizada y se borra. El nombre de usuario ya estaba en mars_reservas_usuario. [clave vieja, clave nueva] */
+    [["aq-tema", "theme"]].forEach(function (par) {
+        var viejo = par[0], nuevo = par[1];
+        var marca = ASH_PREFIX + "migrado_" + nuevo;
+        try {
+            if (localStorage.getItem(marca) !== null) return;            // ya migré: manda la MARCA
+            var v = localStorage.getItem(viejo);
+            if (v === null) return;                                      // nada que migrar: la marca NO se quema
+            if (localStorage.getItem(ASH_PREFIX + nuevo) === null) {     // no pisar un valor nuevo que ya exista
+                localStorage.setItem(ASH_PREFIX + nuevo, v === "oscuro" ? "dark-theme" : "light-theme");
+            }
+            localStorage.setItem(marca, "1");                            // recién después de copiar
+            localStorage.removeItem(viejo);                              // clave privada: se puede borrar
+        } catch (e) { console.warn("[AQUASHIELD] migración de " + viejo + " pendiente:", e); }
+    });
+
+    /* ✎ Si el módulo YA GUARDABA claves con otro nombre, la receta de migración va ACÁ,
+       justo después de ASH_PREFIX (references/header-estandar.md § La receta de migración).
+       Su guarda es la MARCA ASH_PREFIX + "migrado_<clave>", nunca «la clave nueva está vacía» [v26]. */
+
+    const USUARIO_DEFECTO = "Usuario";
+    const USUARIO_MAX = 28;              // igual que el max-width: 28ch del CSS
+
+    /* Storage envuelto SIEMPRE. Con el storage bloqueado (perfil endurecido,
+       política de empresa, cookies de terceros restringidas) una PREFERENCIA no
+       puede cortar el arranque: falla, avisa por consola y sigue. */
+    function leer(clave) {
+        try { return localStorage.getItem(ASH_PREFIX + clave); }
+        catch (e) { console.warn("[AQUASHIELD] localStorage no disponible:", e); return null; }
+    }
+    function guardar(clave, valor) {
+        try {
+            if (valor === null) localStorage.removeItem(ASH_PREFIX + clave);
+            else localStorage.setItem(ASH_PREFIX + clave, valor);
+        } catch (e) { console.warn("[AQUASHIELD] no se pudo persistir:", e); }
+    }
+
+    // ── TEMA ────────────────────────────────────────────────────────────────
+    // classList.toggle, NO body.className: asignar className pisa cualquier otra
+    // clase que el módulo tenga puesta en el <body>.
+    function aplicarTema(claro) {
+        document.body.classList.toggle("light-theme", claro);
+    }
+    window.aquashieldToggleTheme = function () {
+        const claro = !document.body.classList.contains("light-theme");
+        aplicarTema(claro);
+        guardar("theme", claro ? "light-theme" : "dark-theme");
+    };
+    // Sin nada guardado → claro, el mismo default que el class del <body>.
+    aplicarTema(leer("theme") !== "dark-theme");
+
+    // ── AÑO DEL PIE ─────────────────────────────────────────────────────────
+    // Mismo patrón que los módulos ya usan para fechar el registro. Si el JS no corre,
+    // queda el año del marcado: el pie nunca aparece sin año.
+    const anio = document.getElementById("ash-anio");
+    if (anio) anio.textContent = new Date().getFullYear();
+
+    // ── NOMBRE DE USUARIO ───────────────────────────────────────────────────
+    const el = document.getElementById("user-name");
+    if (el) {
+        const limpiar = (t) => String(t || "")
+            .replace(/[\r\n\t]+/g, " ")
+            .replace(/\s{2,}/g, " ")
+            .trim()
+            .slice(0, USUARIO_MAX);
+
+        const guardado = leer("usuario");
+        if (guardado) el.textContent = guardado;
+        el.classList.toggle("is-placeholder", !guardado);
+
+        // Al enfocar, el placeholder se vacía solo: nadie borra "Usuario" a mano.
+        el.addEventListener("focus", function () {
+            if (el.classList.contains("is-placeholder")) {
+                el.textContent = "";
+                el.classList.remove("is-placeholder");
+            }
+        });
+
+        el.addEventListener("keydown", function (e) {
+            if (e.key === "Enter")  { e.preventDefault(); el.blur(); }
+            if (e.key === "Escape") { e.preventDefault(); el.textContent = leer("usuario") || USUARIO_DEFECTO; el.blur(); }
+        });
+
+        // Pegar SIEMPRE como texto plano: un contenteditable acepta HTML.
+        el.addEventListener("paste", function (e) {
+            e.preventDefault();
+            const origen = (e.clipboardData || window.clipboardData) || { getData: function () { return ""; } };
+            document.execCommand("insertText", false, limpiar(origen.getData("text")));
+        });
+
+        el.addEventListener("blur", function () {
+            const nombre = limpiar(el.textContent);          // .textContent, NUNCA .innerHTML
+            const esDefecto = !nombre || nombre === USUARIO_DEFECTO;
+            el.textContent = esDefecto ? USUARIO_DEFECTO : nombre;
+            el.classList.toggle("is-placeholder", esDefecto);
+            guardar("usuario", esDefecto ? null : nombre);
+        });
+    }
+})();
+</script>
 <script src="/app.js"></script>
 </body>
 </html>
@@ -16019,7 +16202,7 @@ setInterval(async () => {
           chip(f, "curso", "en curso");
           if (tr) { tr.classList.add("fila-activa"); tr.classList.remove("fila-emitida"); }
           if (tdBkg && (!tdBkg.textContent || tdBkg.textContent === "—")) {
-            tdBkg.innerHTML = '<span class="badge-bkg-vacio" style="color:var(--accent);">procesando…</span>';
+            tdBkg.innerHTML = '<span class="badge-bkg-vacio" style="color:var(--text-primary);">procesando…</span>';
           }
         } else if (lectura === "emitida" || lectura === "lista") {
           const lista = lectura === "lista";
@@ -16050,19 +16233,19 @@ setInterval(async () => {
         } else if (lectura === "no-enviada") {
           chip(f, "rev", "no enviada");
           if (tr) tr.classList.remove("fila-activa", "fila-emitida");
-          if (tdBkg) tdBkg.innerHTML = `<span class="badge-bkg-vacio" style="color:var(--danger)">no enviada</span>`;
+          if (tdBkg) tdBkg.innerHTML = `<span class="badge-bkg-vacio" style="color:var(--text-primary)">no enviada</span>`;
         } else if (lectura === "revisar-portal") {
           chip(f, "rev", "revisar en portal");
           if (tr) tr.classList.remove("fila-activa", "fila-emitida");
-          if (tdBkg) tdBkg.innerHTML = `<span class="badge-bkg-vacio" style="color:var(--danger)">revisar en portal</span>`;
+          if (tdBkg) tdBkg.innerHTML = `<span class="badge-bkg-vacio" style="color:var(--text-primary)">revisar en portal</span>`;
         } else if (lectura === "sin-cupo") {
           chip(f, "rev", "sin cupo");
           if (tr) tr.classList.remove("fila-activa", "fila-emitida");
-          if (tdBkg) tdBkg.innerHTML = `<span class="badge-bkg-vacio" style="color:var(--danger)">sin cupo</span>`;
+          if (tdBkg) tdBkg.innerHTML = `<span class="badge-bkg-vacio" style="color:var(--text-primary)">sin cupo</span>`;
         } else if (lectura === "revisar") {
           chip(f, "rev", est);
           if (tr) tr.classList.remove("fila-activa", "fila-emitida");
-          if (tdBkg) tdBkg.innerHTML = `<span class="badge-bkg-vacio" style="color:var(--danger)">revisar</span>`;
+          if (tdBkg) tdBkg.innerHTML = `<span class="badge-bkg-vacio" style="color:var(--text-primary)">revisar</span>`;
         } else {
           chip(f, tipoChip(est), est);
         }
@@ -16187,9 +16370,9 @@ function chip(fila, tipo, txt) {
     const nm = $("#nota-modo");
     if (nm) {
       if (MODO_PAGINA) {
-        nm.innerHTML = `<b style="color:#ef4444;">🔴 MODO EMISIÓN REAL ACTIVO:</b> Las reservas seleccionadas se enviarán y confirmarán formalmente ante las navieras.<br><span class="rs-version">v<span id="ver">${esc(d.version)}</span> · <span style="background:#ef4444;color:#fff;padding:2px 6px;border-radius:4px;font-weight:bold;font-size:10px;">EMISIÓN REAL</span></span>`;
+        nm.innerHTML = `<b>🔴 MODO EMISIÓN REAL ACTIVO:</b> Las reservas seleccionadas se enviarán y confirmarán formalmente ante las navieras.<br><span class="rs-version">v<span id="ver">${esc(d.version)}</span> · <span class="modo-insignia emision">EMISIÓN REAL</span></span>`;
       } else {
-        nm.innerHTML = `<b>🛡️ Modo Seguro Activo:</b> Cada reserva se llena completa y se detiene en la pantalla final antes de confirmar.<br><span class="rs-version">v<span id="ver">${esc(d.version)}</span> · <span style="background:#10b981;color:#fff;padding:2px 6px;border-radius:4px;font-weight:bold;font-size:10px;">MODO SEGURO</span></span>`;
+        nm.innerHTML = `<b>🛡️ Modo Seguro Activo:</b> Cada reserva se llena completa y se detiene en la pantalla final antes de confirmar.<br><span class="rs-version">v<span id="ver">${esc(d.version)}</span> · <span class="modo-insignia seguro">MODO SEGURO</span></span>`;
       }
     }
     notaVisible(d.aviso || (d.usuarios.length ? "" : SIN_OPERADOR));
@@ -16233,79 +16416,8 @@ function chip(fila, tipo, txt) {
   }
 })();
 
-// ---------- tema y año del pie ----------
-(() => {
-  const b = document.body, btn = $("#tema");
-  const guardado = (() => { try { return localStorage.getItem("aq-tema"); } catch (e) { return null; } })();
-  const poner = (claro) => {
-    b.classList.toggle("light-theme", claro);
-    btn.setAttribute("aria-label", claro ? "Cambiar a tema oscuro" : "Cambiar a tema claro");
-    try { localStorage.setItem("aq-tema", claro ? "claro" : "oscuro"); } catch (e) {}
-  };
-  poner(guardado !== "oscuro");
-  btn.onclick = () => poner(!b.classList.contains("light-theme"));
-  const a = $("#ash-anio");
-  if (a) a.textContent = new Date().getFullYear();
-})();
 
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  NOMBRE DE USUARIO EDITABLE
-//  Mismo comportamiento que en los demas modulos. NO es el operador: el
-//  operador es el perfil de Chrome (lo elige el panel); esto es quien esta
-//  usando la app. Clave `mars_<modulo>_<dato>` por el estandar v8 — las
-//  paginas de la plataforma comparten origen y sin el modulo se pisan.
-// ═══════════════════════════════════════════════════════════════════════════
-const MARS_RESERVAS = "mars_reservas_";
-const K_USUARIO = MARS_RESERVAS + "usuario";
-const USUARIO_DEFECTO = "Usuario";
-const USUARIO_MAX = 28;   // mismo tope que el max-width: 28ch del CSS
-
-function limpiarUsuario(t) {
-  return String(t || "").replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim().slice(0, USUARIO_MAX);
-}
-(() => {
-  const el = $("#user-name");
-  if (!el) return;
-  // try/catch en cada acceso: un dato de configuracion no puede matar el arranque.
-  let guardado = null;
-  try { guardado = localStorage.getItem(K_USUARIO); } catch (e) {}
-  if (guardado) el.textContent = guardado;
-  el.classList.toggle("is-placeholder", !guardado);
-
-  el.addEventListener("focus", () => {
-    if (el.classList.contains("is-placeholder")) {
-      el.textContent = ""; el.classList.remove("is-placeholder");
-    }
-  });
-  el.addEventListener("keydown", e => {
-    if (e.key === "Enter") { e.preventDefault(); el.blur(); }
-    else if (e.key === "Escape") {
-      e.preventDefault();
-      let previo = null; try { previo = localStorage.getItem(K_USUARIO); } catch (_) {}
-      el.textContent = previo || USUARIO_DEFECTO; el.blur();
-    }
-  });
-  // contenteditable acepta HTML pegado (tipico: copiar desde Word). Se intercepta
-  // el pegado y entra solo texto plano: el markup nunca llega al DOM.
-  el.addEventListener("paste", e => {
-    e.preventDefault();
-    const plano = ((e.clipboardData || window.clipboardData) || { getData: () => "" }).getData("text");
-    document.execCommand("insertText", false, limpiarUsuario(plano));
-  });
-  el.addEventListener("blur", () => {
-    // textContent y NUNCA innerHTML: ademas normaliza el nodo, que contenteditable
-    // pudo dejar con <br>/<div> adentro.
-    const nombre = limpiarUsuario(el.textContent);
-    const esDefecto = !nombre || nombre === USUARIO_DEFECTO;
-    el.textContent = esDefecto ? USUARIO_DEFECTO : nombre;
-    el.classList.toggle("is-placeholder", esDefecto);
-    try {
-      if (esDefecto) localStorage.removeItem(K_USUARIO);
-      else localStorage.setItem(K_USUARIO, nombre);
-    } catch (e) {}
-  });
-})();
 
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -16432,6 +16544,7 @@ CSS_INDEX = r"""/* AQUASHIELD - AQC BRAND PREMIUM UI SYSTEM (industrial-fusion)
     --accent: #EB5F0A;
     --accent-glow: rgba(235, 95, 10, 0.25);
     --accent-hover: #f57423;
+    /* aquashield:decorativo el disco tenue detrás de un ícono (los widgets y la pausa) y el acento del bloque: ningún estado depende de él */
     --accent-dim: rgba(235, 95, 10, 0.12);
     --bg-main: #1E2D3B;
     --bg-sidebar: #1E2D3B;       /* header == page en dark (sin "cajitas") */
@@ -16590,159 +16703,12 @@ body:not(.light-theme) #wg-detener > div:first-child {
     background: rgba(224, 148, 74, 0.15) !important;
 }
 
-
-/* ── HEADER EN px, NO EN rem — MEJORA DE ROBUSTEZ [estandar de marca v3] ───────────────
-   ESTO NO ARREGLA NINGUN DEFECTO VISIBLE HOY, y conviene decirlo para que nadie lo lea como el
-   fix de otra cosa. Con la raiz en 16px —el valor por omision— el header se ve exactamente igual
-   antes y despues de este cambio.
-
-   Lo que hace es protegerlo de una condicion que hoy no se da: el header tiene alto FIJO de 64px,
-   asi que si sus medidas dependen del `font-size` raiz, un navegador con la fuente en «Grande» las
-   agranda dentro de una caja que no se mueve. Medido sobre este mismo header: el bloque de marca
-   pasa de 37.2px (raiz 16) a 41.9 (raiz 18) y a 46.5 (raiz 20). En los tres casos todavia entra en
-   64, pero el margen se come solo y nadie lo esta mirando.
-
-   Los valores son LOS MISMOS que habia, convertidos a raiz 16: 1.35rem = 21.6px, 0.7rem = 11.2px,
-   0.6rem = 9.6px, 1.15rem = 18.4px, 1.5rem = 24px, 1.25rem = 20px, 1rem = 16px.
-   El comentario «FIJO» que ya estaba no era cierto mientras la unidad fuera rem: eso es lo que
-   este cambio corrige de verdad — una etiqueta que afirmaba algo que el codigo no cumplia. */
-
-/* WORKSPACE & WATERMARK */
-/* ── PIE DE AUTORIA — bloque estandar de marca, medida FIJA [v13] ─────────────────────────
-   A lo ancho de la pagina, FUERA de cualquier panel, y en UNA sola linea. Antes vivia dentro de
-   una tarjeta del panel izquierdo, en dos lineas y 221px de ancho: se veia distinto del de los
-   otros modulos y los dos "cumplian". El ancho no era la causa, era el sitio.
-   Sin `opacity`: la opacidad es lo que hunde el contraste, y el token ya esta medido en AA. */
-.aquashield-credit {
-    flex: 0 0 auto;
-    padding: 12px 24px;
-    border-top: 1px solid var(--border-main);
-    font-family: var(--font);
-    font-size: 11.2px;                  /* FIJO — igual que "by AquaChile" */
-    line-height: 1.4;
-    color: var(--text-muted);
-    display: flex;
-    flex-wrap: nowrap;                  /* FIJO — UNA linea, nunca dos */
-    align-items: baseline;
-    gap: 0 6px;
-}
-/* En pantalla angosta se corta el AREA, nunca el autor: la autoria es el dato que el pie existe
-   para dar, y el area es su contexto. */
-/* EL PIE SON DOS SEGMENTOS [estandar de marca v14]: «© <ano> AquaShield · <autor>».
-   v13 tenia un tercero con el area duena del modulo —«· Fresco, AquaChile»—, obligatorio
-   desde v12, y v14 lo REVIERTE: no va en ningun modulo. El pie identifica a la plataforma
-   y a su autor, que es lo mismo en los doce; el area es organigrama.
-   Con un solo segmento, es ESE el que se recorta en pantalla angosta — con puntos
-   suspensivos, nunca envolviendo a dos lineas. */
-.aquashield-credit .ash-autoria {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
 .workspace-root {
     flex: 1;
     display: flex;
     flex-direction: column;
     position: relative;
     overflow: hidden;
-}
-
-.workspace-header {
-    height: 64px;            /* FIJO — header estándar AQUASHIELD Opción A */
-    background: var(--bg-sidebar);
-    padding: 0 24px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid var(--border-main);
-    box-shadow: var(--shadow-card);
-}
-
-/* ===== HEADER ESTÁNDAR AQUASHIELD (medidas FIJAS, no modificar) ===== */
-.header-left {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-}
-
-.brand-logo svg {
-    height: 36px;            /* FIJO — proporcional a 64px de header */
-    width: auto;
-    display: block;
-    color: var(--logo-fill); /* SVG oficial con fill="currentColor" */
-}
-
-.platform-name h1 {
-    font-family: var(--font-heading);
-    /* C (2026-08-22): peso 500 y letterspacing 0.15em. El manual describe Quicksand con
-       trazo liviano y tracking amplio (estilo packaging "ATLANTIC SALMON"). El 300 (Light)
-       que pide literalmente NO esta vendorizado —hay 400/500/600/700—, asi que 500 es la
-       aproximacion mas cercana sin bajar otro archivo (eso seria la propuesta F).
-       El font-size sigue FIJO; solo cambian peso y tracking. */
-    font-weight: 500;
-    font-size: 21.6px;      /* FIJO */
-    letter-spacing: 0.15em;
-    /* [estandar de marca v14] NO ARREGLA NADA VISIBLE HOY: el marcado ya dice AQUASHIELD
-       en mayusculas, asi que antes y despues se ve igual. Esta para que la mayuscula deje
-       de depender de que alguien escriba bien el texto — sin esta linea un <h1>AquaShield</h1>
-       pasa desapercibido y queda distinto de los otros once modulos. Mismo criterio que el
-       pase de rem a px: robustez, no correccion de un defecto. */
-    text-transform: uppercase;
-    color: var(--text-primary);
-    line-height: 1.1;
-}
-
-.platform-name .subtitle {
-    font-size: 12.8px;       /* FIJO [estandar de marca v18] — era 11.2 */
-    color: var(--text-muted);
-    line-height: 1.2;
-}
-
-.header-separator {
-    width: 1.5px;
-    height: 32px;            /* FIJO — proporcional a 64px */
-    background: var(--color-separator);
-    flex-shrink: 0;
-}
-
-.module-label {
-    /* A+B (2026-08-22): Quicksand SALE de aca. El manual la restringe a "titulares a gran
-       escala y solo en mayusculas", y esto son 9.6px — micro-texto, no titular. Pasa a la
-       primaria. Divergencia DELIBERADA del snippet de la capa AQUASHIELD, que ponia
-       Quicksand aca: en conflicto, la capa 1 (manual) manda en identidad tipografica. */
-    font-family: var(--font);
-    font-size: 9.6px;       /* FIJO */
-    font-weight: 700;
-    letter-spacing: 2.5px;
-    /* NO NARANJA [estandar de marca v15]. Texto de 9.6px peso 700 es texto CHICO y le toca
-       4.5:1; el naranja del manual da 3.40 sobre el header claro y 4.13 sobre el oscuro.
-       Es un defecto DEL BLOQUE, no de este modulo: la tabla de contraste de la skill ya
-       decia «el naranja no como texto chico» y el bloque lo usaba igual.
-       El naranja no se va del header: en reposo queda como fondo del AVATAR (decorativo), y
-       ademas en el hover y el foco del boton de tema. Usos no textuales, que es lo que la
-       tabla autoriza. El filete NO es naranja, es el gris calido del separador. */
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    line-height: 1.1;
-}
-
-.module-name {
-    /* A+B: Quicksand ENTRA aca, que es su rol real segun el manual — titular a gran escala
-       (18.4px, el segundo mayor de la app) y en MAYUSCULAS (text-transform, abajo).
-       Quicksand tiene 700 vendorizado, asi que el peso ya no se sintetiza. */
-    font-family: var(--font-heading);
-    font-size: 18.4px;      /* FIJO */
-    /* C: peso 500 + tracking 0.15em, igual que el h1 de la plataforma (ver nota alli).
-       El 800 original tampoco servia: PT Sans solo trae 400/700 y el navegador lo
-       SINTETIZABA; con Quicksand el 500 es un peso real, no sintetizado. */
-    font-weight: 500;
-    letter-spacing: 0.15em;
-    color: var(--text-primary);
-    text-transform: uppercase;
-    line-height: 1.15;
 }
 
 .workspace-content {
@@ -16808,83 +16774,6 @@ body:not(.light-theme) #wg-detener > div:first-child {
     border-radius: 12px;
     box-shadow: var(--shadow-card);
     animation: slideIn 0.3s ease-out;
-}
-
-.header-right {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-/* El glifo del AVATAR va a 24 [estandar v20], no a 20 como el del boton: es un cuadro macizo
-   y el mismo icono queda chico sobre un campo de color lleno. Se fija por CSS y no por los
-   atributos width/height que pone lucide — depender de la libreria es lo mismo que heredar. */
-.avatar svg,
-.avatar i { width: 24px; height: 24px; }
-
-/* El icono del BOTON a 20x20 [estandar v18]. Este modulo no usa los dos SVG en linea del bloque sino
-   los que inyecta lucide, que vienen en 24. Se acota por CSS; migrar el MECANISMO al del
-   bloque —dos SVG en linea con swap por CSS, sin libreria— queda pendiente aparte. */
-.theme-toggle-minimal svg,
-.theme-toggle-minimal i { width: 20px; height: 20px; }
-
-.theme-toggle-minimal {
-    background: none;
-    border: 1px solid var(--border-main);
-    color: var(--text-primary);
-    /* 44x44 [estandar v18] — era 40. Es tambien la medida de blanco de puntero que
-       recomienda WCAG 2.5.5. `padding: 0` explicito: sin el se cuela el default del
-       navegador para <button>. */
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    border-radius: 12px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: var(--transition);
-}
-
-.theme-toggle-minimal:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: var(--accent-dim);
-}
-
-.avatar {
-    width: 44px;               /* FIJO [estandar v18] — igual que el boton */
-    height: 44px;
-    background: var(--accent);
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    box-shadow: 0 4px 10px var(--accent-glow);
-}
-
-/* Sin sombras en tema oscuro: es regla del estándar de marca, y `--accent-glow` es la ÚNICA
-   sombra del archivo que no pasa por `--shadow-card` (que ya vale none en dark). Encima el
-   glow estaba MÁS fuerte en oscuro (0.25) que en claro (0.15), o sea justo al revés. */
-body:not(.light-theme) .avatar { box-shadow: none; }
-
-.user-profile {
-    display: flex;
-    align-items: center;
-    gap: 12px;                 /* FIJO [estandar v18] — era 12.8 */
-    padding-left: 24px;
-    border-left: 1px solid var(--border-main);
-    height: 24px;
-}
-
-
-
-
-
-
-.mono {
-    font-family: var(--font-mono);
 }
 
 /* (El swap de PNGs light/dark fue reemplazado por el SVG oficial inline
@@ -16961,10 +16850,6 @@ body.light-theme { --shadow-hover: 0 4px 14px rgba(68, 85, 99, 0.10); }
     outline-offset: 2px;
     border-radius: var(--radius-sm);
 }
-.theme-toggle-minimal:focus-visible {
-    border-color: var(--accent);
-    color: var(--accent);
-}
 
 /* ── 3. JERARQUÍA DE SUPERFICIES DEL FEED ──────────────────────────────────── */
 
@@ -16994,16 +16879,6 @@ body.light-theme { --shadow-hover: 0 4px 14px rgba(68, 85, 99, 0.10); }
 .feed-item > div:first-child > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .feed-item > span { flex-shrink: 0 !important; }
 
-/* ── 2. CONTRASTE DE LOS COLORES DE ESTADO ─────────────────────────────────── */
-
-/* Los colores los pasa el MOTOR hardcodeados a createFeedItem, así que la única vía
-   CSS es el selector de atributo sobre el style inline. Preserva la SEMÁNTICA: cada
-   hex se reasigna a una variante del MISMO matiz, nunca a otro color. */
-
-/* Neutro #8F99A1 en claro: 2.90:1 → no pasaba nada. Mismo matiz, 4.64:1. */
-body.light-theme .feed-item[style*="#8F99A1"] { border-left-color: #6B7680 !important; }
-body.light-theme .feed-item [style*="#8F99A1"] { color: #6B7680 !important; }
-
 /* OK: el motor pasa #6C8B8B (el valor LIGHT de --success) TAMBIÉN en oscuro, donde el
    token dice #8AACAC. Es un bug de token, no una decisión: 3.82:1 → 5.74:1. */
 body:not(.light-theme) .feed-item[style*="#6C8B8B"] { border-left-color: #8AACAC !important; }
@@ -17017,11 +16892,10 @@ body:not(.light-theme) .feed-item [style*="#C76728"] { color: #D9986D !important
 
 /* ── 5. PESOS TIPOGRÁFICOS REALES ──────────────────────────────────────────── */
 
-/* PT Sans vendorizada trae SOLO 400 y 700. Todo `font-weight: 800` sobre PT Sans lo
-   sintetiza el navegador. Los títulos de widget NO están acá a propósito: llevan
-   class="mono" → JetBrains Mono, que sí tiene 800 vendorizado. */
+/* PT Sans vendorizada trae SOLO 400 y 700, y JetBrains Mono SOLO 400 (fuentes.css). Un peso que la familia no trae lo
+   sintetiza el navegador: por eso el título de los widgets y la pastilla de progreso (JetBrains Mono) van en 400. */
 #ivv-monitor > div:first-child { font-weight: 700 !important; }
-.feed-item > span              { font-weight: 700 !important; }
+.feed-item > span              { font-weight: 400 !important; }
 
 /* ── 6. CROMO DEL NAVEGADOR ────────────────────────────────────────────────── */
 
@@ -17057,50 +16931,6 @@ body.light-theme      { color-scheme: light; }
     #wg-descargar:hover { transform: none; }
 }
 
-/* ── NOMBRE DE USUARIO EDITABLE ────────────────────────────────────────────── */
-/* Afforance de "esto se edita" sin sacarlo del header: filete al pasar el mouse,
-   acento al enfocar. El anillo de :focus-visible global sigue aplicando encima. */
-
-/* La familia y el tamaño van EXPLICITOS [estandar v18]. Sin ellos este modulo heredaba su
-   monoespaciada —JetBrains Mono— y el mismo texto «Usuario» ocupaba 83.2px contra 69.3px del
-   otro modulo, corriendo 14px todo el grupo de la derecha. Heredar no es prescribir. */
-#user-name {
-    cursor: text;
-    font-family: var(--font);
-    font-size: 16px;
-    /* EXPLICITO [estandar v19]: sin el, la caja del nombre depende del line-height del <body>
-       de cada modulo y los dos dejan de medir igual. */
-    line-height: 20px;
-    padding: 3px 7px;
-    margin: -3px -7px;                 /* compensa el padding: no mueve el layout del header */
-    border: 1px solid transparent;
-    border-radius: var(--radius-sm);
-    max-width: 28ch;                   /* mismo tope que USUARIO_MAX en el motor */
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    transition: var(--transition);
-}
-
-#user-name:hover {
-    border-color: var(--border-main);
-    background: var(--accent-dim);
-}
-
-#user-name:focus {
-    border-color: var(--accent);
-    background: var(--bg-input);
-    /* al editar se ve el final del texto: sin ellipsis y con scroll propio */
-    text-overflow: clip;
-    overflow-x: auto;
-}
-
-/* Sin nombre puesto: se lee como sugerencia, no como el nombre de alguien. */
-#user-name.is-placeholder {
-    opacity: .65;
-    font-style: italic;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
    CAPA DEL MODULO RESERVAS
    Todo lo de arriba es el sistema compartido, sin tocar. Aca abajo van SOLO
@@ -17122,8 +16952,10 @@ body.light-theme      { color-scheme: light; }
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    overflow-y: auto;
+    overflow: hidden;
 }
+.rs-panel > .rs-widgets { overflow-y: auto; min-height: 0; flex: 1 1 auto; padding: 4px; margin: -4px; }
+.rs-panel > :is(.rs-nota, .rs-aviso) { flex: 0 0 auto; }
 .rs-widgets { display: flex; flex-direction: column; gap: 0.8rem; }
 .rs-derecha { overflow-y: auto; padding-right: 0.5rem; height: 100%; display: flex; flex-direction: column; gap: 1rem; }
 
@@ -17147,7 +16979,7 @@ body.light-theme      { color-scheme: light; }
 .wg .txt { overflow: hidden; }
 .wg .tit {
     font-family: var(--font-mono);
-    font-weight: 800;
+    font-weight: 400;
     font-size: 0.78rem;
     color: var(--text-primary);
     margin: 0;
@@ -17239,7 +17071,10 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
     margin-bottom: 1.5rem;
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
-.rs-rotulo .cuenta { font-family: var(--font-mono); letter-spacing: .05em; }
+.rs-rotulo .cuenta { font-family: var(--font-mono); font-weight: 400; letter-spacing: .05em; }
+/* El separador de «todas · ninguna» lo dibuja el CSS, no el texto (ver el parche del encargo 84). */
+.rs-rotulo .cuenta a + a { position: relative; margin-left: 1.6ch; }
+.rs-rotulo .cuenta a + a::before { content: "·"; position: absolute; left: -1.1ch; color: var(--text-muted); }
 
 /* ── Tabla de filas ───────────────────────────────────────────────────────── */
 .rs-tabla-wrap { overflow: auto; flex: 1; min-height: 260px; max-height: calc(100vh - 240px); }
@@ -17256,14 +17091,22 @@ thead th {
 tbody td { padding: 8px 10px; border-bottom: 1px solid var(--border-main); color: var(--text-primary); }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr.no td { color: var(--text-muted); }
+/* aquashield:estado la fila que el robot está llenando ahora; en oscuro la señal la lleva el borde de su primera celda */
 tbody tr.fila-activa td {
     background: rgba(235, 95, 10, 0.08) !important;
+}
+body:not(.light-theme) tbody tr.fila-activa td {
+    background: rgba(30, 45, 59, 0.5) !important;
 }
 tbody tr.fila-activa td:first-child {
     border-left: 3px solid var(--accent);
 }
+/* aquashield:estado la fila de una reserva ya emitida o lista para emitir */
 tbody tr.fila-emitida td {
     background: rgba(108, 139, 139, 0.06) !important;
+}
+body:not(.light-theme) tbody tr.fila-emitida td {
+    background: rgba(30, 45, 59, 0.5) !important;
 }
 tbody td.nave { font-family: var(--font-mono); font-size: 12px; }
 .sin-nave, .sin-ruta, .otro-contenedor { color: var(--text-muted); font-style: italic; }
@@ -17274,17 +17117,22 @@ tbody td.nave { font-family: var(--font-mono); font-size: 12px; }
     border: 1px solid;
 }
 .chip.pend  { color: var(--text-muted); border-color: var(--border-main); }
-.chip.curso { color: var(--warning);    border-color: var(--warning);    background: var(--accent-dim); }
+/* aquashield:estado la reserva que el robot está llenando ahora */
+.chip.curso { color: var(--text-primary); border-color: var(--warning); background: rgba(235, 95, 10, 0.08); }
 .chip.ok    { color: #006100;           border-color: #70AD47;           background: #C6EFCE; }
-.chip.rev   { color: var(--danger);     border-color: var(--danger);     background: rgba(199,103,40,.12); }
+/* aquashield:estado la reserva que quedó para revisar: no enviada, enviada sin confirmar, con error o sin cupo */
+.chip.rev   { color: var(--text-primary); border-color: var(--danger);   background: rgba(199,103,40,.12); }
+body:not(.light-theme) .chip.curso, body:not(.light-theme) .chip.rev { background: rgba(30, 45, 59, 0.5); }
 
+/* aquashield:estado cuántas reservas de la corrida van emitidas */
 .progreso-pill {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 2px 10px; background: rgba(108,139,139,.12);
     border: 1px solid var(--success); border-radius: 999px;
-    font-family: var(--font-mono); font-size: 11px; font-weight: 700;
-    color: var(--success);
+    font-family: var(--font-mono); font-size: 11px; font-weight: 400;
+    color: var(--text-primary);
 }
+body:not(.light-theme) .progreso-pill { background: rgba(30, 45, 59, 0.5); }
 .dot-pulse {
     width: 6px; height: 6px; border-radius: 50%;
     background: var(--warning); display: inline-block;
@@ -17297,7 +17145,7 @@ tbody td.nave { font-family: var(--font-mono); font-size: 12px; }
 .badge-bkg {
     display: inline-block; padding: 2px 8px;
     border-radius: 4px; font-family: var(--font-mono);
-    font-size: 11px; font-weight: 700;
+    font-size: 11px; font-weight: 400;
     color: #006100; background: #C6EFCE;
     border: 1px solid #70AD47; letter-spacing: 0.03em;
 }
@@ -17353,17 +17201,6 @@ tbody td.nave { font-family: var(--font-mono); font-size: 12px; }
 /* ── Barra de estado bajo el rotulo del feed ──────────────────────────────── */
 .rs-estado { font-family: var(--font); font-size: 12px; color: var(--text-secondary); text-transform: none; letter-spacing: 0; }
 
-/* Cambio de tema sin libreria de iconos: dos SVG en linea y swap por CSS.
-   Se muestra el icono de ADONDE se va, no el de donde se esta. */
-.theme-toggle-minimal .ic-sol { display: none; }
-body.light-theme .theme-toggle-minimal .ic-luna { display: none; }
-body.light-theme .theme-toggle-minimal .ic-sol  { display: block; }
-
-/* El nombre del header aca NO se edita (lo fija el selector de operador):
-   se le quita la afordancia de edicion que trae el sistema. */
-#user-name { cursor: default; }
-#user-name:hover { border-color: transparent; background: transparent; }
-
 .rs-rotulo a { color: var(--text-muted); text-decoration: none; border-bottom: 1px solid var(--border-main); }
 .rs-rotulo a:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
@@ -17379,7 +17216,7 @@ body.light-theme .theme-toggle-minimal .ic-sol  { display: block; }
 .feed-item.f-alerta > span { color: var(--danger); }
 .feed-item.f-paso > span   { color: var(--accent); }
 .feed-item.f-info > span   { color: var(--text-muted); }
-.feed-item.f-paso > div:first-child > span { font-family: var(--font-mono); font-weight: 700; letter-spacing: .04em; }
+.feed-item.f-paso > div:first-child > span { font-family: var(--font-mono); font-weight: 400; letter-spacing: .04em; }
 
 .rs-navs .entrar {
     align-self: flex-start; margin-top: 6px;
@@ -17407,12 +17244,14 @@ body.light-theme .theme-toggle-minimal .ic-sol  { display: block; }
 #wg-planilla  .disco { background: rgba(68,85,99,0.10); }
 #wg-planilla  .disco svg { color: #445563; }
 #wg-login     { border-left-color: #6C8B8B; }
+/* aquashield:decorativo el disco detrás del ícono de «Solo iniciar sesión»: no comunica ningún estado */
 #wg-login     .disco { background: rgba(108,139,139,0.10); }
 #wg-login     .disco svg { color: #6C8B8B; }
 #wg-descargar { border-left-color: #6F7746; }
 #wg-descargar .disco { background: rgba(111,119,70,0.10); }
 #wg-descargar .disco svg { color: #6F7746; }
 #wg-detener   { border-left-color: #C76728; }
+/* aquashield:decorativo el disco detrás del ícono de «Detener»: no comunica ningún estado */
 #wg-detener   .disco { background: rgba(199,103,40,0.10); }
 #wg-detener   .disco svg { color: #C76728; }
 
@@ -17528,7 +17367,7 @@ body.light-theme .rs-dlg::backdrop { background: rgba(68, 85, 99, 0.35); }
 .rs-cred td { padding: 6px 6px; }
 .rs-cred th { padding: 8px 6px; }
 .rs-cred td:first-child {
-    font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+    font-family: var(--font-mono); font-size: 12px; font-weight: 400;
     white-space: nowrap; width: 1%;
 }
 .rs-cred input {
@@ -17548,6 +17387,492 @@ body.light-theme .rs-dlg::backdrop { background: rgba(68, 85, 99, 0.35); }
 /* Sin filete entre filas: cada campo ya tiene borde propio y los dos juntos
    dibujaban bandas. */
 .rs-cred tbody td { border-bottom: 0; }
+
+/* ═══ BLOQUE ESTÁNDAR AQUASHIELD · aquachile-brand v48 ═══════════════════════════════════════════════════════════
+   Pegado tal cual de snippet/header-estandar.html (PARTE 1): header, toggle de tema, nombre de usuario con su avatar y
+   pie. NO se edita acá: cuando la skill saque una versión nueva se vuelve a pegar entero. Lo propio de este panel va
+   abajo, en el puente. Los tokens (--bg-sidebar, --text-primary, --accent...) los resuelve el mapeo --ash-* del bloque. */
+/* ── 1.1 · MAPEO DE TOKENS ───────────── ⚑ PASO PREVIO, ANTES DE PEGAR [v14] ──
+   Cada valor cae en cascada: nombre del estándar → nombre alternativo que ya se
+   usa en la plataforma → literal de marca. El bloque funciona aunque el módulo
+   no defina NINGÚN token; si los define, ganan los del módulo.
+
+   ⚠️ Y ESE ES EL PROBLEMA, medido en la migración del Validador HC [v14]. Los
+   literales de respaldo hacen que un mapeo OLVIDADO no rompa nada: el header se
+   ve bien y deja de seguir al módulo. En ese módulo se mapeó el bloque CLARO a
+   sus nombres (--sup, --titulo, --tenue, --linea) y el bloque OSCURO quedó con
+   los nombres de la plataforma, que ese módulo no define. Resultado medido:
+
+       tema      fondo del header    superficie del módulo   fondo de página
+       claro     #FFFFFF (--sup)     #FFFFFF                 #F6F7F8
+       oscuro    #1E2D3B (literal)   #243544                 #1E2D3B
+
+   En claro el header ES la superficie; en oscuro ES el fondo de la página. La
+   relación se INVIERTE entre temas, sin un solo error y sin que nada avise.
+
+   POR ESO EL MAPEO VA ANTES DE PEGAR, y se hace en los DOS bloques. Antes de
+   tocar nada, escribe a qué token de TU módulo corresponde cada uno de estos
+   trece; si alguno no tiene equivalente, deja el literal A CONCIENCIA.
+
+   MANDA EL CONTRASTE MEDIDO, NO EL VALOR [v27]. El token de tu módulo puede
+   tener un valor distinto del literal de acá, siempre que sea de la PALETA y
+   que cada texto del bloque llegue a 4,5 MEDIDO EN PÍXEL en los dos temas. El
+   acento y el logo no: son literales del manual. Si no llega, no se exceptúa:
+   se cambia el valor o no se mapea. Lo mide:
+       verificar-modulo.py --chequeo contraste-bloque
+
+   Los trece:
+
+       --ash-bg          fondo del header y del pie   (el que más se olvida)
+       --ash-text        texto principal
+       --ash-text-2      texto secundario
+       --ash-accent      color de acento
+       --ash-accent-dim  acento tenue de fondo
+       --ash-separator   filete entre plataforma y módulo
+       --ash-border      bordes
+       --ash-bg-input    fondo del campo de nombre
+       --ash-logo        relleno del logotipo
+       --ash-shadow      sombra (en oscuro va none, impuesto)
+       --ash-glow        halo del acento (en oscuro va none, impuesto)
+       --ash-font        familia de texto
+       --ash-font-head   familia de titulares (Quicksand) */
+.aquashield-header,
+.aquashield-credit {
+    --ash-bg:         var(--bg-header,      var(--bg-sidebar,  #FFFFFF));
+    --ash-text:       var(--text-primary,   #445563);
+    --ash-text-2:     var(--text-secondary, var(--text-muted,  #556471));
+    --ash-accent:     var(--color-accent,   var(--accent,      #EB5F0A));
+    --ash-accent-dim: var(--accent-dim,     rgba(235, 95, 10, 0.12));  /* aquashield:bloque acento tenue del bloque: decorativo, no comunica ningun estado */
+    --ash-separator:  var(--color-separator, #B4A28D);
+    --ash-border:     var(--border-color,   var(--border-main, #D5D8DB));
+    --ash-bg-input:   var(--bg-input,       #FFFFFF);
+    --ash-logo:       var(--logo-fill,      #445563);
+    --ash-shadow:     var(--shadow-card,    var(--shadow, 0 2px 12px rgba(68, 85, 99, 0.08)));
+    --ash-glow:       0 4px 10px rgba(235, 95, 10, 0.15);  /* aquashield:bloque halo del acento: decorativo, y en oscuro va none */
+    --ash-font:       var(--font, var(--font-primary, "PT Sans", "Source Sans 3", system-ui, sans-serif));
+    --ash-font-head:  var(--font-heading, Quicksand, "PT Sans", sans-serif);
+    --ash-radius:     12px;
+}
+/* Tema OSCURO. Cambian sólo los literales de respaldo: si el módulo define sus
+   tokens por tema, siguen ganando y este bloque no interfiere.
+   SOMBRA Y GLOW EN none, y no por cascada sino a propósito: el estándar prohíbe
+   sombras en dark, así que el bloque lo impone aunque el módulo se desvíe. */
+body:not(.light-theme) .aquashield-header,
+body:not(.light-theme) .aquashield-credit {
+    --ash-bg:         var(--bg-header,      var(--bg-sidebar,  #1E2D3B));
+    --ash-text:       var(--text-primary,   #E2E8F0);
+    --ash-text-2:     var(--text-secondary, var(--text-muted,  #9FADC0));
+    /* No subir este alfa: da 1.72:1 y aun así se deja. Subirlo volvería al separador más
+       marcado que los bordes de las tarjetas (3.56 contra 1.11) y rompería la jerarquía.
+       Decisión medida — ver aquashield.md, seccion del separador. */
+    --ash-separator:  var(--color-separator, rgba(180, 162, 141, 0.3));  /* aquashield:bloque filete entre plataforma y modulo: decorativo */
+    --ash-border:     var(--border-color,   var(--border-main, #334155));
+    --ash-bg-input:   var(--bg-input,       #2C3E50);
+    --ash-logo:       var(--logo-fill,      #FFFFFF);
+    --ash-shadow:     none;
+    --ash-glow:       none;
+}
+
+/* ── 1.2 · ESTRUCTURA — MEDIDAS FIJAS, NO MODIFICAR ─────────────────────────
+   Presupuesto vertical, para que sea verificable y nadie tenga que adivinar [v18]:
+     bloque plataforma  21.6 × 1.1  +  12.8 × 1.2  =  39.1px
+     bloque módulo       9.6 × 1.1  +  18.4 × 1.15 =  31.7px
+     toggle / avatar                                  44.0px   ← el más alto
+   El más alto es 44px dentro de 64px → quedan 20px de aire (10 arriba y abajo).
+   Antes el más alto era el bloque de plataforma con 37.2; con el toggle y el
+   avatar en 44 el que manda pasó a ser ellos. Si tocas un line-height o una de
+   estas cajas, recalcula esto: es el contrato. */
+.aquashield-header {
+    box-sizing: border-box;
+    height: 64px;                       /* FIJO */
+    padding: 0 24px;                    /* FIJO */
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--ash-bg);
+    border-bottom: 1px solid var(--ash-border);
+    box-shadow: var(--ash-shadow);
+    font-family: var(--ash-font);
+}
+/* EL HEADER NO ES RESPONSIVE, y esto lo CONTIENE sin tocar sus medidas `[v21]`.
+   Medido: su contenido pide 629px, asi que por debajo de ~700px desborda y la
+   PAGINA entera scrollea de lado. Comparado contra el header propio de un modulo
+   antes de migrar, la migracion lo EMPEORA porque el bloque agrega el perfil de
+   usuario:
+       375px de ancho  ->  141px de desborde antes, 254px despues
+       320px de ancho  ->  196px antes, 309px despues
+
+   NO se encogen las medidas del bloque: son el contrato, y es lo que hace que
+   los doce modulos se vean iguales. Lo que se hace es contener el scroll DENTRO
+   del header — el header se ve identico, entero y desplazable, y el cuerpo de la
+   pagina queda en el ancho del viewport. Ninguna medida fija cambia: sigue
+   midiendo 64px exactos, verificado.
+
+   Va en el BLOQUE y no modulo por modulo justamente porque es del bloque: si
+   cada uno lo descubre por su cuenta, cada uno lo va a resolver distinto. */
+@media (max-width: 720px) {
+    .aquashield-header {
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;          /* la franja es de 64px: la barra la tapa */
+    }
+    .aquashield-header::-webkit-scrollbar { display: none; }
+}
+
+.header-left  { display: flex; align-items: center; gap: 20px; }   /* FIJO */
+.header-right { display: flex; align-items: center; gap: 16px; }   /* FIJO */
+
+/* Logo oficial. RESGUARDO: la geometría del header fija el aire vertical en
+   13.4px por lado ((64 − 36) / 2), así que el "Y" del manual vale 13.4px acá y
+   el borde horizontal tiene que ser al menos eso: el padding de 24px más el gap
+   de 20px dan 44px hasta el elemento siguiente. Cumple con holgura.
+   Ese Y vale SÓLO para este componente: para portada o papelería, el Y sale de
+   la grilla del manual, no de este número. */
+.brand-logo svg {
+    height: 36px;                       /* FIJO — da 90.8px de ancho, sobre el mínimo de 1,7 cm */
+    width: auto;
+    display: block;
+    color: var(--ash-logo);             /* el vector usa fill="currentColor" */
+}
+
+/* EL TRATAMIENTO DE «AQUASHIELD» ES MEDIDA FIJA [v14], igual que el alto de 64px.
+   Es la palabra que identifica a la plataforma y tiene que ser LA MISMA en los doce
+   módulos; hoy coincide entre Fresco y Validador HC porque los dos copiaron, no
+   porque estuviera prescrito. Medido en los dos, con getComputedStyle:
+       font-family     Quicksand, "PT Sans", sans-serif   (via --ash-font-head)
+       font-weight     500        el manual describe trazo liviano; el 300 que pediria
+                                  NO esta vendorizado (hay 400/500/600/700), asi que 500
+                                  es lo mas cercano SIN sintetizar el peso
+       font-size       21.6px     computa igual en los dos
+       letter-spacing  0.15em  →  3.24px   tracking amplio, estilo packaging del manual
+       line-height     1.1     →  23.76px  entra en el presupuesto vertical
+       color           var(--ash-text)
+       text-transform  uppercase
+   Ninguna de estas siete se toca por módulo. Si un módulo necesita otra, no es este
+   bloque lo que hay que cambiar: es el estándar, y se discute.
+
+   text-transform: uppercase NO ARREGLA NADA VISIBLE HOY — el marcado ya dice
+   AQUASHIELD en mayúsculas en los dos módulos, así que antes y después se ve igual.
+   Está para que la mayúscula no dependa de que alguien escriba bien el texto: sin
+   esta línea, un <h1>AquaShield</h1> pasa desapercibido y queda distinto de los otros
+   once. Mismo criterio que el pase de rem a px. */
+.platform-name h1 {
+    margin: 0;
+    font-family: var(--ash-font-head);  /* FIJO */
+    font-size: 21.6px;                  /* FIJO */
+    font-weight: 500;                   /* FIJO — peso REAL vendorizado, no sintetizado */
+    letter-spacing: 0.15em;             /* FIJO — 3.24px a 21.6 */
+    line-height: 1.1;                   /* FIJO — entra en el presupuesto vertical */
+    text-transform: uppercase;          /* FIJO [v14] — que no dependa del marcado */
+    color: var(--ash-text);
+}
+.platform-name .subtitle {
+    margin: 0;
+    font-size: 12.8px;                  /* FIJO [v18] */
+    line-height: 1.2;
+    color: var(--ash-text-2);
+}
+
+.header-separator {
+    width: 1.5px;
+    height: 32px;                       /* FIJO */
+    background: var(--ash-separator);
+    flex-shrink: 0;
+}
+
+/* Módulo: SIEMPRE 2 líneas. "Módulo" arriba en texto secundario (NO naranja [v15]), nombre abajo. */
+.module-label {
+    margin: 0;
+    font-family: var(--ash-font);       /* NO Quicksand: 9.6px no es "titular a gran escala" */
+    font-size: 9.6px;                   /* FIJO */
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    line-height: 1.1;
+    text-transform: uppercase;
+    /* NO NARANJA [v15]. Esto es texto de 9.6px peso 700 —texto CHICO— asi que le toca
+       4.5:1, y el naranja del manual NO llega sobre ninguna superficie del header:
+           #EB5F0A sobre #FFFFFF (header claro)   3.40
+           #EB5F0A sobre #243544 (header oscuro)  3.70
+           #EB5F0A sobre #1E2D3B (header oscuro)  4.13
+       La propia tabla de contraste de la skill ya lo decia —«NO como texto chico; filete,
+       icono, fondo; como texto solo >=19px bold»— y el bloque lo usaba igual: el estandar
+       se contradecia a si mismo, y el defecto viajaba a los doce modulos.
+       El naranja NO se toca (es intocable por manual) y NO se va del header. Verificado
+       regla por regla, separando reposo de hover: en REPOSO queda como fondo del AVATAR
+       —44x44 [v18], decorativo, aria-hidden—, y ademas en el hover y el foco del boton de tema
+       y del campo de nombre. Todos usos NO TEXTUALES, que es lo que la tabla autoriza.
+       (El filete NO es naranja: es --ash-separator, gris calido #B4A28D. Conviene decirlo
+       porque es facil suponer lo contrario y quedarse tranquilo por una razon falsa.)
+       Lo que cambia es que el naranja deja de PORTAR texto. Con el token de texto
+       secundario el rotulo da 5.5-6.2:1 en los dos temas. */
+    color: var(--ash-text-2);
+}
+.module-name {
+    margin: 0;
+    font-family: var(--ash-font-head);  /* Quicksand: ESTE es su rol, titular en mayúsculas */
+    font-size: 18.4px;                  /* FIJO */
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    line-height: 1.15;
+    text-transform: uppercase;
+    color: var(--ash-text);
+}
+
+/* ── 1.3 · TOGGLE DE TEMA ───────────────────────────────────────────────────
+   El ícono lo resuelve el CSS, no el JS: los dos SVG viven en el DOM y se
+   muestra el que corresponde al tema. Así NO puede desincronizarse del tema, y
+   no hay que re-renderizar ninguna librería de íconos. */
+/* 44x44 [v18]. Antes 40. Ademas del criterio visual, 44px es la medida de blanco de puntero
+   que recomienda WCAG 2.5.5, asi que el boton deja de ser el elemento mas chico que hay que
+   acertar en el header. `padding: 0` es EXPLICITO: sin el se cuela el padding por omision del
+   navegador para <button> —medido, 1px 6px en uno de los modulos y 0 en el otro—, y eso movia
+   el icono aunque la caja midiera lo mismo. */
+.theme-toggle-minimal {
+    width: 44px; height: 44px;          /* FIJO [v18] */
+    padding: 0;                         /* FIJO [v18] — que no entre el default del navegador */
+    display: flex; align-items: center; justify-content: center;
+    background: none;
+    border: 1px solid var(--ash-border);
+    border-radius: var(--ash-radius);
+    color: var(--ash-text);
+    cursor: pointer;
+    transition: color .2s, border-color .2s, background-color .2s;
+}
+.theme-toggle-minimal:hover {
+    color: var(--ash-accent);
+    border-color: var(--ash-accent);
+    background: var(--ash-accent-dim);
+}
+.theme-toggle-minimal:focus-visible {
+    outline: 2px solid var(--ash-accent);
+    outline-offset: 2px;
+}
+.ash-ico {
+    width: 20px; height: 20px;
+    fill: none; stroke: currentColor;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+/* Se muestra el ícono de la ACCIÓN, no el del estado: en claro se ve la luna
+   ("pasar a oscuro"), en oscuro el sol. */
+.ash-ico-moon { display: none; }
+.ash-ico-sun  { display: block; }
+body.light-theme .ash-ico-moon { display: block; }
+body.light-theme .ash-ico-sun  { display: none; }
+
+/* ── 1.4 · NOMBRE DE USUARIO + AVATAR ───────────────────────────────────────
+   El valor por defecto es NEUTRO a propósito: cuando varias personas usan el
+   mismo módulo, nadie debe abrir viendo el nombre de otra. */
+.user-profile {
+    display: flex; align-items: center; gap: 12px;   /* FIJO [v18] */
+    height: 24px;
+    padding-left: 24px;
+    border-left: 1px solid var(--ash-border);
+    color: var(--ash-text);
+}
+/* EL GLIFO DEL AVATAR VA A 24, NO A 20 [v20]. `.ash-ico` fija UN tamaño para todos los iconos,
+   y eso alcanzaba mientras el unico icono era el del boton de tema. El avatar es otra cosa: es
+   un cuadro MACIZO de 44px, y el mismo glifo que se ve bien dentro de un recuadro con borde
+   queda chico sobre un campo de color lleno. Medido, y con la unidad dicha bien: 20px ocupa el
+   45.5% del LADO del cuadro y 24px el 54.5% — en AREA es 20.7% contra 29.8%, o sea que el glifo
+   de 24 pinta casi la mitad mas. La diferencia entre los dos modulos era del 17% en escala
+   lineal, y eso era lo que se veia.
+   Son DOS medidas distintas a proposito: el boton es un control y pesa menos; el avatar marca
+   a la persona y es el unico punto de color de toque del header.
+   Va por CSS y no por atributos del SVG: en un modulo el icono lo inyecta una libreria con
+   width/height propios, y depender de eso es lo mismo que heredar. */
+.avatar .ash-ico,
+.avatar svg,
+.avatar i {
+    width: 24px;                        /* FIJO [v20] */
+    height: 24px;                       /* FIJO [v20] */
+}
+
+/* El tamaño y la familia van EXPLICITOS [v18]. Antes se heredaban, y heredar no es prescribir:
+   medido, un modulo dibujaba el nombre en su monoespaciada y el mismo texto ocupaba 83.2px
+   contra 69.3px, corriendo todo el grupo de la derecha 14px. */
+#user-name {
+    cursor: text;
+    font-family: var(--ash-font);       /* FIJO [v18] */
+    font-size: 16px;                    /* FIJO [v18] */
+    /* line-height EXPLICITO [v19]. Sin el se hereda el del <body> del modulo, y eso basta para
+       que la caja del nombre mida distinto: medido a 1920 con el mismo dpr, un modulo daba 28px
+       de alto (line-height `normal`) y el otro 31.33 (line-height 24px heredado de un body con
+       1.5). Tres pixeles y medio en el unico elemento del grupo derecho que no tiene alto fijo.
+       Es la tercera vez que la herencia se cuela en este mismo elemento: familia, tamaño y ahora
+       interlineado. Heredar no es prescribir. */
+    line-height: 20px;                  /* FIJO [v19] */
+    padding: 3px 7px;
+    margin: -3px -7px;                  /* compensa el padding: no mueve el layout */
+    border: 1px solid transparent;
+    border-radius: 8px;
+    max-width: 28ch;                    /* mismo tope que USUARIO_MAX en el JS */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: border-color .2s, background-color .2s;
+}
+#user-name:hover { border-color: var(--ash-border); background: var(--ash-accent-dim); }
+#user-name:focus {
+    border-color: var(--ash-accent);
+    background: var(--ash-bg-input);
+    text-overflow: clip;                /* al editar se ve el final del texto */
+    overflow-x: auto;
+}
+/* OPACIDAD .91, NO .65 — y es una medida de CONTRASTE, no de gusto `[v21]`.
+   «Usuario» es texto normal (16px/400), asi que le toca 4.5:1, y con .65 no
+   llegaba en NINGUNA de las cuatro combinaciones medidas:
+
+       tema     token             ratio con .65    con .91
+       claro    #556471 (bloque)      2.85          4.94
+       oscuro   #9FADC0 (bloque)      3.50          5.38
+       claro    token de un modulo    2.75          4.65
+       oscuro   token de un modulo    3.35          5.10
+
+   .91 es el minimo que despeja 4.55 en las cuatro. Lo que comunica «esto es
+   una sugerencia, no tu nombre» es la CURSIVA, que no se toca: la
+   transparencia solo lo hacia ilegible. */
+#user-name.is-placeholder { opacity: .91; font-style: italic; }
+
+.avatar {
+    width: 44px; height: 44px;          /* FIJO [v18] — igual que el boton */
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    background: var(--ash-accent);
+    border-radius: var(--ash-radius);
+    color: #FFFFFF;
+    box-shadow: var(--ash-glow);        /* none en dark: el estándar no admite sombras ahí */
+}
+
+/* ── 1.5 · PIE DE AUTORÍA ───────────────────────────────────────────────────
+   Sin opacity: la opacidad es lo que hunde el contraste. El token ya está
+   medido en AA en los dos temas.
+
+   MEDIDA FIJA `[v13]` — el pie va A LO ANCHO DE LA PAGINA, FUERA DE CUALQUIER PANEL, y en
+   UNA SOLA LINEA. No es sugerencia: un pie que cambia de sitio y de forma segun el layout de
+   cada modulo es exactamente lo que el bloque existe para impedir. Medido comparando dos
+   modulos lado a lado: uno lo tenia a lo ancho abajo y el otro en dos lineas dentro de una
+   tarjeta del panel izquierdo, 221px de ancho. Se veian distintos y los dos "cumplian".
+
+   COMO SE UBICA, segun como sea el <body> del modulo — y hay que mirar cual es `[v13]`:
+     · <body> que scrollea (documento normal)  -> ultimo hijo del <body>, y ya queda a lo ancho.
+     · <body> que es un APP SHELL (`display:flex` + `height:100vh` + `overflow:hidden`)
+       -> NO alcanza con agregarlo al final: se vuelve otro item del flex. Medido en un modulo
+          real: el pie aparecio ARRIBA, de 275px de alto, sin fallar en ningun lado. Hay que
+          darle una banda propia: el shell pasa a `flex-direction: column`, el contenido
+          principal lleva `flex: 1`, y el pie queda debajo ocupando el ancho completo.
+
+   DOS SEGMENTOS, y son todo el pie `[v14]`:  © <año> AquaShield · <autor>
+   v12 habia agregado un tercero con el AREA duena del modulo, obligatorio, y se
+   REVIERTE: no va en ningun modulo. Lo que sigue valiendo de v12 es que el pie
+   no admite variantes —«opcional» es donde los modulos divergen—; lo que no
+   resistio es que el area fuera un dato a preservar. El pie identifica a la
+   PLATAFORMA y a su AUTOR, que es lo mismo en los doce modulos; el area es
+   organigrama, cambia sin que el software cambie, y en el unico modulo donde
+   llego a aplicarse no agregaba nada que el nombre del modulo no dijera ya. */
+/* ── EL PIE VA PEGADO AL FONDO DE LA VENTANA — medida FIJA [v18] ────────────
+   Con poco contenido tiene que quedar contra el borde inferior; con mucho, al
+   FINAL del documento y bajando con el scroll. Nunca flotando encima.
+
+   `position: sticky; bottom: 0` NO sirve, y esta medido en un modulo real:
+     · contenido CORTO  -> no hace nada. Sticky no puede empujar hacia abajo;
+       solo restringe dentro del bloque contenedor. El pie quedo a 101.6px del
+       borde, igual que sin sticky.
+     · contenido LARGO  -> el pie se pega al borde inferior TAPANDO el contenido
+       que sigue abajo, hasta llegar al final. Es exactamente lo que no se quiere.
+   `position: fixed` flota siempre, asi que tampoco.
+
+   Lo que si funciona es el patron de abajo, medido en los tres casos:
+     contenido corto              -> 0px del borde inferior
+     contenido largo, arriba      -> fuera de la vista, debajo del pliegue
+     contenido largo, al final    -> 0px del borde inferior
+   El <body> se vuelve una columna de alto minimo igual al viewport, y EL
+   CONTENIDO PRINCIPAL absorbe lo que sobra. El pie no se mueve: lo empuja el
+   contenido.
+
+   ✎ Hay que marcar cual es el contenido principal con `flex: 1`. Si el <body>
+   ya es un APP SHELL (`height:100vh` + `overflow:hidden`), ya esta en columna y
+   solo falta el `flex: 1`. */
+body {
+    min-height: 100vh;                  /* FIJO [v18] */
+    display: flex;
+    flex-direction: column;
+}
+.ash-contenido-principal { flex: 1; }   /* ✎ o la clase que ya use tu modulo */
+
+.aquashield-credit {
+    padding: 12px 24px;
+    background: var(--ash-bg);          /* FIJO [v26] — el mapeo de 1.1 ya lo declaraba «fondo del header y
+                                           del pie», y esta regla no lo aplicaba: el pie quedaba sobre el
+                                           fondo de la PAGINA. Medido en Modulo ISF (app shell con el tema
+                                           oscuro pintado en body::before): 4,29 en oscuro sin fondo, 5,48
+                                           con este. Lo vigila verificar-modulo.py --chequeo pie-fondo.
+                                           [v28] ESTO NO SIEMPRE SUBE EL CONTRASTE, y no es su objeto: el
+                                           objeto es que el pie viva en la MISMA superficie que el header.
+                                           Medido en Modulo-Termografo BAJA en oscuro (6,17 -> 4,82, porque
+                                           ahi --bg-header es la superficie elevada) y en Carga NEPPEX no
+                                           lo mueve (--header == --bg, a proposito). Quien garantiza la
+                                           legibilidad es contraste-bloque, que lo mide; pie-fondo ahora
+                                           INFORMA el valor que resulto, no solo que el fondo esta. */
+    border-top: 1px solid var(--ash-border);
+    font-family: var(--ash-font);
+    font-size: 11.2px;                  /* FIJO — ya NO es el mismo que "by AquaChile" [v18]:
+                                           ese subio a 12.8 y este se queda. El pie es la linea
+                                           mas discreta de la pantalla y no acompaña al header. */
+    line-height: 1.4;
+    color: var(--ash-text-2);
+    display: flex;
+    flex-wrap: nowrap;                  /* FIJO [v13] — UNA linea, nunca dos */
+    align-items: baseline;
+    gap: 0 6px;
+}
+/* Un solo segmento, así que es el que se recorta en pantalla angosta — con puntos
+   suspensivos, nunca envolviendo a dos líneas. [v14] */
+.aquashield-credit .ash-autoria {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ═══ PUENTE ENTRE EL BLOQUE ESTÁNDAR Y ESTE PANEL ═══════════════════════════════════════════════════════════════
+   Lo que el panel necesita ADEMÁS del bloque. Vive aparte a propósito: el bloque se re-pega tal cual y esto sobrevive. */
+
+/* BARRA DE CONTEXTO — casa de las dos funciones del grupo (b) de la migración (Credenciales y Cerrar): una franja propia
+   bajo los 64px del header. Mismo relleno horizontal que el header (24px). */
+.context-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 4px 24px;
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border-main);
+}
+.context-bar .context-spacer { flex: 1 1 auto; }
+.context-bar .rs-btn { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; font-size: 12px; }
+.context-bar .rs-btn .ash-ico { width: 16px; height: 16px; flex: 0 0 auto; }
+/* Cerrar AQUASHIELD apaga el servidor: el color de peligro de la paleta (--danger) va en el borde y en el ícono, no en
+   el texto (a 13px el ocre sobre blanco da 3,89, bajo el 4,5 que se exige). */
+.context-bar .rs-salir { border-color: var(--danger); }
+.context-bar .rs-salir .ash-ico { color: var(--danger); }
+@media (max-width: 768px) {
+    .context-bar { padding: 4px 16px; }
+    .context-bar .context-spacer { display: none; }
+}
+
+/* LAS INSIGNIAS DEL MODO de la nota del panel (las pinta app.js según /api/config). El texto va en --text-primary; el color de
+   la paleta, en el borde. En oscuro el fondo de un estado no lleva su color (aquashield.md, v4): es el neutro. */
+.modo-insignia {
+    display: inline-block; padding: 2px 6px; border-radius: 4px; border: 1px solid;
+    font-family: var(--font); font-weight: 700; font-size: 10px; color: var(--text-primary);
+}
+/* aquashield:estado el panel corre en modo de prueba: cada reserva se llena y se detiene antes de confirmar */
+.modo-insignia.seguro { border-color: var(--success); background: rgba(108, 139, 139, 0.15); }
+/* aquashield:estado el panel corre en modo EMISIÓN: las reservas se envían y se confirman ante las navieras */
+.modo-insignia.emision { border-color: var(--warning); border-width: 2px; background: rgba(235, 95, 10, 0.12); }
+body:not(.light-theme) .modo-insignia { background: rgba(30, 45, 59, 0.5); }
 """
 
 # Fuentes vendorizadas (PT Sans, Quicksand, JetBrains Mono) incrustadas en

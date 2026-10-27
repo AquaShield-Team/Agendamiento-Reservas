@@ -1350,7 +1350,17 @@ class TestLecturaDelPanel(soporte.CasoAQ):
                 bloque = m.group(1)
                 self.assertIn(f'chip(f, "rev", "{texto}");', bloque)
                 self.assertIn('if (tr) tr.classList.remove("fila-activa", "fila-emitida");', bloque)   # deja «en curso»
-                self.assertIn(f'color:var(--danger)">{texto}</span>', bloque)                         # y «procesando…»
+                # y «procesando…». Desde el encargo 84 (aquachile-brand) el texto chico va en --text-primary y el ocre en el
+                # borde del chip de la fila: en claro, el ocre sobre blanco a 11px da 3,86.
+                self.assertIn(f'color:var(--text-primary)">{texto}</span>', bloque)
+        # Las otras dos del mismo grupo (revisión de código del encargo 84): «revisar» (ERROR o REV) y la fila en curso, con
+        # su «procesando…». Antes iban en el ocre y en el naranja, que a 11 px dan 3,86 y 3,07 en claro.
+        for lectura, texto in (("curso", 'color:var(--text-primary);">procesando…</span>'),
+                               ("revisar", 'color:var(--text-primary)">revisar</span>')):
+            with self.subTest(lectura=lectura):
+                m = re.search(r'lectura === "%s"\) \{\n(.*?)\n        \} else' % lectura, js, re.S)
+                self.assertIsNotNone(m, f"el panel no tiene rama para {lectura}")
+                self.assertIn(texto, m.group(1))
 
     def test_lista_para_emitir_no_es_emitida(self):
         # Con el candado cerrado, la OK-EJEMPLO no se emitió: su columna dice lo que dice la planilla (n_reserva, de

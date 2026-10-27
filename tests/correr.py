@@ -26,10 +26,11 @@ from pathlib import Path
 TESTS = Path(__file__).resolve().parent
 RAIZ = TESTS.parent
 # El actualizador y la lista de lo que se versiona, desde el encargo 60, y el preparador del entorno con sus
-# dependencias, desde el encargo 84: sus pruebas los leen de soporte.FUENTES.
+# dependencias, desde el encargo 84: sus pruebas los leen de soporte.FUENTES. Y, también del encargo 84, el extractor del
+# panel y su declaración de estados (tests/marca/), que test_marca corre sobre el programa mutado.
 FUENTES_PROGRAMA = ["AQUASHIELD.py", "AQUASHIELD_EMISION.py", "Iniciar AQUASHIELD.bat",
                     "Iniciar AQUASHIELD_EMISION.bat", "config.example.json", "actualizar.py", "preparar_entorno.py",
-                    "requirements.txt", ".gitignore"]
+                    "requirements.txt", ".gitignore", "tests/marca/extraer_panel.py", "tests/marca/aquashield-estados.json"]
 PLANILLA_TEMPORAL_REAL = Path(tempfile.gettempdir()) / "aquashield_planilla.xlsx"
 TRABAJO = Path(tempfile.mkdtemp(prefix="aquashield_mut_"))
 

@@ -1068,7 +1068,7 @@ python -m playwright show-trace "logs\<carpeta>\traza.zip"
     lanzador lo habría cerrado (medido sin red, con un servidor ajeno en su lugar).
   - Con los cuatro tomados, `lanzar_web` falla y `main()` abre el panel Tkinter.
   - En otro puerto, la página es otro origen para el navegador: el tema y el nombre de quien la usa, que guarda ahí
-    (`aq-tema`, `mars_reservas_usuario`), empiezan de nuevo, y un marcador al 8765 llevaría al otro programa. Ni los
+    (`mars_reservas_theme`, `mars_reservas_usuario`; hasta el encargo 84, `aq-tema`), empiezan de nuevo, y un marcador al 8765 llevaría al otro programa. Ni los
     `.bat`, ni `AQUASHIELD_EMISION.py`, ni las pruebas dependen del 8765; los manuales y el video tutorial, que salen de
     los generadores (fuera del repo), lo nombran (encargo 52).
   - Tiene un watchdog que apaga el servidor tras 90 s sin sondeos de `/api/estado`.
@@ -1945,3 +1945,54 @@ reservas, y sin sesión MAERSK lo lleva al login.
 Cualquier cambio visual (index web, panel Tkinter, manuales, videos) sigue el skill `aquachile-brand`:
 Pantone 7545 C `#445563` como corporativo y naranja 021 C `#EB5F0A` solo como acento. Los textos de la
 interfaz y los logs van en español.
+
+**El panel web lleva el bloque estándar v48 de la skill** (encargo 84, `CICLO-entorno-propio.md`; decisión de Marcelo: la
+marca va solo en lo que ve el operador, el panel y los lanzadores):
+- **Qué lleva:** el header, el pie, el botón de tema claro/oscuro y el nombre de usuario con su avatar, con el CSS
+  (parte 1) y el JS (parte 4) del `snippet/header-estandar.html` de la skill pegados tal cual: el CSS en `CSS_INDEX`, con su
+  marco «BLOQUE ESTÁNDAR AQUASHIELD · aquachile-brand v48» y lo propio del panel en el «PUENTE» que sigue, y el JS en
+  `HTML_INDEX`, después del pie y antes de `app.js`, que ya no maneja el tema ni el nombre de usuario. **El bloque no se
+  edita:** cuando la skill saque una versión nueva, se vuelve a pegar entero.
+- **Credenciales y Cerrar AQUASHIELD** son las dos funciones que el bloque no trae: pasaron a una barra de contexto
+  (`#context-bar`) bajo el header y conservan sus `id` (`btn-cred`, `btn-salir`), así que `app.js` y `/api/apagar` no
+  cambiaron. Cerrar lleva el color de peligro en el borde y el ícono, no en el texto (a 13 px daba 3,89).
+- **Claves del navegador:** `mars_reservas_theme` («light-theme» o «dark-theme») y `mars_reservas_usuario`. El tema de
+  antes, `aq-tema` («claro» u «oscuro»), se pasa solo a la clave nueva en la primera carga de cada navegador y puerto, con
+  la receta de la skill (`test_marca.test_la_receta_pasa_el_tema_viejo_a_la_clave_del_bloque`, corrida en Node).
+- **Pesos de la letra:** `CSS_FUENTES` trae JetBrains Mono **solo en 400**. Lo que iba en 700 u 800 (el título de los
+  widgets, la pastilla de progreso, las etiquetas y los títulos de etapa del registro, el número de reserva y la columna de
+  operadores) pasó a 400: el navegador sintetizaba esa negrita (`peso-sintetizado`). Vendorizar la cara 700 queda como
+  propuesta para Marcelo (`CICLO-entorno-propio.md`).
+- **El color de un estado:** el fondo de la fila en curso, la emitida, el chip de revisar, la pastilla de progreso y las
+  insignias del modo lleva su color solo en claro; en oscuro es el neutro `rgba(30, 45, 59, .5)` (`v4` de la skill). El
+  color lo lleva el borde: el del chip, el de la insignia y el de la primera celda de la fila en curso; la fila emitida, solo
+  su chip «emitida». El texto chico de un desenlace malo («no enviada», «revisar en portal», «sin cupo», «revisar»,
+  «procesando…») va en `--text-primary`, en los dos temas, no en el ocre o el naranja (3,07 a 3,86 en claro); lo fija
+  `test_envio.TestLecturaDelPanel.test_cada_lectura_nueva_pinta_su_fila`. El separador de «todas · ninguna» lo dibuja el CSS
+  (`::before`), no el texto: un punto del medio de 2 px no llega a 4,5.
+- **Las insignias del modo** («MODO SEGURO» y «EMISIÓN REAL», que pinta `app.js` según `/api/config`) pasaron de estilos en
+  línea a las clases `.modo-insignia.seguro` y `.modo-insignia.emision`. Iban en blanco sobre #10b981 y #ef4444, que no son
+  de la paleta: 2,54 y 3,76 de contraste (medido el 2026-10-27 con `/api/config` en la API falsa; el verificador no las veía
+  antes porque esa dirección no estaba). Ahora el texto va en `--text-primary`, en PT Sans 700 (vendorizada), con el verde
+  agua del éxito en el borde del modo seguro y el naranja de la advertencia, a 2 px, en el de emisión; el 🔴 del título
+  sigue. **Es un cambio de cómo se ve el aviso de EMISIÓN** (antes, rojo lleno): si prefieres el rojo, decídelo tú.
+- **La nota del modo siempre a la vista:** la barra de contexto le quita 35 px de alto a la pantalla (con su relleno de 4 px;
+  la primera versión, de 57 px, dejó la nota fuera de la vista en ventanas de 754 a 809 px de alto: lo midió la revisión de
+  código del encargo 84). Por eso el panel izquierdo ya no se desplaza entero: se desplazan sus widgets
+  (`.rs-panel > .rs-widgets`) y la nota del modo y el aviso quedan debajo, a la vista. Medido a 1366 × 520 y 660 y a 375 ×
+  812: la nota entra siempre, y la página no desborda.
+- **Cómo se mide:** el panel se arma en memoria, y el verificador de la skill lee archivos. `python
+  tests/marca/extraer_panel.py <carpeta nueva>` lo saca a archivos (con `aquashield-estados.json` de esa carpeta y una
+  `muestra.xlsx` inventada) y después `python ~/.claude/skills/aquachile-brand/snippet/verificar-modulo.py <carpeta>`, con
+  el Python que tenga playwright (en este equipo, el de la Tienda de Microsoft: el `python` del PATH es el de python.org y
+  no lo tiene). `aquashield-estados.json` declara lo que solo existe con datos de la API: la tabla con filas de una corrida
+  (la fila en curso, la emitida, el chip de revisar y la pastilla) con la nota del modo de prueba, y la nota del modo
+  EMISIÓN. Su `antes` monta una API falsa con `fetch`.
+  `test_marca` la vigila (qué responde la API falsa, que sus selectores existan en el panel) y vigila el extractor.
+- **Medido el 2026-10-27** sobre el panel extraído (2 estados declarados: la tabla con filas y el modo de prueba, y el
+  modo EMISIÓN): todos los chequeos en OK, salvo `tinte-estado` en SIN DECIDIR (4 superficies: los discos detrás de los
+  íconos, declarados decorativos, no llevan texto en su instancia viva o están ocultos: «no hay par que medir»; no es un
+  hallazgo, pero tampoco una aprobación). `version` acepta v48. Los 9 tintes de estado declarados dan «gana sólo en CLARO,
+  que es lo que v4 prescribe».
+- **No se midió** en un portal ni con datos reales: la tabla se midió con la API falsa. El header, a menos de 720 px, se
+  desplaza dentro de sí mismo (lo hace el bloque, no el panel); la página no desborda.
