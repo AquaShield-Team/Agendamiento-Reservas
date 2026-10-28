@@ -1205,6 +1205,15 @@ class TestCoscoTrasLosErrores(ConRegistro):
         self.assertFalse(mod._cosco_pagina_de_envio(Cerrada("")))
 
 
+# La celda del destino en la tabla del panel (verFilas, en JS_INDEX): la marca de la fila sin destino (encargo 43) y,
+# desde el encargo 87, la del puerto de descarga con su destino final aparte (_destino_separado).
+CELDA_DESTINO = ("${f.sin_destino ? \"<span class='sin-ruta'>sin destino</span> \" + esc(f.destino_final)\n"
+                 "          : f.destino_aparte ? esc(f.destino_aparte[0]) + \" <span class='destino-aparte'>con destino "
+                 "final: \"\n"
+                 "                               + esc(f.destino_aparte[1]) + \"</span>\"\n"
+                 "                          : esc(f.destino_final)}")
+
+
 class TestLecturaDelPanel(soporte.CasoAQ):
     """El panel pinta cada fila según lecturaEstado. Se corre en Node, fuera del navegador."""
 
@@ -1249,8 +1258,7 @@ class TestLecturaDelPanel(soporte.CasoAQ):
         self.assertEqual(correr_node(self, guion), [True, True])
         for trozo in ("${f.sin_puerto ? \"<span class='sin-ruta'>sin puerto de carga</span> \" + esc(f.pol) : "
                       "esc(f.pol)}",
-                      "${f.sin_destino ? \"<span class='sin-ruta'>sin destino</span> \" + esc(f.destino_final)\n"
-                      "                          : esc(f.destino_final)}",
+                      CELDA_DESTINO,
                       "const sinRuta = FILAS.filter(f => f.sin_puerto || f.sin_destino).length;",
                       '" reserva(s) con nave no traen su puerto de carga o su destino: quedan NO ENVIADA, "'):
             with self.subTest(trozo=trozo):
@@ -1297,6 +1305,31 @@ class TestLecturaDelPanel(soporte.CasoAQ):
                            f"Reserva 1 <span class='otro-contenedor'>otro contenedor: {'X' * 40}</span>"]])
         self.assertIn(".sin-nave, .sin-ruta, .otro-contenedor { color: var(--text-muted); font-style: italic; }",
                       m.CSS_INDEX)
+
+    def test_dice_si_va_con_destino_final(self):
+        # La fila de MSC o de CMA-CGM que va a un puerto de descarga y después a otro destino final dice, antes de
+        # correr, en la celda del destino, el puerto y «con destino final: …», con los dos textos que trae /api/filas
+        # (destino_aparte, de _destino_separado: test_web), escapados como el resto de la tabla (decisión de Marcelo,
+        # encargo 87, CICLO-destino-final-normalizado.md). Sin ella, la celda no cambia: el destino, o la marca de la
+        # fila sin destino.
+        js = self.mod.JS_INDEX
+        esc = re.search(r"^function esc\(s\) \{\n.*?\n\}\n", js, re.S | re.M).group(0)
+        self.assertEqual(js.count("<td>" + CELDA_DESTINO + "</td>"), 1)
+        filas = [{"destino_final": "CIUDAD GAMMA", "destino_aparte": ["PUERTO BETA", "CIUDAD GAMMA"]},
+                 {"destino_final": "CIUDAD GAMMA", "destino_aparte": None},
+                 {"destino_final": "<i>C</i>", "destino_aparte": ["<b>P</b>", "<i>C</i>"]},
+                 {"destino_final": "", "sin_destino": True, "destino_aparte": None},
+                 {"destino_final": "CIUDAD GAMMA"}]
+        guion = (esc + f"const filas = {json.dumps(filas)};\n"
+                 + "console.log(JSON.stringify(filas.map(f => `" + CELDA_DESTINO + "`)));\n")
+        self.assertEqual(correr_node(self, guion),
+                         ["PUERTO BETA <span class='destino-aparte'>con destino final: CIUDAD GAMMA</span>",
+                          "CIUDAD GAMMA",
+                          "&lt;b&gt;P&lt;/b&gt; <span class='destino-aparte'>con destino final: "
+                          "&lt;i&gt;C&lt;/i&gt;</span>",
+                          "<span class='sin-ruta'>sin destino</span> ",
+                          "CIUDAD GAMMA"])
+        self.assertIn("\n.destino-aparte { color: var(--text-muted); font-style: italic; }\n", self.mod.CSS_INDEX)
 
     def test_lectura_de_cada_estado(self):
         # «OK-EJEMPLO» es «lista»: no se emitió. Hasta el encargo 34 era «emitida» (CICLO-one-y-maersk-eligen-la-nave.md).

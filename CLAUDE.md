@@ -727,11 +727,37 @@ cerrado:
   - Lo vigilan `test_clics.TestMsc.test_hs_sin_sugerencias_lo_escribe_otra_vez` y
     `test_hs_si_falla_al_volver_a_escribirlo_corta`.
 - **MSC con un puerto de descarga y otro destino final** (decisión de Marcelo, encargo 86, `CICLO-msc-destino-final.md`;
-  `_msc_destino_separado`, `_msc_destino_final`). La planilla los trae en dos columnas, «Puerto Descarga» y «Destino
+  `_destino_separado`, `_msc_destino_final`). La planilla los trae en dos columnas, «Puerto Descarga» y «Destino
   Final» (en el ejemplo del dueño, un puerto y una ciudad tierra adentro). MSC los separa con la lectura de CMA-CGM
-  (`tiene_ramp_separado`, en `reservar_cma`): los dos con texto, y ninguno contenido en el otro, sin distinguir
-  mayúsculas. `test_clics.TestDestinoFinalMsc.test_la_misma_lectura_que_cma` corre la regla de CMA-CGM, leída de su
-  código, sobre los mismos casos: CMA-CGM no se tocó, y la regla vive en las dos (unificarlas es tocar CMA-CGM).
+  (`tiene_ramp_separado`, en `reservar_cma`): los dos con texto, y ninguno contenido en el otro.
+  - **Desde el encargo 87, una sola regla para las dos, que reconoce el mismo lugar escrito distinto** (decisión de
+    Marcelo, la opción (b) del encargo 86, `CICLO-destino-final-normalizado.md`; `_destino_separado`, que llaman
+    `reservar_msc` y `reservar_cma`). Van aparte si los dos traen texto («-» en el puerto de descarga, como en el
+    destino final, cuenta como la celda vacía: `_destino_final_de`; «--» o un acento suelto son un texto), ninguno
+    contiene al otro sin distinguir mayúsculas, como siempre, y sus partes separadas por comas, normalizadas (sin
+    tildes, en mayúsculas y con los espacios de a uno: `_mk_plano`), no coinciden hasta la más corta. Así, «Puérto  Beta»
+    y «PUERTO BETA, PAIS» van por el camino de un solo puerto. Lo que se escribe en el portal sigue siendo el texto de la
+    celda, sin los espacios de los extremos. Hasta ahí, un mismo lugar escrito con otra tilde u otros espacios iba por el
+    camino de dos, y «-» en el puerto era un puerto: las dos lo tomaban por su puerto de descarga y, sin una palabra que
+    buscar, cortaban ahí (NO ENVIADA, `_TEXTO_DE_LA_FILA`).
+  - **Lo normalizado no decide si uno contiene al otro, ni mira solo el nombre** (revisiones de seguridad y de código
+    del encargo 87): con la contención normalizada, dos lugares distintos que solo se diferencian en una tilde («Éta» y
+    «Etana») pasaban al camino de un solo puerto; y con el nombre antes de la coma solo, dos homónimos de distinto estado
+    o país («Delta, Estado A» y «Delta, Estado B»). Es el cambio de camino que el encargo frena. Así, una fila solo
+    cambia de camino si, escrita con las mismas tildes y los mismos espacios, la regla de antes ya la daba por un solo
+    puerto, o si el puerto es «-». La contención sin tildes de antes sigue igual: «PARANA» y «PARANAGUA», escritos así,
+    van por un solo puerto, como antes del encargo 87.
+  - **Medido, antes del cambio y con el código** (`.trabajo/e87/medir.py` y `medir2.py`, la regla de `4812f88` sacada
+    con git y ejecutada contra la de hoy): en las 90 filas de las 4 planillas del equipo (6 hojas, con el lector del
+    panel: 12 de CMA-CGM, separadas todas, y 27 de MSC, 7 separadas, entre ellas las 15 del ejemplo del dueño) y en las
+    36 líneas de CMA-CGM de los log.txt de `logs/` y de «1. pruebas» (todas con el puerto y la rampa aparte, un solo
+    par), ninguna cambia de camino ni de textos. Ninguna traía el mismo lugar escrito distinto ni «-» en el puerto.
+  - `_mk_plano` es el ayudante de MAERSK: un cambio suyo cambiaría también esta regla, antes de la guarda. Lo frenan los
+    casos de `test_la_misma_lectura_que_cma`.
+  - `test_clics.TestDestinoFinalMsc.test_la_misma_lectura_que_cma` corre lo que hace cada reservador, leído de su
+    código (de `reservar_cma`, sus asignaciones de `dest_orig`, `dest_fin` y `tiene_ramp_separado`; de `reservar_msc`,
+    la de `separado`), sobre los mismos casos, y exige lo mismo de las dos: la decisión, y separados, el texto de las
+    celdas.
   - Con los dos, en «Port of Discharge» va el puerto de descarga, y después, en el mismo «Route Details», el destino
     final, como en el video del dueño: «Door» debajo del puerto (la etiqueta `#onDoor_Label`, por su id y su texto), el
     modo «TRUCK» (`MSC_EN_CAMION`: la única opción de «Select on-carriage mode» que lo dice entero; las otras son
@@ -748,8 +774,26 @@ cerrado:
     también. Deja la evidencia de las dos listas (`msc_f<fila>_modo` y `msc_f<fila>_destino_final`). Antes de «Search
     Schedule» cierra también la lista del modo y la del destino si quedaron abiertas, o corta, como las de los puertos
     (`MSC_LISTAS_DEL_DESTINO`, encargo 82).
-  - Con uno solo (iguales, uno dentro del otro, o el final vacío o «-»), el camino de siempre: el destino en «Port of
-    Discharge». `test_los_dos_caminos` lo fija.
+  - Con uno solo (uno dentro del otro, el mismo lugar escrito distinto, o el puerto o el final vacío o «-»), el camino de
+    siempre: el destino en «Port of Discharge». `test_los_dos_caminos` lo fija. Desde el encargo 87, ese destino va
+    también con los espacios de a uno: con la regla normalizada, el mismo lugar escrito con un salto de línea en una
+    celda pasa a este camino, y escrito tal cual sería la tecla Enter en la lista (revisión de código del encargo 87).
+    CMA-CGM escribe su POD y su rampa como antes en los dos caminos: un salto de línea en la celda llega tal cual a su
+    campo (residual).
+  - **Un puerto de descarga sin una palabra, distinto de «-»** («--», «N/A», «, PAIS» o una raya), con un destino final,
+    sigue separándose, y el panel lo marca «… con destino final: …»; después la fila queda NO ENVIADA en el puerto de
+    descarga (`_TEXTO_DE_LA_FILA`), como antes del encargo 87 (residual de la revisión de código).
+  - **El panel lo dice antes de correr** (decisión de Marcelo, encargo 87): en la fila de MSC o de CMA-CGM con nave y
+    ruta que va aparte, la celda del destino muestra el puerto de descarga y «con destino final: …», los dos textos de
+    `_destino_separado`, que `/api/filas` trae en `destino_aparte` (`_con_su_marca`; `NAVIERAS_CON_DESTINO_APARTE`, que
+    `test_web` compara con los reservadores que llaman a `_destino_separado`). Los trae como se muestran
+    (`_destino_a_la_vista`): con los espacios de a uno y cada carácter de control, de formato, privado o sin asignar como
+    «?», como la marca del contenedor; un control de dirección del texto (U+202E) daba vuelta la marca en pantalla, y uno
+    invisible (U+200B) mostraba dos nombres que se ven iguales (revisión de seguridad del encargo 87). Esos caracteres no
+    se normalizan en la regla: una fila así sigue aparte, como antes, y el «?» lo deja a la vista. Sin la marca, la celda
+    no cambia. Lo vigilan
+    `test_web.TestPanelCorridas.test_filas_dicen_si_van_con_destino_final` y
+    `test_envio.TestLecturaDelPanel.test_dice_si_va_con_destino_final`.
   - Los ids salen de los 165 HTML de MSC guardados que traen esa sección, escondida (141 de la corrida del 23-10 en el
     equipo de un colega y 24 de `logs/`): los radios `onMode` del puerto de descarga (Port, Ramp / Barge y Door), el
     combobox `#OnCarriageMode` y el combobox `#BookingCarriage_DestinationLocationId`, una búsqueda en el servidor que
@@ -1158,7 +1202,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 1006 pruebas al 2026-10-28 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 1009 pruebas al 2026-10-28 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -1832,7 +1876,11 @@ Las capturas siguen el patrón `<nav>_f<fila>_<n>_<paso>.png`.
   `temp`) y `leer_reservas` (camino consola/Tkinter, heurísticas antiguas con columnas fijas). Si
   cambias cómo se interpreta una columna, revisa ambos. `leer_reservas` ya no da la nave desde la columna F
   (`nave_de_la_f`, `CICLO-cola-seis-items.md`). «-» en el destino final, sin otra cosa, lo leen los dos como la celda
-  vacía, con una sola función (`_destino_final_de`, encargo 43).
+  vacía, con una sola función (`_destino_final_de`, encargo 43), **salvo la consola en MSC**: su rama de MSC, sin destino
+  final, repone la columna 4 tal como viene, así que con «-» la fila queda NO ENVIADA («le falta el destino») en la
+  consola y se arma en el panel (medido por la revisión de código del encargo 87; no se cambió). En el puerto de
+  descarga, los lectores lo dejan como viene: solo la regla que separa el puerto del destino final de MSC y CMA-CGM lo
+  lee como vacía (`_destino_separado`, encargo 87), para no cambiar el destino de las otras navieras.
 - **El contenedor de la fila** lo leen los dos de una columna «Tipo contenedor» o «Contenedor»; sin la columna, o con
   ella y la celda vacía, los dos dan «40 HC REEFER» (`CONTENEDOR_DE_LAS_FILAS`; la consola, a la celda vacía, desde el
   encargo 64: hasta ahí la dejaba vacía). Las planillas de este equipo no la traen (medido el 2026-10-13). MAERSK

@@ -579,7 +579,9 @@ class TestSinSugerenciaNoSigue(ConRegistro):
         # ayudante del POD, sin escribir ni pulsar. El de COSCO sirve también al contrato y corta solo con el texto
         # vacío: su origen y su destino los toma con _ciudad_de quien lo llama, y cortan aunque la fila pasara la regla.
         # El origen, también con «X CHILE» y «CHILE X»: la palabra se pide al puerto sin «CHILE» en ninguna posición
-        # (_puerto_de_carga; revisiones del informe).
+        # (_puerto_de_carga; revisiones del informe). El POD de CMA, con «--»: desde el encargo 87, «-» en el puerto de
+        # descarga es la celda vacía (_destino_separado), y CMA va por el camino de un solo puerto, con el destino
+        # final; «--» sigue siendo un texto, va aparte y corta aquí.
         m = self.mod
         real = m._cma_puerto
         sin_puerto = "el puerto de carga en la fila (la celda no trae su nombre; escríbelo en la planilla)"
@@ -590,7 +592,7 @@ class TestSinSugerenciaNoSigue(ConRegistro):
             page.eventos.append(("ayudante", sel))
             return True
         casos = [
-            ("reservar_cma", dict(self.RESERVA, destino_orig="-"), {"_cma_puerto": cma_puerto}, "POD de CMA",
+            ("reservar_cma", dict(self.RESERVA, destino_orig="--"), {"_cma_puerto": cma_puerto}, "POD de CMA",
              m._TEXTO_DE_LA_FILA),
             ("reservar_cosco", dict(self.RESERVA, pol="X"), {"_cosco_puerto_de_carga": m._cosco_puerto_de_carga},
              "Origin City de COSCO", sin_puerto),
@@ -2860,23 +2862,53 @@ class TestDestinoFinalMsc(ConRegistro):
     UN_PUERTO = dict(TestSinSugerenciaNoSigue.RESERVA, destino_orig="CIUDAD GAMMA")
 
     def test_la_misma_lectura_que_cma(self):
-        # La regla de CMA-CGM (tiene_ramp_separado, en reservar_cma), leída de su código y corrida sobre los mismos
-        # casos: MSC separa en las mismas filas. Las celdas de la planilla de ejemplo, con los nombres cambiados.
+        # MSC y CMA-CGM separan con una sola regla (_destino_separado; decisión de Marcelo, encargo 87,
+        # CICLO-destino-final-normalizado.md). Lo que hace cada reservador, leído de su código y corrido sobre los
+        # mismos casos, da lo mismo: de reservar_cma, sus asignaciones de dest_orig, dest_fin y tiene_ramp_separado
+        # (separados, el puerto y la rampa que escribe); de reservar_msc, la de separado. Las celdas de la planilla de
+        # ejemplo, con los nombres cambiados, y desde el encargo 87 el mismo lugar escrito distinto: sus partes
+        # separadas por comas, sin tildes, en mayúsculas y con los espacios de a uno, coinciden hasta la más corta; «-»
+        # es la celda vacía, y «--» o un acento suelto, un texto, como en el destino final (_destino_final_de). Lo
+        # normalizado no decide si uno contiene al otro ni mira solo el nombre: dos lugares distintos que solo se
+        # diferencian en una tilde, o dos homónimos de distinto estado, siguen aparte (revisiones de seguridad y de
+        # código). Separados, cada uno es el texto de su celda, sin los espacios de los extremos.
         tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
-        cma = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_cma")
-        regla = next(n.value for n in ast.walk(cma) if isinstance(n, ast.Assign)
-                     and ast.unparse(n.targets[0]) == "tiene_ramp_separado")
-        casos = [("PUERTO BETA ", "CIUDAD GAMMA", True), ("PUERTO BETA", "PUERTO BETA", False),
-                 ("puerto beta", "PUERTO BETA", False), ("PUERTO BETA", "PUERTO BETA, PAIS", False),
-                 ("PUERTO BETA, PAIS", "puerto beta", False), ("", "CIUDAD GAMMA", False), ("PUERTO BETA", "", False),
-                 (None, None, False), ("PUERTO DELTA", "Ciudad Eta sg", True), ("BETA", "CIUDAD GAMMA BETA", False)]
+
+        def asignaciones(funcion, variables):
+            cuerpo = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == funcion).body
+            elegidas = [n for n in cuerpo if isinstance(n, ast.Assign) and ast.unparse(n.targets[0]) in variables]
+            self.assertEqual([ast.unparse(n.targets[0]) for n in elegidas], list(variables))
+            return compile(ast.Module(body=elegidas, type_ignores=[]), funcion, "exec")
+        cma = asignaciones("reservar_cma", ("dest_orig", "dest_fin", "tiene_ramp_separado"))
+        msc = asignaciones("reservar_msc", ("separado",))
+        nbsp = chr(0xA0)
+        casos = [("PUERTO BETA ", "CIUDAD GAMMA", ("PUERTO BETA", "CIUDAD GAMMA")), ("PUERTO BETA", "PUERTO BETA", None),
+                 ("puerto beta", "PUERTO BETA", None), ("PUERTO BETA", "PUERTO BETA, PAIS", None),
+                 ("PUERTO BETA, PAIS", "puerto beta", None), ("", "CIUDAD GAMMA", None), ("PUERTO BETA", "", None),
+                 (None, None, None), ("PUERTO DELTA", "Ciudad Eta sg", ("PUERTO DELTA", "Ciudad Eta sg")),
+                 ("BETA", "CIUDAD GAMMA BETA", None), ("beta", "CIUDAD GAMMA BETA", None),
+                 ("CIUDAD GAMMA BETA", "beta", None),
+                 ("Puérto Beta", "PUERTO BETA, PAÍS", None), ("PUERTO  BETA", "Puerto Beta", None),
+                 ("Ciudad Éta", "CIUDAD ETANA", ("Ciudad Éta", "CIUDAD ETANA")),
+                 ("Puérto Beta", "PUERTO BETA NORTE", ("Puérto Beta", "PUERTO BETA NORTE")),
+                 ("Puérto Beta, PAÍS", "PUERTO BETA", None), ("Puérto Beta ,País", "PUERTO BETA, PAIS, ZONA", None),
+                 ("CIUDAD DELTA, ESTADO A", "Ciudad Delta, Estado B",
+                  ("CIUDAD DELTA, ESTADO A", "Ciudad Delta, Estado B")),
+                 (chr(0xB4), "CIUDAD GAMMA", (chr(0xB4), "CIUDAD GAMMA")),
+                 (f"PUERTO{nbsp}BETA", "puerto beta, pais", None), ("CIUDAD GAMMA", "ciudad gámma", None),
+                 ("Puérto Beta ", " Ciudad Gámma", ("Puérto Beta", "Ciudad Gámma")),
+                 ("-", "CIUDAD GAMMA", None), (" - ", "CIUDAD GAMMA", None), ("PUERTO BETA", "-", None),
+                 ("--", "CIUDAD GAMMA", ("--", "CIUDAD GAMMA"))]
         for orig, final, separa in casos:
             with self.subTest(orig=orig, final=final):
-                d_orig, d_fin = (orig or "").strip(), (final or "").strip()
-                self.assertEqual(eval(compile(ast.Expression(regla), "cma", "eval"),
-                                      {"dest_orig": d_orig, "dest_fin": d_fin}), separa)
-                r = self.mod._msc_destino_separado({"destino_orig": orig, "destino_final": final})
-                self.assertEqual(r, (d_orig, d_fin) if separa else None)
+                en_cma = dict(vars(self.mod), reserva={"destino_orig": orig, "destino_final": final})
+                en_msc = dict(en_cma)
+                exec(cma, en_cma)
+                exec(msc, en_msc)
+                self.assertEqual(en_msc["separado"], separa)
+                self.assertEqual(en_cma["tiene_ramp_separado"], separa is not None)
+                if separa:
+                    self.assertEqual((en_cma["dest_orig"], en_cma["dest_fin"]), separa)
 
     def ruta(self, reserva, nombre):
         """Corre reservar_msc hasta «Search Schedule», con los pasos de antes reemplazados (los de
@@ -2924,6 +2956,25 @@ class TestDestinoFinalMsc(ConRegistro):
                 self.assertEqual(anotado, [("puerto", "Port of Load", "PUERTO ALFA"),
                                            ("puerto", "Port of Discharge", "CIUDAD GAMMA"), ("buscar", ["POLId", "PODId"])])
                 self.assertIn("[MSC fila 9] PUERTO ALFA, CHILE -> CIUDAD GAMMA | NAVE: NAVE PRUEBA UNO", log)
+        # Desde el encargo 87 (decisión de Marcelo, CICLO-destino-final-normalizado.md), el mismo lugar escrito con
+        # otra tilde u otros espacios, o «-» en el puerto, van por el camino de un solo puerto, con el texto de la
+        # celda del destino; y dos lugares distintos, por el de dos, con el texto de sus celdas, tildes incluidas.
+        dos = ["POLId", "PODId", "OnCarriageMode", "BookingCarriage_DestinationLocationId"]
+        for k, (orig, final, esperado) in enumerate((
+                ("Puérto  Beta", "PUERTO BETA, PAIS", [("puerto", "Port of Discharge", "PUERTO BETA"),
+                                                       ("buscar", ["POLId", "PODId"])]),
+                ("-", "Ciudad Gamma", [("puerto", "Port of Discharge", "Ciudad Gamma"), ("buscar", ["POLId", "PODId"])]),
+                # Con un salto de línea en la celda (Alt+Enter), con los espacios de a uno: escrito tal cual, sería la
+                # tecla Enter en la lista (revisión de código del encargo 87).
+                ("PUERTO BETA", "PUERTO\nBETA , PAIS", [("puerto", "Port of Discharge", "PUERTO BETA"),
+                                                       ("buscar", ["POLId", "PODId"])]),
+                ("Puérto Beta", "Ciudad Gámma, Pais", [("puerto", "Port of Discharge", "Puérto Beta"),
+                                                       ("destino final", 9, "Ciudad Gámma, Pais"), ("buscar", dos)]))):
+            with self.subTest(orig=orig, final=final):
+                r, anotado, _ = self.ruta(dict(self.SEPARADA, destino_orig=orig, destino_final=final),
+                                          f"msc_normalizado_{k}")
+                self.assertEqual(r, fin)
+                self.assertEqual(anotado[1:], esperado)
 
     def destino_final(self, pagina, final="CIUDAD GAMMA, PAIS", nombre="msc_destino"):
         """Corre _msc_destino_final sobre 'pagina', sin esperas y anotando cada evidencia en sus eventos."""

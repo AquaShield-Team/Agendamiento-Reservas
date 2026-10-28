@@ -3284,6 +3284,35 @@ def _destino_final_de(celda):
     return "" if str(celda or "").strip() == "-" else celda
 
 
+def _destino_separado(reserva):
+    """(puerto de descarga, destino final), con el texto de sus celdas sin los espacios de los extremos, si la fila trae
+    los dos y son lugares distintos; si no, None, y la naviera sigue su camino de un solo puerto. La planilla los trae
+    en «Puerto Descarga» (destino_orig) y «Destino Final» (destino_final). Una sola regla para las dos navieras que los
+    separan, MSC (reservar_msc, encargo 86) y CMA-CGM (tiene_ramp_separado, en reservar_cma): los dos con texto («-» en
+    cualquiera de las dos celdas cuenta como la vacía, _destino_final_de), ninguno contenido en el otro sin distinguir
+    mayúsculas, como siempre, y no el mismo lugar escrito distinto: sus partes separadas por comas, normalizadas
+    (_mk_plano: sin tildes, en mayúsculas y con los espacios de a uno), no coinciden hasta la más corta («Puérto Beta» y
+    «PUERTO BETA, PAÍS» coinciden; «Delta, Estado A» y «Delta, Estado B», no). Lo que se escribe en el portal sigue
+    siendo el texto de la celda: lo normalizado sirve solo para comparar (decisión de Marcelo, encargo 87,
+    CICLO-destino-final-normalizado.md). Hasta ahí, un mismo lugar escrito con otra tilde u otros espacios iba por el
+    camino de dos, y «-» en el puerto era un puerto.
+    Lo normalizado no decide si uno contiene al otro, ni mira solo el nombre: dos lugares distintos que solo se
+    diferencian en una tilde («Éta» y «Etana»), o dos homónimos de distinto estado o país, siguen aparte, como antes
+    (revisiones de seguridad y de código del encargo 87: así se juntaban, y ese es el cambio de camino que el encargo
+    frena). Una fila solo cambia de camino si, escrita con las mismas tildes y los mismos espacios, la regla de antes ya
+    la daba por un solo puerto, o si el puerto es «-».
+    test_clics.TestDestinoFinalMsc vigila que las dos den lo mismo."""
+    puerto = str(_destino_final_de((reserva or {}).get("destino_orig")) or "").strip()
+    final = str(_destino_final_de((reserva or {}).get("destino_final")) or "").strip()
+    if not puerto or not final or puerto.upper() in final.upper() or final.upper() in puerto.upper():
+        return None
+    a = [_mk_plano(p) for p in puerto.split(",")]
+    b = [_mk_plano(p) for p in final.split(",")]
+    if a[:len(b)] == b[:len(a)]:
+        return None
+    return puerto, final
+
+
 def _falta_en_la_fila(reserva):
     """Lo que le falta a una fila para buscar su ruta en el portal: FILA_SIN_PUERTO si el puerto de carga no trae una
     palabra que no sea el país (_puerto_de_carga); FILA_SIN_DESTINO si el destino (el final o, si viene vacío, el
@@ -3384,6 +3413,12 @@ def _palabra_en(texto, palabra, desde=0):
     return -1
 
 
+# Las navieras que van a un puerto de descarga y después a otro destino final cuando la fila trae los dos
+# (_destino_separado): MSC, desde el encargo 86, y CMA-CGM, con su rampa. El panel marca solo sus filas (encargo 87);
+# test_web vigila que sean los reservadores que llaman a _destino_separado.
+NAVIERAS_CON_DESTINO_APARTE = ("msc", "cma")
+
+
 def _con_su_marca(fila, nav):
     """La fila como la lista el panel web (/api/filas), con las marcas de la regla del programa: «manual», si dice
     MANUAL (_fila_manual); «sin_nave», si no trae una nave para reservar (_fila_sin_nave) y no es MANUAL; y, si trae
@@ -3394,13 +3429,30 @@ def _con_su_marca(fila, nav):
     «otro_contenedor», si trae nave y ruta y es de MAERSK ('nav', la clave de su naviera: _nav_de_la_fila) y pide otro
     contenedor que el de las filas, lo que diga _otro_contenedor, en el mismo orden en que los dos orquestadores la
     apartan (decisión de Marcelo, CICLO-maersk-contenedor-consola-y-panel.md); y desde el encargo 65, con ella,
-    «contenedor_a_la_vista», el que muestra el motivo (_contenedor_a_la_vista), que la página pinta en la marca."""
+    «contenedor_a_la_vista», el que muestra el motivo (_contenedor_a_la_vista), que la página pinta en la marca.
+    Desde el encargo 87, «destino_aparte»: si trae nave y ruta, es de MSC o de CMA-CGM y va a un puerto de descarga y
+    después a otro destino final, los dos textos que dé _destino_separado (el puerto y el destino final), como se
+    muestran (_destino_a_la_vista), que la página pinta en la celda del destino; si no, None (decisión de Marcelo,
+    CICLO-destino-final-normalizado.md)."""
     nave = fila.get("nave")
     falta = "" if _fila_sin_nave(nave) else _falta_en_la_fila(fila)
     otro = "" if _fila_sin_nave(nave) or falta else _otro_contenedor(nav, fila)
+    aparte = (None if _fila_sin_nave(nave) or falta or nav not in NAVIERAS_CON_DESTINO_APARTE
+              else _destino_separado(fila))
     return dict(fila, sin_nave=_fila_sin_nave(nave) and not _fila_manual(nave), manual=_fila_manual(nave),
                 otro_contenedor=bool(otro), contenedor_a_la_vista=_contenedor_a_la_vista(fila) if otro else "",
-                sin_puerto=falta == FILA_SIN_PUERTO, sin_destino=falta == FILA_SIN_DESTINO)
+                sin_puerto=falta == FILA_SIN_PUERTO, sin_destino=falta == FILA_SIN_DESTINO,
+                destino_aparte=[_destino_a_la_vista(t) for t in aparte] if aparte else None)
+
+
+def _destino_a_la_vista(texto):
+    """Cómo pinta el panel un texto de la planilla en la marca del destino final (destino_aparte, de _con_su_marca): con
+    los espacios de a uno, y cada carácter de control, de formato, privado o sin asignar como «?», como la marca del
+    contenedor (_contenedor_a_la_vista). Un control de dirección del texto (U+202E) daba vuelta en pantalla la marca
+    entera, y uno invisible (U+200B) mostraba dos nombres que se ven iguales (revisión de seguridad del encargo 87). Solo
+    para mostrar: la regla y el portal reciben el texto de la celda."""
+    import unicodedata
+    return "".join("?" if unicodedata.category(c).startswith("C") else c for c in " ".join(str(texto or "").split()))
 
 
 def _trae_la_nave(texto, palabras):
@@ -5781,20 +5833,6 @@ MSC_LECTURAS_LISTA = 16     # lecturas de una lista, cada 0,5 s, hasta que dos s
 MSC_VUELTAS_CAMPO = 10      # lecturas de lo que dejó un clic, cada 0,5 s (5 s; hipótesis)
 
 
-def _msc_destino_separado(reserva):
-    """(puerto de descarga, destino final) si la fila trae los dos y son distintos; si no, None, y MSC sigue su camino
-    de un solo puerto, como siempre. Es la lectura de CMA-CGM (tiene_ramp_separado, en reservar_cma): los dos con
-    texto, y ninguno contenido en el otro, sin distinguir mayúsculas. La planilla los trae en dos columnas, «Puerto
-    Descarga» (destino_orig) y «Destino Final» (destino_final), y los dos lectores los leen así; con la celda del final
-    vacía, o «-», el final es el puerto, y no se separa (decisión de Marcelo, encargo 86, CICLO-msc-destino-final.md).
-    test_clics.TestDestinoFinalMsc vigila que dé lo mismo que la de CMA-CGM."""
-    puerto = str(reserva.get("destino_orig") or "").strip()
-    final = str(reserva.get("destino_final") or "").strip()
-    if puerto and final and puerto.upper() not in final.upper() and final.upper() not in puerto.upper():
-        return puerto, final
-    return None
-
-
 def _msc_calza_el_destino(sugerencia, ciudad):
     """Si una sugerencia de «Destination» de MSC empieza por la ciudad como palabra entera: sin distinguir mayúsculas,
     y sin una letra o un número de cualquier alfabeto pegado después. El combobox busca en el servidor las que empiezan
@@ -5971,8 +6009,9 @@ def _msc_destino_final(page, reg, fila, final):
 @_sin_clic_a_ciegas("msc")
 def reservar_msc(page, reserva, creds, reg, on_pausa=None):
     f = reserva["fila"]
-    # Con un puerto de descarga y otro destino final, los dos, como CMA-CGM (encargo 86, _msc_destino_separado).
-    separado = _msc_destino_separado(reserva)
+    # Con un puerto de descarga y otro destino final, los dos, con la regla de CMA-CGM (encargos 86 y 87,
+    # _destino_separado).
+    separado = _destino_separado(reserva)
     destino = f"{separado[0]} / {separado[1]}" if separado else reserva['destino_final']
     reg.paso(f"[MSC fila {f}] {reserva['pol']} -> {destino} | NAVE: {reserva['nave']}")
     _avisar_dia_carga(reserva, reg)
@@ -6042,11 +6081,13 @@ def reservar_msc(page, reserva, creds, reg, on_pausa=None):
     # Con un destino final aparte, en «Port of Discharge» va el puerto de descarga, y el destino final después
     # (_msc_destino_final; decisión de Marcelo, encargo 86, CICLO-msc-destino-final.md). Con uno solo, como siempre.
     # El puerto separado, con los espacios de a uno: un salto de línea en la celda (Alt+Enter) sería la tecla Enter al
-    # escribirlo (revisión de seguridad del encargo 86). El camino de un solo puerto no cambió.
+    # escribirlo (revisión de seguridad del encargo 86). Desde el encargo 87, el destino de un solo puerto también: el
+    # mismo lugar escrito con un salto de línea en una de las dos celdas ya no va por el camino de dos, que los juntaba
+    # (revisión de código del encargo 87).
     if separado:
         dest = " ".join(separado[0].split(",")[0].split())
     else:
-        dest = (reserva["destino_final"] or reserva["destino_orig"] or "").split(",")[0].strip()
+        dest = " ".join((reserva["destino_final"] or reserva["destino_orig"] or "").split(",")[0].split())
     if not _msc_puerto(page, "PODId_input", dest, reg, "Port of Discharge", evidencia=f"msc_f{f}_destino"):
         raise ObjetivoNoEncontrado("Port of Discharge de MSC", _sugerencia_que_elegir(dest))
     esperar(page, 0.8)
@@ -13200,7 +13241,9 @@ def reservar_cma(page, reserva, creds, reg, on_pausa=None):
     f = reserva["fila"]
     dest_orig = (reserva.get("destino_orig") or "").strip()
     dest_fin = (reserva.get("destino_final") or "").strip()
-    tiene_ramp_separado = bool(dest_orig and dest_fin and dest_orig.upper() not in dest_fin.upper() and dest_fin.upper() not in dest_orig.upper())
+    # La regla de MSC, una sola para las dos (_destino_separado; decisión de Marcelo, encargo 87): separados, el puerto
+    # y la rampa son el texto de sus celdas, dest_orig y dest_fin.
+    tiene_ramp_separado = _destino_separado(reserva) is not None
 
     dest_display = f"{dest_orig} / {dest_fin}" if tiene_ramp_separado else (dest_fin or dest_orig)
     reg.paso(f"[CMA fila {f}] {reserva['pol']} -> {dest_display} | NAVE: {reserva['nave']}")
@@ -16242,6 +16285,8 @@ async function verFilas() {
       ${esConsolidado ? `<td style="font-weight:600;color:var(--accent);">${esc(f.naviera || '')}</td>` : ''}
       <td>${f.sin_puerto ? "<span class='sin-ruta'>sin puerto de carga</span> " + esc(f.pol) : esc(f.pol)}</td>
       <td>${f.sin_destino ? "<span class='sin-ruta'>sin destino</span> " + esc(f.destino_final)
+          : f.destino_aparte ? esc(f.destino_aparte[0]) + " <span class='destino-aparte'>con destino final: "
+                               + esc(f.destino_aparte[1]) + "</span>"
                           : esc(f.destino_final)}</td>
       <td class="nave">${f.sin_nave ? "<span class='sin-nave'>sin nave</span> " + esc(f.nave) : esc(f.nave)}</td>
       <td>${esc(f.viaje)}</td>
@@ -17336,6 +17381,7 @@ body:not(.light-theme) tbody tr.fila-emitida td {
 }
 tbody td.nave { font-family: var(--font-mono); font-size: 12px; }
 .sin-nave, .sin-ruta, .otro-contenedor { color: var(--text-muted); font-style: italic; }
+.destino-aparte { color: var(--text-muted); font-style: italic; }
 
 .chip {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px;

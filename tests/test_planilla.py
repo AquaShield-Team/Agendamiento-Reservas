@@ -507,7 +507,8 @@ class TestDestinoFinalConGuion(ConPlanilla):
 class TestDestinoSeparadoMsc(ConPlanilla):
     def test_los_dos_lectores_separan_las_mismas_filas(self):
         # Decisión de Marcelo (encargo 86, CICLO-msc-destino-final.md): MSC separa el puerto de descarga del destino
-        # final cuando la fila trae los dos distintos, en «Puerto Descarga» y «Destino Final» (_msc_destino_separado).
+        # final cuando la fila trae los dos distintos, en «Puerto Descarga» y «Destino Final» (_destino_separado, desde
+        # el encargo 87 la misma regla de CMA-CGM).
         # Los dos lectores dan lo mismo: la fila 5 los trae distintos; la 6, también; la 7, sin puerto de descarga en el
         # panel (y en la consola, con el destino final en su lugar), uno solo.
         m = self.mod
@@ -516,7 +517,7 @@ class TestDestinoSeparadoMsc(ConPlanilla):
                     "web": {f["fila"]: f for f in m.leer_filas(libro["MSC"])[2]}}
         for lector, filas in lectores.items():
             with self.subTest(lector=lector):
-                self.assertEqual([m._msc_destino_separado(filas[f]) for f in (5, 6, 7)],
+                self.assertEqual([m._destino_separado(filas[f]) for f in (5, 6, 7)],
                                  [("PUERTO BETA", "CIUDAD GAMMA"), ("PUERTO DELTA", "CIUDAD ETA"), None])
 
 

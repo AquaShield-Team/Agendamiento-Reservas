@@ -926,6 +926,49 @@ class TestPanelCorridas(PanelBase):
         self.assertEqual({f["fila"]: (f["otro_contenedor"], f["sin_nave"], f["sin_destino"]) for f in d["filas"]},
                          {5: (False, True, False), 6: (False, False, True)})
 
+    def test_filas_dicen_si_van_con_destino_final(self):
+        # /api/filas trae, de las filas de MSC y de CMA-CGM que van a un puerto de descarga y después a otro destino
+        # final, los dos textos de la regla del programa (_destino_separado), y el panel lo dice en la celda del destino
+        # antes de correr (decisión de Marcelo, encargo 87, CICLO-destino-final-normalizado.md; la página:
+        # test_envio.TestLecturaDelPanel). En MSC, la 5 los trae; la 6, sin nave, y la 7, sin puerto de descarga, no.
+        # En CMA-CGM, la 5 y la 6; la 7, sin puerto de carga, no. Las otras navieras no lo marcan, aunque traigan los
+        # dos, y en CONSOLIDADO cuenta la naviera de su columna: la 6 es de MSC y la 7, de CMA-CGM.
+        def marcas(hoja):
+            st, d = self.srv.json(f"/api/filas?hoja={hoja}")
+            self.assertEqual(st, 200)
+            return {f["fila"]: f["destino_aparte"] for f in d["filas"]}
+        beta = ["PUERTO BETA", "CIUDAD GAMMA"]
+        self.subir_celdas({})
+        self.assertEqual(marcas("MSC"), {5: beta, 6: None, 7: None})
+        self.assertEqual(marcas("CMA-CGM"), {5: beta, 6: ["PUERTO IOTA", "CIUDAD KAPPA"], 7: None})
+        self.assertEqual(marcas("ONE"), {5: None, 6: None, 7: None, 9: None, 10: None})
+        self.assertEqual(marcas("CONSOLIDADO"), {5: None, 6: beta, 7: beta, 8: None, 9: None, 10: None, 11: None})
+        # El mismo lugar escrito con otra tilde u otros espacios, o «-» en el puerto, no van aparte; dos lugares
+        # distintos con tildes, sí, con el texto de sus celdas. Un carácter de control o invisible se ve como «?», como
+        # en la marca del contenedor: uno de dirección del texto daba vuelta la marca (revisión de seguridad). La fila
+        # sin puerto de carga lleva la marca de su motivo.
+        self.subir_celdas({("MSC", "C5"): "Puérto  Beta", ("MSC", "D5"): "PUERTO BETA, PAIS",
+                           ("MSC", "C7"): "PUERTO" + chr(0x200B) + "THETA",
+                           ("MSC", "D7"): "CIUDAD" + chr(0x202E) + "THETA" + chr(0xE000),
+                           ("CMA-CGM", "C5"): "-", ("CMA-CGM", "C6"): " Puérto Iota", ("CMA-CGM", "D6"): "Ciudad Káppa",
+                           ("CONSOLIDADO", "B6"): ", CHILE"})
+        self.assertEqual(marcas("MSC"), {5: None, 6: None, 7: ["PUERTO?THETA", "CIUDAD?THETA?"]})
+        self.assertEqual(marcas("CMA-CGM"), {5: None, 6: ["Puérto Iota", "Ciudad Káppa"], 7: None})
+        st, d = self.srv.json("/api/filas?hoja=CONSOLIDADO")
+        self.assertEqual({f["fila"]: (f["destino_aparte"], f["sin_puerto"]) for f in d["filas"] if f["fila"] in (6, 7)},
+                         {6: (None, True), 7: (beta, False)})
+
+    def test_la_marca_del_destino_final_es_de_quien_lo_separa(self):
+        # Las navieras cuyas filas marca el panel (NAVIERAS_CON_DESTINO_APARTE) son las de los reservadores que llaman
+        # a _destino_separado: una naviera que empiece a separarlos, o que deje de hacerlo, cambia la marca con ella.
+        tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
+        llaman = {n.name for n in tree.body if isinstance(n, ast.FunctionDef)
+                  and any(isinstance(c, ast.Call) and ast.unparse(c.func) == "_destino_separado" for c in ast.walk(n))}
+        reservadores = {k: f.__name__ for k, f in self.mod.RESERVADORES.items()}
+        self.assertEqual({k for k, nombre in reservadores.items() if nombre in llaman},
+                         set(self.mod.NAVIERAS_CON_DESTINO_APARTE))
+        self.assertEqual(len(set(self.mod.NAVIERAS_CON_DESTINO_APARTE)), len(self.mod.NAVIERAS_CON_DESTINO_APARTE))
+
     def test_consolidado_reparte_por_naviera(self):
         with Navieras(self.mod) as n:
             e = self.correr("CONSOLIDADO", [5, 6, 7, 8, 9, 10, 11])

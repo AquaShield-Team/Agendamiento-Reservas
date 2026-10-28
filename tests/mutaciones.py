@@ -5714,14 +5714,14 @@ MUTACIONES += [
 # cuenta aparte, como la fila sin nave (_con_su_marca, JS_INDEX y CSS_INDEX; CICLO-maersk-elige-exacto.md) ---
 RUTA_API = "test_web.TestPanelCorridas.test_filas_dicen_si_traen_la_ruta"
 RUTA_PANEL = "test_envio.TestLecturaDelPanel.test_marca_y_cuenta_aparte_las_filas_sin_ruta"
-MARCAS = "                sin_puerto=falta == FILA_SIN_PUERTO, sin_destino=falta == FILA_SIN_DESTINO)\n"
+MARCAS = "                sin_puerto=falta == FILA_SIN_PUERTO, sin_destino=falta == FILA_SIN_DESTINO,\n"
 
 MUTACIONES += [
     # /api/filas: sin una de las dos marcas, o con las marcas también en la fila sin nave.
     dict(id="panel-sin-marca-de-puerto", pruebas=[RUTA_API], viejo=MARCAS,
-         nuevo="                sin_puerto=False, sin_destino=falta == FILA_SIN_DESTINO)\n"),
+         nuevo="                sin_puerto=False, sin_destino=falta == FILA_SIN_DESTINO,\n"),
     dict(id="panel-sin-marca-de-destino", pruebas=[RUTA_API], viejo=MARCAS,
-         nuevo="                sin_puerto=falta == FILA_SIN_PUERTO, sin_destino=False)\n"),
+         nuevo="                sin_puerto=falta == FILA_SIN_PUERTO, sin_destino=False,\n"),
     dict(id="panel-ruta-tambien-sin-nave", pruebas=[RUTA_API],
          viejo='    falta = "" if _fila_sin_nave(nave) else _falta_en_la_fila(fila)\n',
          nuevo="    falta = _falta_en_la_fila(fila)\n"),
@@ -10028,7 +10028,9 @@ DFM_PAGINA = DFM + "test_el_destino_final_en_la_pagina"
 DFM_CORTA = DFM + "test_cada_paso_corta_sin_seguir"
 DFM_LISTAS = DFM + "test_las_listas_del_destino_antes_de_buscar"
 DFM_LECTORES = "test_planilla.TestDestinoSeparadoMsc.test_los_dos_lectores_separan_las_mismas_filas"
-SEPARA_E86 = "    if puerto and final and puerto.upper() not in final.upper() and final.upper() not in puerto.upper():\n"
+SEPARA_E86 = ("    if not puerto or not final or puerto.upper() in final.upper() or final.upper() in puerto.upper():\n")
+PLANO_E86 = "    if a[:len(b)] == b[:len(a)]:\n"
+PARTES_E87 = '    a = [_mk_plano(p) for p in puerto.split(",")]\n'
 DOOR_E86 = ("    if not _msc_hasta(page, lambda: (activa() or radio.is_checked(timeout=1000)) and "
             "campo_modo.is_visible()):\n")
 CIUDAD_E86 = ('    ciudad = " ".join(_ciudad_de(final).split())\n    if not ciudad:\n'
@@ -10037,11 +10039,11 @@ PUERTO_E86 = '        dest = " ".join(separado[0].split(",")[0].split())\n'
 CALZA_E86 = "    return bool(c) and s.startswith(c) and not s[len(c):len(c) + 1].isalnum()\n"
 MUTACIONES += [
     dict(id="e86-nunca-separa", pruebas=[DFM_LECTURA, DFM_CAMINOS, DFM_LECTORES],
-         viejo=SEPARA_E86, nuevo="    if False:\n"),
+         viejo=SEPARA_E86, nuevo="    if True:\n"),
     dict(id="e86-separa-sin-mayusculas", pruebas=[DFM_LECTURA],
-         viejo=SEPARA_E86, nuevo="    if puerto and final and puerto not in final and final not in puerto:\n"),
+         viejo=SEPARA_E86, nuevo="    if not puerto or not final or puerto in final or final in puerto:\n"),
     dict(id="e86-separa-con-el-final-dentro", pruebas=[DFM_LECTURA],
-         viejo=SEPARA_E86, nuevo="    if puerto and final and puerto.upper() not in final.upper():\n"),
+         viejo=SEPARA_E86, nuevo="    if not puerto or not final or puerto.upper() in final.upper():\n"),
     dict(id="e86-puerto-con-el-final", pruebas=[DFM_CAMINOS],
          viejo=PUERTO_E86, nuevo="        dest = \" \".join(separado[1].split(\",\")[0].split())\n"),
     dict(id="e86-puerto-sin-cortar-en-la-coma", pruebas=[DFM_CAMINOS],
@@ -10119,4 +10121,87 @@ MUTACIONES += [
          nuevo=""),
     dict(id="e86-destino-sin-escribir", pruebas=[DFM_PAGINA],
          viejo="        campo.type(ciudad, delay=90)\n", nuevo="        pass\n"),
+]
+
+# --- Encargo 87 (CICLO-destino-final-normalizado.md): una sola regla para MSC y CMA-CGM (_destino_separado), que
+# reconoce el mismo lugar escrito distinto (las partes separadas por comas, normalizadas con _mk_plano, coinciden
+# hasta la más corta; la contención sigue sin distinguir mayúsculas, como antes) y lee «-» como la celda vacía; y la
+# marca del panel (destino_aparte de /api/filas, saneada para mostrarla, y la celda del destino de la página) en sus
+# filas. Sin normalizar, sin cortar el puerto en sus partes, solo por el nombre, por contención o con la celda
+# entera, con «-» o lo normalizado como vacío, devolviendo lo normalizado, CMA-CGM o MSC con su propia regla,
+# CMA-CGM escribiendo lo normalizado; la marca sin el destino o sin sanear, en toda naviera, sin mirar la nave o la
+# ruta, solo en MSC; la página sin la marca, sin escapar, sin el puerto o sin su estilo; y el destino de un solo
+# puerto de MSC con sus saltos de línea.
+E87_API = "test_web.TestPanelCorridas.test_filas_dicen_si_van_con_destino_final"
+E87_QUIEN = "test_web.TestPanelCorridas.test_la_marca_del_destino_final_es_de_quien_lo_separa"
+E87_PAGINA = "test_envio.TestLecturaDelPanel.test_dice_si_va_con_destino_final"
+APARTE_E87 = "    aparte = (None if _fila_sin_nave(nave) or falta or nav not in NAVIERAS_CON_DESTINO_APARTE\n"
+MUTACIONES += [
+    dict(id="e87-sin-normalizar", pruebas=[DFM_LECTURA, DFM_CAMINOS, E87_API],
+         viejo=PARTES_E87, nuevo='    a = [p.strip().upper() for p in puerto.split(",")]\n'),
+    dict(id="e87-puerto-sin-sus-partes", pruebas=[DFM_LECTURA],
+         viejo=PARTES_E87, nuevo="    a = [_mk_plano(puerto)]\n"),
+    dict(id="e87-mismo-lugar-solo-por-el-nombre", pruebas=[DFM_LECTURA],
+         viejo=PLANO_E86, nuevo="    if a[0] == b[0]:\n"),
+    dict(id="e87-sin-el-mismo-lugar", pruebas=[DFM_LECTURA, DFM_CAMINOS, E87_API],
+         viejo=PLANO_E86, nuevo="    if False:\n"),
+    dict(id="e87-mismo-lugar-por-contencion", pruebas=[DFM_LECTURA],
+         viejo=PLANO_E86,
+         nuevo="    if _mk_plano(puerto) in _mk_plano(final) or _mk_plano(final) in _mk_plano(puerto):\n"),
+    dict(id="e87-mismo-lugar-con-la-celda-entera", pruebas=[DFM_LECTURA],
+         viejo=PLANO_E86, nuevo="    if a == b:\n"),
+    dict(id="e87-vacio-normalizado", pruebas=[DFM_LECTURA],
+         viejo=SEPARA_E86,
+         nuevo=("    if not _mk_plano(puerto) or not final or puerto.upper() in final.upper() "
+                "or final.upper() in puerto.upper():\n")),
+    dict(id="e87-guion-es-un-puerto", pruebas=[DFM_LECTURA, DFM_CAMINOS, E87_API],
+         viejo='    puerto = str(_destino_final_de((reserva or {}).get("destino_orig")) or "").strip()\n',
+         nuevo='    puerto = str((reserva or {}).get("destino_orig") or "").strip()\n'),
+    dict(id="e87-guion-es-un-destino", pruebas=[DFM_LECTURA],
+         viejo='    final = str(_destino_final_de((reserva or {}).get("destino_final")) or "").strip()\n',
+         nuevo='    final = str((reserva or {}).get("destino_final") or "").strip()\n'),
+    dict(id="e87-devuelve-lo-normalizado", pruebas=[DFM_LECTURA, DFM_CAMINOS, E87_API],
+         viejo="    return puerto, final\n", nuevo="    return _mk_plano(puerto), _mk_plano(final)\n"),
+    dict(id="e87-cma-con-su-propia-regla", pruebas=[DFM_LECTURA],
+         viejo="    tiene_ramp_separado = _destino_separado(reserva) is not None\n",
+         nuevo=("    tiene_ramp_separado = bool(dest_orig and dest_fin and dest_orig.upper() not in dest_fin.upper() "
+                "and dest_fin.upper() not in dest_orig.upper())\n")),
+    dict(id="e87-cma-escribe-lo-normalizado", pruebas=[DFM_LECTURA],
+         viejo='    dest_orig = (reserva.get("destino_orig") or "").strip()\n',
+         nuevo='    dest_orig = _mk_plano(reserva.get("destino_orig"))\n'),
+    dict(id="e87-msc-sin-la-regla", pruebas=[DFM_LECTURA, DFM_CAMINOS, E87_QUIEN],
+         viejo="    separado = _destino_separado(reserva)\n", nuevo="    separado = None\n"),
+    dict(id="e87-marca-sin-el-destino", pruebas=[E87_API],
+         viejo="destino_aparte=[_destino_a_la_vista(t) for t in aparte] if aparte else None)",
+         nuevo="destino_aparte=None)"),
+    dict(id="e87-marca-sin-sanear", pruebas=[E87_API],
+         viejo="destino_aparte=[_destino_a_la_vista(t) for t in aparte] if aparte else None)",
+         nuevo="destino_aparte=list(aparte) if aparte else None)"),
+    dict(id="e87-sanea-sin-los-privados", pruebas=[E87_API],
+         viejo='"?" if unicodedata.category(c).startswith("C") else c',
+         nuevo='"?" if unicodedata.category(c) in ("Cc", "Cf") else c'),
+    dict(id="e87-sanea-solo-los-controles", pruebas=[E87_API],
+         viejo='"?" if unicodedata.category(c).startswith("C") else c',
+         nuevo='"?" if unicodedata.category(c) == "Cc" else c'),
+    dict(id="e87-marca-en-toda-naviera", pruebas=[E87_API],
+         viejo=APARTE_E87, nuevo="    aparte = (None if _fila_sin_nave(nave) or falta\n"),
+    dict(id="e87-marca-sin-mirar-la-nave", pruebas=[E87_API],
+         viejo=APARTE_E87, nuevo="    aparte = (None if falta or nav not in NAVIERAS_CON_DESTINO_APARTE\n"),
+    dict(id="e87-marca-sin-mirar-la-ruta", pruebas=[E87_API],
+         viejo=APARTE_E87, nuevo="    aparte = (None if _fila_sin_nave(nave) or nav not in NAVIERAS_CON_DESTINO_APARTE\n"),
+    dict(id="e87-marca-solo-msc", pruebas=[E87_API, E87_QUIEN],
+         viejo='NAVIERAS_CON_DESTINO_APARTE = ("msc", "cma")\n', nuevo='NAVIERAS_CON_DESTINO_APARTE = ("msc",)\n'),
+    dict(id="e87-pagina-sin-la-marca", pruebas=[E87_PAGINA],
+         viejo="          : f.destino_aparte ? esc(f.destino_aparte[0])",
+         nuevo="          : false ? esc(f.destino_aparte[0])"),
+    dict(id="e87-pagina-sin-escapar", pruebas=[E87_PAGINA],
+         viejo='+ esc(f.destino_aparte[1]) + "</span>"', nuevo='+ f.destino_aparte[1] + "</span>"'),
+    dict(id="e87-pagina-sin-el-puerto", pruebas=[E87_PAGINA],
+         viejo='? esc(f.destino_aparte[0]) + " <span', nuevo='? esc(f.destino_final) + " <span'),
+    dict(id="e87-pagina-sin-estilo", pruebas=[E87_PAGINA],
+         viejo=".destino-aparte { color: var(--text-muted); font-style: italic; }\n", nuevo=""),
+    dict(id="e87-un-puerto-con-sus-saltos-de-linea", pruebas=[DFM_CAMINOS],
+         viejo=('        dest = " ".join((reserva["destino_final"] or reserva["destino_orig"] or "")'
+                '.split(",")[0].split())\n'),
+         nuevo='        dest = (reserva["destino_final"] or reserva["destino_orig"] or "").split(",")[0].strip()\n'),
 ]
