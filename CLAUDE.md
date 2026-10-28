@@ -1971,8 +1971,18 @@ Python sin las librerías de este equipo; con `config.json` copiado, el mismo cl
 Desde el encargo 44, «opciones» trae también lo que el programa traía escrito y es de la cuenta:
 - `contratos_por_defecto` (`one_usa`, `one_otros`, `msc` y `hyundai`): el contrato que va cuando ni la fila ni las
   credenciales traen uno (`_contrato_por_defecto`; HYUNDAI no mira la fila). Sin contrato, ONE elige «Otros
-  contratos» sin escribir uno y MSC deja el campo vacío; HYUNDAI no elige ninguno en el paso 2 y corta antes de
-  Booking Details (NO ENVIADA, `ObjetivoNoEncontrado`): elegir uno sería por su posición.
+  contratos» sin escribir uno y MSC deja el campo vacío; HYUNDAI no elige ninguno en el paso 2 (queda el del portal) y
+  corta en «Booking Details», en «Contract No», después del Contract Holder y del Shipper, sin pulsar nada más (NO
+  ENVIADA, `ObjetivoNoEncontrado`): elegir uno sería por su posición. Hasta el encargo 88 este archivo decía «antes de
+  Booking Details»; el corte, medido en las corridas de un colega del 26 y el 28-10, está en ese paso.
+  - **En un equipo nuevo, el contrato de HYUNDAI lo escribe el operador** en el panel, en Credenciales, columna
+    «Contrato» de la fila de HYUNDAI (`/api/credenciales` lo guarda en el `contrato` de su naviera), o en
+    `contratos_por_defecto`: el `config.json` que el panel crea desde la plantilla lo trae vacío (encargo 61). Así quedaron
+    NO ENVIADA, en «Contract No», las 5 filas del 26-10 y las 2 del 28-10 de ese colega; su portal ofrecía la misma única
+    opción real que el de este equipo, y el código de HYUNDAI de `estable` (`b39c95c`) es el de `main` (encargo 88,
+    `CICLO-hyundai-contrato-del-colega.md`).
+  - Con un contrato configurado que no está entre las opciones, el paso 3 elige la primera real, por su posición
+    (`Contract No (primera real)`): residual de los encargos 70 y 71, sin cambiar (es la regla de «Contract No»).
 - `codigo_shipper_hyundai` (`_codigo_shipper_hyundai`): el código con que HYUNDAI identifica a la empresa como
   Shipper. Sin él, el modal busca el Shipper solo por el nombre y el respaldo en JavaScript no escribe el código.
 
