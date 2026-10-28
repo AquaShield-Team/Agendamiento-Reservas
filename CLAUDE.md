@@ -726,6 +726,42 @@ cerrado:
     tarde, la segunda espera la ve igual. Con la sugerencia en las primeras 14 lecturas, el camino no cambia.
   - Lo vigilan `test_clics.TestMsc.test_hs_sin_sugerencias_lo_escribe_otra_vez` y
     `test_hs_si_falla_al_volver_a_escribirlo_corta`.
+- **MSC con un puerto de descarga y otro destino final** (decisión de Marcelo, encargo 86, `CICLO-msc-destino-final.md`;
+  `_msc_destino_separado`, `_msc_destino_final`). La planilla los trae en dos columnas, «Puerto Descarga» y «Destino
+  Final» (en el ejemplo del dueño, un puerto y una ciudad tierra adentro). MSC los separa con la lectura de CMA-CGM
+  (`tiene_ramp_separado`, en `reservar_cma`): los dos con texto, y ninguno contenido en el otro, sin distinguir
+  mayúsculas. `test_clics.TestDestinoFinalMsc.test_la_misma_lectura_que_cma` corre la regla de CMA-CGM, leída de su
+  código, sobre los mismos casos: CMA-CGM no se tocó, y la regla vive en las dos (unificarlas es tocar CMA-CGM).
+  - Con los dos, en «Port of Discharge» va el puerto de descarga, y después, en el mismo «Route Details», el destino
+    final, como en el video del dueño: «Door» debajo del puerto (la etiqueta `#onDoor_Label`, por su id y su texto), el
+    modo «TRUCK» (`MSC_EN_CAMION`: la única opción de «Select on-carriage mode» que lo dice entero; las otras son
+    TRUCK/RAIL y TRUCK/BARGE) y, en «Destination» de «Intermodal Details - Final destination», la ciudad (la parte de
+    la celda antes de su primera coma, con los espacios de a uno, como en los puertos) y la única sugerencia a la vista
+    que empieza por ella como palabra entera (`_msc_calza_el_destino`: el servidor da las que empiezan por lo escrito;
+    «PARIS» no calza con «Parisot», ni «PARANA» con «PARANAGUA, PARANA, …», en ningún alfabeto; revisiones del encargo).
+    El puerto separado va con los espacios de a uno: un salto de línea en la celda sería la tecla Enter al escribirlo.
+    Cada paso comprueba lo que dejó: «Door» activa (la clase de su
+    etiqueta, o su radio marcado: el clic lo maneja Knockout, que le quita al navegador su acción; log.txt anota las dos
+    señales, para que la primera prueba en el portal diga cuál se mueve) y el campo del modo a la vista, el modo en su
+    campo, y el destino en el suyo. Si
+    algo no está, no es uno solo o no queda, NO ENVIADA, sin pulsar nada más; con ninguna sugerencia o con más de una,
+    también. Deja la evidencia de las dos listas (`msc_f<fila>_modo` y `msc_f<fila>_destino_final`). Antes de «Search
+    Schedule» cierra también la lista del modo y la del destino si quedaron abiertas, o corta, como las de los puertos
+    (`MSC_LISTAS_DEL_DESTINO`, encargo 82).
+  - Con uno solo (iguales, uno dentro del otro, o el final vacío o «-»), el camino de siempre: el destino en «Port of
+    Discharge». `test_los_dos_caminos` lo fija.
+  - Los ids salen de los 165 HTML de MSC guardados que traen esa sección, escondida (141 de la corrida del 23-10 en el
+    equipo de un colega y 24 de `logs/`): los radios `onMode` del puerto de descarga (Port, Ramp / Barge y Door), el
+    combobox `#OnCarriageMode` y el combobox `#BookingCarriage_DestinationLocationId`, una búsqueda en el servidor que
+    empieza por lo escrito, desde 3 letras. **No está probado en el portal:** lo prueba el dueño en modo prueba.
+  - **La regla de los puertos de MSC no es «solo si calza sin ambigüedad»:** `_msc_puerto` pulsa la más corta de las
+    sugerencias que traen la ciudad. El destino final pide una sola, como pidió el encargo; los puertos no cambiaron.
+  - En la planilla de ejemplo hay otro par distinto, en 2 filas, que ahora también se separa. Si el portal sugiere su
+    destino final como «Destination», no está medido; si no, esas filas quedan NO ENVIADA en «Destination» (antes,
+    también NO ENVIADA, en «Port of Discharge»). La regla no distingue otro puerto de una puerta tierra adentro, y el modo
+    es siempre «TRUCK» (revisión de código del encargo).
+  - Lo vigilan `test_clics.TestDestinoFinalMsc` (los dos caminos, la página con los ids medidos y cada corte) y
+    `test_planilla.TestDestinoSeparadoMsc` (los dos lectores separan las mismas filas).
 - **COSCO elige el puerto de carga de la fila** (`_cosco_puerto_de_carga`, `CICLO-cola-seis-items.md`): la celda del
   puerto de carga normalizada (`_cosco_puerto_de_la_celda`, `CICLO-inicio-de-todas.md`: la parte antes de la primera
   coma, en mayúsculas, sin tildes, con todo signo como separador y sin el país al final: «CHILE» o, desde el encargo
@@ -1122,7 +1158,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 1000 pruebas al 2026-10-27 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 1006 pruebas al 2026-10-28 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -1469,7 +1505,8 @@ línea cambian). De arriba hacia abajo:
    contenedor de MAERSK no trae una sola «40 Reefer High» (encargo 62), o la de sus ajustes reefer una sola «Standard
    (40´)», o la fila de MAERSK pide otro contenedor que «40 HC REEFER» (encargo 63), o cuando la nave está y ninguna de
    sus salidas trae el viaje de la fila (en las seis desde el encargo 66), o la tarjeta que eligió MSC ya no es la
-   misma justo antes del clic (encargo 67). `DETENIDO`, con «Detener»: en
+   misma justo antes del clic (encargo 67), o MSC no puede dejar el destino final aparte del puerto de descarga
+   (encargo 86). `DETENIDO`, con «Detener»: en
    COSCO y, desde el encargo 56, en la espera del deslizador de CMA-CGM. `REVISAR`, entre otros (en MAERSK
    y en COSCO, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el motivo dice hasta qué fecha buscó (ver
    «Ampliar la búsqueda»). Después: `EMITIDA`, `EMITIDA – CONFIRMAR POR CORREO` (COSCO, encargo 77; CMA-CGM, 78),

@@ -485,6 +485,9 @@ def _evidencia_antes_de_la_guarda(page, reg, nombre, momento="en la guarda", com
     - _hmm_reintentar_paso2, si después del NEXT de «Booking Reference» la página sigue ahí con su formulario a la
       vista, antes de volver a pulsar ese NEXT («hmm_f<fila>_paso1»), con la captura de la ventana (encargo 76,
       CICLO-hyundai-paso-uno.md).
+    - _msc_elegir_de_lista, con la lista del modo o la del destino final de MSC abierta, antes de elegir
+      («msc_f<fila>_modo» y «msc_f<fila>_destino_final»), con la captura de la ventana (decisión de Marcelo, encargo
+      86, CICLO-msc-destino-final.md).
     - Antes de pulsar una sugerencia de origen o de destino, cuando el ayudante ve la que pulsaría, con la captura de
       la ventana (decisión de Marcelo, CICLO-origen-y-destino.md): «<nav>_f<fila>_origen» y «_destino»; en CMA, con su
       modo («cma_f<fila>_origen_<modo>», «_destino_<modo>» y «_entrega_<modo>», el lugar de entrega), y en MAERSK y
@@ -5695,13 +5698,14 @@ _JS_MSC_CERRAR_LISTA = """(id) => {
 }"""
 
 
-def _msc_listas_de_puertos(page):
-    """{id: (abierta, texto del campo)} de cada puerto de MSC_PUERTOS (_JS_MSC_LISTAS_DE_PUERTOS)."""
-    leido = page.evaluate(_JS_MSC_LISTAS_DE_PUERTOS, [i for i, _ in MSC_PUERTOS])
-    return {i: (bool(x[0]), x[1]) for (i, _), x in zip(MSC_PUERTOS, leido)}
+def _msc_listas_de_puertos(page, listas=MSC_PUERTOS):
+    """{id: (abierta, texto del campo)} de cada combobox de 'listas' (por omisión, los puertos de MSC_PUERTOS;
+    _JS_MSC_LISTAS_DE_PUERTOS)."""
+    leido = page.evaluate(_JS_MSC_LISTAS_DE_PUERTOS, [i for i, _ in listas])
+    return {i: (bool(x[0]), x[1]) for (i, _), x in zip(listas, leido)}
 
 
-def _msc_cerrar_listas_abiertas(page, reg):
+def _msc_cerrar_listas_abiertas(page, reg, listas=MSC_PUERTOS):
     """Antes de «Search Schedule»: si la lista de sugerencias de un puerto quedó abierta, la cierra con el método de su
     combobox (_JS_MSC_CERRAR_LISTA), sin pulsar ni elegir nada, y comprueba que se cerró y que su campo sigue diciendo
     lo mismo. Si no puede comprobarlo, si sigue abierta o si el campo cambió, corta (ObjetivoNoEncontrado): NO ENVIADA,
@@ -5709,13 +5713,15 @@ def _msc_cerrar_listas_abiertas(page, reg):
     El 23-10, en el equipo de un colega, la lista del destino volvió a abrirse después de elegir el puerto (1 de las 36
     filas de MSC), tapó «Search Schedule», y el clic esperó 30 s sin poder darse: la fila quedó NO ENVIADA, con «no
     encontré el botón» (encargo 82, CICLO-msc-lista-abierta-y-hs.md). Con las listas cerradas, solo lee: el camino de
-    siempre no cambia. Si esa lectura falla, sigue como antes, al clic."""
+    siempre no cambia. Si esa lectura falla, sigue como antes, al clic.
+    'listas' son los combobox que mira, por omisión los dos puertos; con un destino final aparte, también el modo y el
+    destino (MSC_LISTAS_DEL_DESTINO; encargo 86)."""
     try:
-        antes = _msc_listas_de_puertos(page)
+        antes = _msc_listas_de_puertos(page, listas)
     except Exception as e:
         reg.info(f"listas de sugerencias de los puertos: no pude leerlas ({str(e)[:60]}); sigo")
         return
-    abiertas = [(i, etiqueta) for i, etiqueta in MSC_PUERTOS if antes[i][0]]
+    abiertas = [(i, etiqueta) for i, etiqueta in listas if antes[i][0]]
     if not abiertas:
         return
     for i, etiqueta in abiertas:
@@ -5726,7 +5732,7 @@ def _msc_cerrar_listas_abiertas(page, reg):
         reg.info(f"{etiqueta}: su lista de sugerencias quedó abierta; la cierro sin elegir nada ({r})")
     esperar(page, 0.6)
     try:
-        despues = _msc_listas_de_puertos(page)
+        despues = _msc_listas_de_puertos(page, listas)
     except Exception as e:
         despues = None
         reg.info(f"listas de sugerencias de los puertos: no pude volver a leerlas ({str(e)[:60]})")
@@ -5740,7 +5746,7 @@ def _msc_cerrar_listas_abiertas(page, reg):
         reg.info(f"{etiqueta}: lista cerrada, y su campo sigue con el puerto elegido")
 
 
-def _msc_buscar_itinerarios(page, reg):
+def _msc_buscar_itinerarios(page, reg, listas=MSC_PUERTOS):
     """Pulsa «Search Schedule» con click_si_existe: el primer botón, en el orden de la página, cuyo texto traiga «Search
     Schedule» o «Buscar». Si ese no se ve en 6 s, no pulsa nada y levanta ObjetivoNoEncontrado: la reserva queda NO
     ENVIADA, con la captura y el HTML (decisión de Marcelo, CICLO-inicio-de-todas.md). Hasta c4df3ab caía a
@@ -5748,10 +5754,216 @@ def _msc_buscar_itinerarios(page, reg):
     navegación, cuyo texto trajera «search schedule» o «buscar», visible o no. Medido en logs/: en las 9 búsquedas del
     2026-09-21 al 26, el botón lo encontró su selector.
     Antes, una lista de sugerencias de un puerto que quedó abierta se cierra, o corta (_msc_cerrar_listas_abiertas;
-    encargo 82)."""
-    _msc_cerrar_listas_abiertas(page, reg)
+    encargo 82); con un destino final aparte, también la del modo y la del destino ('listas'; encargo 86)."""
+    _msc_cerrar_listas_abiertas(page, reg, listas)
     if not click_si_existe(page, "button:has-text('Search Schedule'), button:has-text('Buscar')", 6000, reg):
         raise ObjetivoNoEncontrado("Search Schedule de MSC", "el botón «Search Schedule» o «Buscar» (por su texto)")
+
+
+# ---- El destino final aparte del puerto de descarga (decisión de Marcelo, encargo 86, CICLO-msc-destino-final.md) ----
+# Cuando la fila trae un puerto de descarga y otro destino final (en el ejemplo del dueño, un puerto y una ciudad
+# tierra adentro, en «Puerto Descarga» y «Destino Final»), MSC elige el puerto en «Port of Discharge», como siempre, y
+# después, en el mismo paso «Route Details», el destino final: «Door» debajo del puerto, el modo «TRUCK» y el destino en
+# «Intermodal Details - Final destination». Así lo hizo el dueño en el video del ejemplo. Los ids salen de los 165 HTML
+# de MSC guardados que traen esa sección, escondida (141 de la corrida del 23-10 en el equipo de un colega y 24 de
+# logs/): los radios «onMode» del puerto de descarga (Port, Ramp / Barge y Door, cada uno con su etiqueta), y dos
+# combobox de Kendo, el modo (data-text-field «Name») y el destino (una búsqueda en el servidor, desde 3 letras, que
+# empieza por lo escrito). Que el portal acepte estos pasos no está probado en el portal: lo prueba el dueño.
+MSC_DESCARGA_A_PUERTA = "onDoor_"                          # el radio «Door» del puerto de descarga y su etiqueta
+MSC_MODO_DE_ENTREGA = "OnCarriageMode"                     # el combobox del modo (TRUCK, TRUCK/RAIL, TRUCK/BARGE)
+MSC_EN_CAMION = "TRUCK"                                    # el modo del video, por su texto entero
+MSC_DESTINO_FINAL = "BookingCarriage_DestinationLocationId"  # el combobox del destino final
+MSC_LISTAS_DEL_DESTINO = ((MSC_MODO_DE_ENTREGA, "On-carriage mode"), (MSC_DESTINO_FINAL, "Destination"))
+MSC_PASO_PUERTA = "Door del puerto de descarga de MSC"
+MSC_PASO_MODO = "On-carriage mode de MSC"
+MSC_PASO_DESTINO = "Destination de MSC"
+MSC_LECTURAS_LISTA = 16     # lecturas de una lista, cada 0,5 s, hasta que dos seguidas den lo mismo (8 s; hipótesis)
+MSC_VUELTAS_CAMPO = 10      # lecturas de lo que dejó un clic, cada 0,5 s (5 s; hipótesis)
+
+
+def _msc_destino_separado(reserva):
+    """(puerto de descarga, destino final) si la fila trae los dos y son distintos; si no, None, y MSC sigue su camino
+    de un solo puerto, como siempre. Es la lectura de CMA-CGM (tiene_ramp_separado, en reservar_cma): los dos con
+    texto, y ninguno contenido en el otro, sin distinguir mayúsculas. La planilla los trae en dos columnas, «Puerto
+    Descarga» (destino_orig) y «Destino Final» (destino_final), y los dos lectores los leen así; con la celda del final
+    vacía, o «-», el final es el puerto, y no se separa (decisión de Marcelo, encargo 86, CICLO-msc-destino-final.md).
+    test_clics.TestDestinoFinalMsc vigila que dé lo mismo que la de CMA-CGM."""
+    puerto = str(reserva.get("destino_orig") or "").strip()
+    final = str(reserva.get("destino_final") or "").strip()
+    if puerto and final and puerto.upper() not in final.upper() and final.upper() not in puerto.upper():
+        return puerto, final
+    return None
+
+
+def _msc_calza_el_destino(sugerencia, ciudad):
+    """Si una sugerencia de «Destination» de MSC empieza por la ciudad como palabra entera: sin distinguir mayúsculas,
+    y sin una letra o un número de cualquier alfabeto pegado después. El combobox busca en el servidor las que empiezan
+    por lo escrito («filter: startswith», medido en el HTML), así que la ciudad en otro lugar de la sugerencia es otro
+    lugar (la ciudad «PARANA» en «PARANAGUA, PARANA, …»), y una que sigue con otra letra, otra localidad («Parisot» para
+    «PARIS»): las dos, de las revisiones del encargo 86."""
+    s, c = str(sugerencia or "").upper(), str(ciudad or "").upper()
+    return bool(c) and s.startswith(c) and not s[len(c):len(c) + 1].isalnum()
+
+
+def _msc_hasta(page, condicion):
+    """Mira 'condicion' cada 0,5 s, hasta MSC_VUELTAS_CAMPO veces, sin pulsar nada: True si se cumple. Una lectura que
+    falla cuenta como que no se cumple."""
+    for _ in range(MSC_VUELTAS_CAMPO):
+        esperar(page, 0.5)
+        try:
+            if condicion():
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _msc_unico_a_la_vista(page, selector, paso, que):
+    """El único elemento de 'selector' a la vista, o corta sin pulsar nada (ObjetivoNoEncontrado, con 'paso' y
+    'que')."""
+    try:
+        loc = page.locator(selector)
+        n = loc.count()
+        if n == 1 and loc.is_visible():
+            return loc
+        motivo = f"hay {n}" if n != 1 else "no se ve"
+    except Exception as e:
+        motivo = f"no pude leerlo ({_texto_error(e)})"
+    raise ObjetivoNoEncontrado(paso, f"{que}, uno solo a la vista ({motivo})")
+
+
+def _msc_opciones(page, lista):
+    """Las opciones a la vista de la lista de un combobox de Kendo de MSC ('lista': su id; la lista es
+    «<id>_listbox») y el texto de cada una, en una línea. Solo lee."""
+    op = page.locator(f"#{lista}_listbox li:visible")
+    return op, [" ".join((t or "").split()) for t in op.all_text_contents()]
+
+
+def _msc_elegir_de_lista(page, reg, lista, calza, buscado, paso, nombre, evidencia):
+    """Con la lista del combobox 'lista' ya abierta, la lee hasta que dos lecturas seguidas den lo mismo, no vacías
+    (hasta MSC_LECTURAS_LISTA, cada 0,5 s), deja su evidencia ('evidencia': la captura de la ventana y el HTML de la
+    página y de sus marcos) y pulsa la única opción que calza ('calza', sobre su texto en una línea). Si no hay
+    exactamente una, si la lista cambió mientras guardaba la evidencia, o si la opción ya no dice lo mismo o no acepta
+    el clic, corta sin pulsar nada (ObjetivoNoEncontrado, con 'paso'): la reserva queda NO ENVIADA. Devuelve el texto
+    de la que pulsó. Es la regla de MAERSK con su contenedor (_mk_elegir_unica): una sola, y el clic va a la opción
+    misma (encargo 86)."""
+    op, textos, anterior = None, [], None
+    for _ in range(MSC_LECTURAS_LISTA):
+        esperar(page, 0.5)
+        try:
+            op, textos = _msc_opciones(page, lista)
+        except Exception:
+            op, textos = None, []
+        if textos and textos == anterior:
+            break
+        anterior = textos
+    _evidencia_antes_de_la_guarda(page, reg, evidencia, f"con la lista de «{nombre}»", completa=False)
+    calzan = [i for i, t in enumerate(textos) if calza(t)]
+    reg.info(f"{nombre}: {len(calzan)} de las {len(textos)} opciones a la vista calzan con «{buscado}»")
+    if len(calzan) != 1:
+        vistas = ", ".join(f"«{t[:45]}»" for t in textos[:8]) + (", …" if len(textos) > 8 else "")
+        raise ObjetivoNoEncontrado(paso, f"una sola opción que calce con «{buscado}» en la lista de «{nombre}» ("
+                                         + (f"hay {len(calzan)} entre {len(textos)}: {vistas}" if textos
+                                            else "la lista no trajo ninguna opción") + ")")
+    try:
+        _, despues = _msc_opciones(page, lista)
+    except Exception:
+        despues = []
+    if despues != textos:
+        raise ObjetivoNoEncontrado(paso, f"la opción que calza con «{buscado}» en la lista que guardé en la evidencia: "
+                                         f"la lista cambió mientras la guardaba")
+    texto = textos[calzan[0]]
+    try:
+        opcion = op.nth(calzan[0]).element_handle(timeout=3000)
+        ahora = " ".join((opcion.text_content() or "").split())
+    except Exception as e:
+        raise ObjetivoNoEncontrado(paso, f"la opción «{texto[:45]}», que no pude volver a leer antes del clic "
+                                         f"({_texto_error(e)})")
+    if ahora != texto:
+        raise ObjetivoNoEncontrado(paso, f"la opción «{texto[:45]}»: la que iba a pulsar ya dice «{ahora[:45]}»")
+    try:
+        opcion.click(timeout=3000)
+    except Exception as e:
+        raise ObjetivoNoEncontrado(paso, f"la opción «{texto[:45]}», que no aceptó el clic ({_texto_error(e)})")
+    return texto
+
+
+def _msc_destino_final(page, reg, fila, final):
+    """El destino final aparte del puerto de descarga, ya elegido el puerto: «Door» debajo del puerto, el modo
+    MSC_EN_CAMION y el destino 'final' en «Destination», como en el video del dueño (decisión de Marcelo, encargo 86,
+    CICLO-msc-destino-final.md). Cada paso busca su objetivo por su id y su texto, y comprueba que quedó antes de
+    seguir; si algo no está o no queda, corta sin pulsar nada más (ObjetivoNoEncontrado): la reserva queda NO ENVIADA.
+    El destino se elige con la regla del encargo: la única sugerencia a la vista que empieza por lo escrito como palabra
+    entera (_msc_calza_el_destino; lo escrito es la ciudad, como en los puertos de MSC, _msc_puerto: la parte antes de la
+    primera coma, con los espacios de a uno); con ninguna o con más de una, NO ENVIADA. Deja la evidencia de las dos
+    listas (msc_f<fila>_modo y msc_f<fila>_destino_final)."""
+    ciudad = " ".join(_ciudad_de(final).split())
+    if not ciudad:
+        raise ObjetivoNoEncontrado(MSC_PASO_DESTINO, _TEXTO_DE_LA_FILA)
+    reg.paso(f"Destino final aparte del puerto: {final} (Door, {MSC_EN_CAMION})...")
+    # «Door», en los radios del puerto de descarga: su etiqueta, por su id y su texto.
+    puerta = _msc_unico_a_la_vista(page, f"#{MSC_DESCARGA_A_PUERTA}Label", MSC_PASO_PUERTA,
+                                   "la opción «Door» debajo de «Port of Discharge»")
+    try:
+        dice = " ".join((puerta.text_content() or "").split())
+    except Exception as e:
+        dice = f"? ({_texto_error(e)})"
+    if dice != "Door":
+        raise ObjetivoNoEncontrado(MSC_PASO_PUERTA, f"la opción «Door» debajo de «Port of Discharge» (la que encontré "
+                                                    f"dice «{dice[:40]}»)")
+    try:
+        puerta.click(timeout=4000)
+    except Exception as e:
+        raise ObjetivoNoEncontrado(MSC_PASO_PUERTA, f"la opción «Door», que no aceptó el clic ({_texto_error(e)})")
+    # Que quedó: la etiqueta activa (su clase la pone el portal, «css: {active: isOnDoorBooking}», medido en el HTML) o
+    # el radio marcado, y el campo del modo a la vista. El clic de la etiqueta lo maneja Knockout («click:
+    # onModeClick»), que por omisión le quita al navegador su acción, así que el radio puede no marcarse aunque el
+    # portal pase a «Door» (sin medir en el portal).
+    radio = page.locator(f"#{MSC_DESCARGA_A_PUERTA}")
+    campo_modo = page.locator(f"input[name='{MSC_MODO_DE_ENTREGA}_input']")
+    def activa():
+        return "active" in (puerta.get_attribute("class", timeout=1000) or "").split()
+    if not _msc_hasta(page, lambda: (activa() or radio.is_checked(timeout=1000)) and campo_modo.is_visible()):
+        raise ObjetivoNoEncontrado(MSC_PASO_PUERTA, "«Door» activa y el campo del modo a la vista, después del clic")
+    # Las dos señales, para que la primera prueba en el portal diga cuál se mueve (revisión de código del encargo 86).
+    try:
+        senales = f"etiqueta activa: {'sí' if activa() else 'no'}; radio marcado: " \
+                  f"{'sí' if radio.is_checked(timeout=1000) else 'no'}"
+    except Exception as e:
+        senales = f"no pude leer sus señales ({_texto_error(e)})"
+    reg.info(f"Port of Discharge: Door ✓ ({senales})")
+    # El modo: abre su lista con su flecha y pulsa la única opción que dice MSC_EN_CAMION, entera.
+    flecha = _msc_unico_a_la_vista(page, f"span.k-select[aria-controls='{MSC_MODO_DE_ENTREGA}_listbox']",
+                                   MSC_PASO_MODO, "la flecha de la lista del modo («Select on-carriage mode»)")
+    try:
+        flecha.click(timeout=4000)
+    except Exception as e:
+        raise ObjetivoNoEncontrado(MSC_PASO_MODO, f"la flecha de la lista del modo, que no aceptó el clic "
+                                                  f"({_texto_error(e)})")
+    _msc_elegir_de_lista(page, reg, MSC_MODO_DE_ENTREGA, lambda t: t == MSC_EN_CAMION, MSC_EN_CAMION, MSC_PASO_MODO,
+                         "On-carriage mode", f"msc_f{fila}_modo")
+    campo = page.locator(f"input[name='{MSC_DESTINO_FINAL}_input']")
+    if not _msc_hasta(page, lambda: (campo_modo.input_value(timeout=1000).strip() == MSC_EN_CAMION
+                                     and campo.is_visible())):
+        raise ObjetivoNoEncontrado(MSC_PASO_MODO, f"el modo «{MSC_EN_CAMION}» en su campo y el campo «Destination» a la "
+                                                  f"vista, después del clic")
+    reg.info(f"On-carriage mode: {MSC_EN_CAMION} ✓")
+    # El destino: escribe la ciudad y elige la única sugerencia que la trae.
+    campo = _msc_unico_a_la_vista(page, f"input[name='{MSC_DESTINO_FINAL}_input']", MSC_PASO_DESTINO,
+                                  "el campo «Destination» de «Intermodal Details - Final destination»")
+    try:
+        campo.click(timeout=4000)
+        campo.fill("", timeout=3000)
+        campo.type(ciudad, delay=90)
+    except Exception as e:
+        raise ObjetivoNoEncontrado(MSC_PASO_DESTINO, f"el campo «Destination», para escribir «{ciudad}» "
+                                                     f"({_texto_error(e)})")
+    esperar(page, 1.0)
+    elegida = _msc_elegir_de_lista(page, reg, MSC_DESTINO_FINAL, lambda t: _msc_calza_el_destino(t, ciudad), ciudad,
+                                   MSC_PASO_DESTINO, "Destination", f"msc_f{fila}_destino_final")
+    if not _msc_hasta(page, lambda: " ".join(campo.input_value(timeout=1000).split()) == elegida):
+        raise ObjetivoNoEncontrado(MSC_PASO_DESTINO, f"«{elegida[:45]}» en el campo «Destination», después del clic")
+    reg.info(f"Destination '{ciudad}': {elegida}")
 
 
 @_con_la_nave_de_la_fila
@@ -5759,7 +5971,10 @@ def _msc_buscar_itinerarios(page, reg):
 @_sin_clic_a_ciegas("msc")
 def reservar_msc(page, reserva, creds, reg, on_pausa=None):
     f = reserva["fila"]
-    reg.paso(f"[MSC fila {f}] {reserva['pol']} -> {reserva['destino_final']} | NAVE: {reserva['nave']}")
+    # Con un puerto de descarga y otro destino final, los dos, como CMA-CGM (encargo 86, _msc_destino_separado).
+    separado = _msc_destino_separado(reserva)
+    destino = f"{separado[0]} / {separado[1]}" if separado else reserva['destino_final']
+    reg.paso(f"[MSC fila {f}] {reserva['pol']} -> {destino} | NAVE: {reserva['nave']}")
     _avisar_dia_carga(reserva, reg)
     reg.paso("Abriendo eBooking de MSC...")
     try:
@@ -5824,15 +6039,26 @@ def reservar_msc(page, reserva, creds, reg, on_pausa=None):
                        evidencia=f"msc_f{f}_origen"):
         raise ObjetivoNoEncontrado("Port of Load de MSC", _sugerencia_que_elegir(reserva["pol"]))
     esperar(page, 0.8)
-    dest = (reserva["destino_final"] or reserva["destino_orig"] or "").split(",")[0].strip()
+    # Con un destino final aparte, en «Port of Discharge» va el puerto de descarga, y el destino final después
+    # (_msc_destino_final; decisión de Marcelo, encargo 86, CICLO-msc-destino-final.md). Con uno solo, como siempre.
+    # El puerto separado, con los espacios de a uno: un salto de línea en la celda (Alt+Enter) sería la tecla Enter al
+    # escribirlo (revisión de seguridad del encargo 86). El camino de un solo puerto no cambió.
+    if separado:
+        dest = " ".join(separado[0].split(",")[0].split())
+    else:
+        dest = (reserva["destino_final"] or reserva["destino_orig"] or "").split(",")[0].strip()
     if not _msc_puerto(page, "PODId_input", dest, reg, "Port of Discharge", evidencia=f"msc_f{f}_destino"):
         raise ObjetivoNoEncontrado("Port of Discharge de MSC", _sugerencia_que_elegir(dest))
     esperar(page, 0.8)
+    if separado:
+        _msc_destino_final(page, reg, f, separado[1])
+        esperar(page, 0.8)
     reg.captura(page, f"msc_f{f}_2a_ruta", full=True)
 
-    # Buscar itinerarios: el botón por su texto, o corta (_msc_buscar_itinerarios)
+    # Buscar itinerarios: el botón por su texto, o corta (_msc_buscar_itinerarios); con un destino final aparte, mira
+    # también las listas del modo y del destino antes del clic.
     reg.paso("Buscando itinerarios (Search Schedule)...")
-    _msc_buscar_itinerarios(page, reg)
+    _msc_buscar_itinerarios(page, reg, MSC_PUERTOS + (MSC_LISTAS_DEL_DESTINO if separado else ()))
     # Esperar a que carguen los itinerarios (aparecen progresivamente); avanza al estabilizarse
     n = 0; estable = 0
     for _ in range(20):

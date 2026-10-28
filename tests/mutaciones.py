@@ -3541,7 +3541,7 @@ MUTACIONES += [
          viejo=BUSCA_SELECTOR, nuevo='    if not click_si_existe(page, "button", 6000, reg):\n        raise ObjetivoNoEncontrado('),
     # reservar_msc pulsa sin el ayudante, y no corta.
     dict(id="msc-busca-sin-el-ayudante", pruebas=[MSC_BUSCA],
-         viejo="    _msc_buscar_itinerarios(page, reg)\n",
+         viejo="    _msc_buscar_itinerarios(page, reg, MSC_PUERTOS + (MSC_LISTAS_DEL_DESTINO if separado else ()))\n",
          nuevo='    click_si_existe(page, "button:has-text(\'Search Schedule\')", 6000, reg)\n'),
 ]
 
@@ -9415,7 +9415,7 @@ POR_QUE_E82 = ('        por_que = ("no pude volver a leerla" if despues is None 
 
 MUTACIONES += [
     dict(id="e82-lista-no-se-mira", pruebas=[LISTA_E82],
-         viejo="    _msc_cerrar_listas_abiertas(page, reg)\n    if not click_si_existe(", nuevo="    if not click_si_existe("),
+         viejo="    _msc_cerrar_listas_abiertas(page, reg, listas)\n    if not click_si_existe(", nuevo="    if not click_si_existe("),
     dict(id="e82-lista-no-se-cierra", pruebas=[LISTA_E82, CORTA_E82],
          viejo="            r = page.evaluate(_JS_MSC_CERRAR_LISTA, i)\n", nuevo='            r = "no la cerré"\n'),
     dict(id="e82-lista-sin-comprobar", pruebas=[CORTA_E82],
@@ -9434,8 +9434,8 @@ MUTACIONES += [
          viejo="    for i, etiqueta in abiertas:\n        por_que = (",
          nuevo="    for i, etiqueta in abiertas[:1]:\n        por_que = ("),
     dict(id="e82-lista-sin-plazo-del-cierre", pruebas=[LISTA_E82, CORTA_E82],
-         viejo="    esperar(page, 0.6)\n    try:\n        despues = _msc_listas_de_puertos(page)\n",
-         nuevo="    esperar(page, 0)\n    try:\n        despues = _msc_listas_de_puertos(page)\n"),
+         viejo="    esperar(page, 0.6)\n    try:\n        despues = _msc_listas_de_puertos(page, listas)\n",
+         nuevo="    esperar(page, 0)\n    try:\n        despues = _msc_listas_de_puertos(page, listas)\n"),
     dict(id="e82-lista-espera-siempre", pruebas=[CERRADAS_E82],
          viejo="    if not abiertas:\n        return\n", nuevo="    esperar(page, 0.6)\n    if not abiertas:\n        return\n"),
     dict(id="e82-lista-lectura-fallida-corta", pruebas=[CERRADAS_E82],
@@ -10009,4 +10009,114 @@ MUTACIONES += [
          viejo="body:not(.light-theme) .modo-insignia.seguro { background: rgba(30, 45, 59, 0.5); }",
          nuevo="body:not(.light-theme) .modo-insignia.seguro { background: rgba(30, 45, 59, 0.5); }\n"
                "#nota-modo span { color: #1E2D3B; }"),
+]
+
+# --- Encargo 86 (CICLO-msc-destino-final.md): MSC con un puerto de descarga y otro destino final (decisión de Marcelo).
+# La lectura de CMA-CGM para separarlos; el puerto en «Port of Discharge» y el destino final después («Door», «TRUCK» y
+# «Destination», con la única sugerencia que trae la ciudad como palabra entera); con un solo puerto, el camino de
+# siempre; y las listas del modo y del destino, también antes de «Search Schedule». Sin separar, sin distinguir
+# mayúsculas, con un nombre dentro del otro, con el destino final en el puerto o el puerto sin cortar en su coma, sin el
+# destino final, sin sus listas antes de buscar, sin pulsar «Door», sin comprobarla o con una sola de sus dos señales,
+# sin anotarlas, con otro texto o con varias, con «TRUCK» dentro de otra opción, con la primera de varias, con la ciudad
+# en cualquier lugar, sin su borde o con el borde de las letras del castellano, sin lecturas iguales, sin volver a leer
+# la lista o la opción, sin comprobar el campo, con la celda entera o sus espacios (también los del puerto), sin
+# escribir o sin evidencia.
+DFM = "test_clics.TestDestinoFinalMsc."
+DFM_LECTURA = DFM + "test_la_misma_lectura_que_cma"
+DFM_CAMINOS = DFM + "test_los_dos_caminos"
+DFM_PAGINA = DFM + "test_el_destino_final_en_la_pagina"
+DFM_CORTA = DFM + "test_cada_paso_corta_sin_seguir"
+DFM_LISTAS = DFM + "test_las_listas_del_destino_antes_de_buscar"
+DFM_LECTORES = "test_planilla.TestDestinoSeparadoMsc.test_los_dos_lectores_separan_las_mismas_filas"
+SEPARA_E86 = "    if puerto and final and puerto.upper() not in final.upper() and final.upper() not in puerto.upper():\n"
+DOOR_E86 = ("    if not _msc_hasta(page, lambda: (activa() or radio.is_checked(timeout=1000)) and "
+            "campo_modo.is_visible()):\n")
+CIUDAD_E86 = ('    ciudad = " ".join(_ciudad_de(final).split())\n    if not ciudad:\n'
+              "        raise ObjetivoNoEncontrado(MSC_PASO_DESTINO")
+PUERTO_E86 = '        dest = " ".join(separado[0].split(",")[0].split())\n'
+CALZA_E86 = "    return bool(c) and s.startswith(c) and not s[len(c):len(c) + 1].isalnum()\n"
+MUTACIONES += [
+    dict(id="e86-nunca-separa", pruebas=[DFM_LECTURA, DFM_CAMINOS, DFM_LECTORES],
+         viejo=SEPARA_E86, nuevo="    if False:\n"),
+    dict(id="e86-separa-sin-mayusculas", pruebas=[DFM_LECTURA],
+         viejo=SEPARA_E86, nuevo="    if puerto and final and puerto not in final and final not in puerto:\n"),
+    dict(id="e86-separa-con-el-final-dentro", pruebas=[DFM_LECTURA],
+         viejo=SEPARA_E86, nuevo="    if puerto and final and puerto.upper() not in final.upper():\n"),
+    dict(id="e86-puerto-con-el-final", pruebas=[DFM_CAMINOS],
+         viejo=PUERTO_E86, nuevo="        dest = \" \".join(separado[1].split(\",\")[0].split())\n"),
+    dict(id="e86-puerto-sin-cortar-en-la-coma", pruebas=[DFM_CAMINOS],
+         viejo=PUERTO_E86, nuevo="        dest = \" \".join(separado[0].split())\n"),
+    dict(id="e86-puerto-con-sus-saltos-de-linea", pruebas=[DFM_CAMINOS],
+         viejo=PUERTO_E86, nuevo="        dest = separado[0].split(\",\")[0].strip()\n"),
+    dict(id="e86-sin-destino-final", pruebas=[DFM_CAMINOS],
+         viejo="        _msc_destino_final(page, reg, f, separado[1])\n", nuevo="        pass\n"),
+    dict(id="e86-buscar-sin-sus-listas", pruebas=[DFM_CAMINOS, MSC_BUSCA],
+         viejo="    _msc_buscar_itinerarios(page, reg, MSC_PUERTOS + (MSC_LISTAS_DEL_DESTINO if separado else ()))\n",
+         nuevo="    _msc_buscar_itinerarios(page, reg, MSC_PUERTOS)\n"),
+    dict(id="e86-linea-sin-el-puerto", pruebas=[DFM_CAMINOS],
+         viejo="    destino = f\"{separado[0]} / {separado[1]}\" if separado else reserva['destino_final']\n",
+         nuevo="    destino = reserva['destino_final']\n"),
+    dict(id="e86-listas-solo-los-puertos", pruebas=[DFM_LISTAS],
+         viejo="    abiertas = [(i, etiqueta) for i, etiqueta in listas if antes[i][0]]\n",
+         nuevo="    abiertas = [(i, etiqueta) for i, etiqueta in MSC_PUERTOS if antes[i][0]]\n"),
+    dict(id="e86-sin-pulsar-door", pruebas=[DFM_PAGINA],
+         viejo="        puerta.click(timeout=4000)\n", nuevo="        pass\n"),
+    dict(id="e86-door-sin-comprobar", pruebas=[DFM_CORTA],
+         viejo=DOOR_E86, nuevo="    if False:\n"),
+    dict(id="e86-door-solo-el-radio", pruebas=[DFM_PAGINA],
+         viejo=DOOR_E86, nuevo="    if not _msc_hasta(page, lambda: radio.is_checked(timeout=1000) and campo_modo.is_visible()):\n"),
+    dict(id="e86-door-solo-la-clase", pruebas=[DFM_PAGINA],
+         viejo=DOOR_E86, nuevo="    if not _msc_hasta(page, lambda: activa() and campo_modo.is_visible()):\n"),
+    dict(id="e86-door-sin-sus-senales", pruebas=[DFM_PAGINA],
+         viejo="    reg.info(f\"Port of Discharge: Door ✓ ({senales})\")\n",
+         nuevo="    reg.info(\"Port of Discharge: Door ✓\")\n"),
+    dict(id="e86-door-con-otro-texto", pruebas=[DFM_CORTA],
+         viejo="    if dice != \"Door\":\n", nuevo="    if not dice:\n"),
+    dict(id="e86-door-uno-de-varios", pruebas=[DFM_CORTA],
+         viejo="        if n == 1 and loc.is_visible():\n", nuevo="        if n >= 1 and loc.is_visible():\n"),
+    dict(id="e86-modo-dentro-de-otro", pruebas=[DFM_PAGINA],
+         viejo="lambda t: t == MSC_EN_CAMION, MSC_EN_CAMION,", nuevo="lambda t: MSC_EN_CAMION in t, MSC_EN_CAMION,"),
+    dict(id="e86-modo-sin-comprobar", pruebas=[DFM_CORTA],
+         viejo=("    if not _msc_hasta(page, lambda: (campo_modo.input_value(timeout=1000).strip() == MSC_EN_CAMION\n"
+                "                                     and campo.is_visible())):\n"),
+         nuevo="    if not _msc_hasta(page, lambda: True):\n"),
+    dict(id="e86-la-primera-de-varias", pruebas=[DFM_CORTA],
+         viejo="    if len(calzan) != 1:\n", nuevo="    if not calzan:\n"),
+    dict(id="e86-destino-en-cualquier-lugar", pruebas=[DFM_CORTA],
+         viejo=CALZA_E86, nuevo="    return bool(c) and c in s and not s[len(c):len(c) + 1].isalnum()\n"),
+    dict(id="e86-destino-sin-borde", pruebas=[DFM_CORTA],
+         viejo=CALZA_E86, nuevo="    return bool(c) and s.startswith(c)\n"),
+    dict(id="e86-destino-borde-solo-latino", pruebas=[DFM_CORTA],
+         viejo=CALZA_E86,
+         nuevo="    return bool(c) and s.startswith(c) and s[len(c):len(c) + 1] not in _LETRAS_DE_NAVE\n"),
+    dict(id="e86-destino-sin-su-regla", pruebas=[DFM_CORTA],
+         viejo="lambda t: _msc_calza_el_destino(t, ciudad), ciudad,", nuevo="lambda t: True, ciudad,"),
+    dict(id="e86-lista-sin-lecturas-iguales", pruebas=[DFM_PAGINA],
+         viejo=("            op, textos = _msc_opciones(page, lista)\n        except Exception:\n"
+                "            op, textos = None, []\n        if textos and textos == anterior:\n"),
+         nuevo=("            op, textos = _msc_opciones(page, lista)\n        except Exception:\n"
+                "            op, textos = None, []\n        if textos:\n")),
+    dict(id="e86-lista-sin-volver-a-leer", pruebas=[DFM_CORTA],
+         viejo="    if despues != textos:\n        raise ObjetivoNoEncontrado(paso, f\"la opción que calza",
+         nuevo="    if False:\n        raise ObjetivoNoEncontrado(paso, f\"la opción que calza"),
+    dict(id="e86-opcion-sin-volver-a-leer", pruebas=[DFM_CORTA],
+         viejo="    if ahora != texto:\n        raise ObjetivoNoEncontrado(paso, f\"la opción «{texto[:45]}»: la que",
+         nuevo="    if False:\n        raise ObjetivoNoEncontrado(paso, f\"la opción «{texto[:45]}»: la que"),
+    dict(id="e86-destino-sin-comprobar", pruebas=[DFM_CORTA],
+         viejo="    if not _msc_hasta(page, lambda: \" \".join(campo.input_value(timeout=1000).split()) == elegida):\n",
+         nuevo="    if not _msc_hasta(page, lambda: True):\n"),
+    dict(id="e86-destino-con-la-celda-entera", pruebas=[DFM_PAGINA],
+         viejo=CIUDAD_E86,
+         nuevo="    ciudad = final\n    if not ciudad:\n        raise ObjetivoNoEncontrado(MSC_PASO_DESTINO"),
+    dict(id="e86-destino-con-sus-espacios", pruebas=[DFM_PAGINA],
+         viejo=CIUDAD_E86,
+         nuevo="    ciudad = _ciudad_de(final)\n    if not ciudad:\n        raise ObjetivoNoEncontrado(MSC_PASO_DESTINO"),
+    dict(id="e86-destino-sin-palabra", pruebas=[DFM_CORTA],
+         viejo=CIUDAD_E86,
+         nuevo="    ciudad = final\n    if False:\n        raise ObjetivoNoEncontrado(MSC_PASO_DESTINO"),
+    dict(id="e86-lista-sin-evidencia", pruebas=[DFM_PAGINA, "test_evidencia.TestCadaReservadorLaDeja.test_solo_ahi"],
+         viejo="    _evidencia_antes_de_la_guarda(page, reg, evidencia, f\"con la lista de «{nombre}»\", completa=False)\n",
+         nuevo=""),
+    dict(id="e86-destino-sin-escribir", pruebas=[DFM_PAGINA],
+         viejo="        campo.type(ciudad, delay=90)\n", nuevo="        pass\n"),
 ]

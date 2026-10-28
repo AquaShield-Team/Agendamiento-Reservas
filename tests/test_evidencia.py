@@ -276,7 +276,10 @@ class TestCadaReservadorLaDeja(soporte.CasoAQ):
                                           + ["_mk_elegir_unica"]
                                           # Desde el encargo 76, HYUNDAI en «Booking Reference» antes de volver a pulsar
                                           # su NEXT (test_clics.TestHyundai, CICLO-hyundai-paso-uno.md).
-                                          + ["_hmm_reintentar_paso2"]))
+                                          + ["_hmm_reintentar_paso2"]
+                                          # Desde el encargo 86, MSC con la lista del modo y la del destino final,
+                                          # antes de elegir (test_clics.TestDestinoFinalMsc, CICLO-msc-destino-final.md).
+                                          + ["_msc_elegir_de_lista"]))
 
 
 class TestHtmlSinObjetivo(ConRegistro):

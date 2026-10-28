@@ -504,6 +504,22 @@ class TestDestinoFinalConGuion(ConPlanilla):
                          ["", "", "--", "N/A", "", None, "CIUDAD GAMMA"])
 
 
+class TestDestinoSeparadoMsc(ConPlanilla):
+    def test_los_dos_lectores_separan_las_mismas_filas(self):
+        # Decisión de Marcelo (encargo 86, CICLO-msc-destino-final.md): MSC separa el puerto de descarga del destino
+        # final cuando la fila trae los dos distintos, en «Puerto Descarga» y «Destino Final» (_msc_destino_separado).
+        # Los dos lectores dan lo mismo: la fila 5 los trae distintos; la 6, también; la 7, sin puerto de descarga en el
+        # panel (y en la consola, con el destino final en su lugar), uno solo.
+        m = self.mod
+        libro = openpyxl.load_workbook(self.planilla, data_only=True)
+        lectores = {"consola": {f["fila"]: f for f in m.leer_reservas("msc")},
+                    "web": {f["fila"]: f for f in m.leer_filas(libro["MSC"])[2]}}
+        for lector, filas in lectores.items():
+            with self.subTest(lector=lector):
+                self.assertEqual([m._msc_destino_separado(filas[f]) for f in (5, 6, 7)],
+                                 [("PUERTO BETA", "CIUDAD GAMMA"), ("PUERTO DELTA", "CIUDAD ETA"), None])
+
+
 class TestContenedorDeLaFila(ConPlanilla):
     def test_los_dos_lectores_dan_el_mismo_contenedor(self):
         # Decisión de Marcelo (encargo 64, CICLO-maersk-contenedor-consola-y-panel.md): con una columna de contenedor y

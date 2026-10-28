@@ -527,7 +527,11 @@ class TestSinSugerenciaNoSigue(ConRegistro):
              ["one_f9_origen", "one_f9_destino"]),
             ("reservar_msc", "_msc_puerto", [False], R, None, "Port of Load de MSC", que.format("PUERTO ALFA"),
              ["msc_f9_origen"]),
+            # Desde el encargo 86, con un puerto de descarga y otro destino final, en «Port of Discharge» va el puerto
+            # (TestDestinoFinalMsc); con uno solo, el destino, como siempre.
             ("reservar_msc", "_msc_puerto", [True, False], R, None, "Port of Discharge de MSC",
+             que.format("PUERTO BETA"), ["msc_f9_origen", "msc_f9_destino"]),
+            ("reservar_msc", "_msc_puerto", [True, False], RAMP, None, "Port of Discharge de MSC",
              que.format("CIUDAD GAMMA"), ["msc_f9_origen", "msc_f9_destino"]),
             ("reservar_cosco", "_cosco_autocomplete", [False], R, None, "Destination de COSCO",
              que.format("CIUDAD GAMMA"), ["cosco_f9_destino"]),
@@ -2481,8 +2485,10 @@ console.log(JSON.stringify([
         f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_msc")
         g = linea_guarda(f)
         antes = [c for n in antes_de_la_guarda(f, g) for c in ast.walk(n) if isinstance(c, ast.Call)]
+        # Desde el encargo 86, con las listas que mira antes del clic: con un destino final aparte, también la del modo y
+        # la del destino (TestDestinoFinalMsc).
         self.assertEqual([ast.unparse(c) for c in antes if ast.unparse(c.func) == "_msc_buscar_itinerarios"],
-                         ["_msc_buscar_itinerarios(page, reg)"])
+                         ["_msc_buscar_itinerarios(page, reg, MSC_PUERTOS + (MSC_LISTAS_DEL_DESTINO if separado else ()))"])
         nombres = lambda nodos: [x.id for n in nodos for x in ast.walk(n) if isinstance(x, ast.Name)]
         self.assertNotIn("_JS_CLICK_BTN", nombres(antes_de_la_guarda(f, g)))
         self.assertEqual(nombres(f.body).count("_JS_CLICK_BTN"), 1)
@@ -2712,6 +2718,342 @@ const correr = (n) => {
 console.log(JSON.stringify([correr(27), correr(0)]));
 """
         self.assertEqual(correr_node(self, guion), [[27, 3000, 5000, 0, 5000], [0, 0, 0, 0, None]])
+
+
+class ElemMsc:
+    """Un elemento de PaginaDestinoMsc: cuántos hay, si se ve, su texto, su valor, si está marcado y qué hace su clic.
+    Anota en la página cada clic, lo que se borra y lo que se escribe."""
+
+    def __init__(self, pagina, nombre, cuantos=lambda: 1, visible=lambda: True, texto=lambda: "", valor=lambda: "",
+                 marcado=lambda: False, clase=lambda: "", al_pulsar=None):
+        self.pagina, self.nombre = pagina, nombre
+        self.cuantos, self.visible, self.texto, self.valor, self.marcado = cuantos, visible, texto, valor, marcado
+        self.clase, self.al_pulsar = clase, al_pulsar
+
+    def get_attribute(self, nombre, **k):
+        if nombre != "class":
+            raise AssertionError(f"atributo inesperado: {nombre}")
+        return self.clase()
+
+    def count(self):
+        return self.cuantos()
+
+    def is_visible(self, **k):
+        return self.visible()
+
+    def text_content(self, **k):
+        return self.texto()
+
+    def input_value(self, **k):
+        return self.valor()
+
+    def is_checked(self, **k):
+        return self.marcado()
+
+    def click(self, **k):
+        if self.nombre in self.pagina.no_aceptan:
+            raise RuntimeError("no acepta el clic")
+        self.pagina.eventos.append(("clic", self.nombre))
+        if self.al_pulsar:
+            self.al_pulsar()
+
+    def fill(self, v, **k):
+        self.pagina.eventos.append(("borra", self.nombre))
+
+    def type(self, v, **k):
+        self.pagina.eventos.append(("escribe", self.nombre, v))
+        self.pagina.escrito = v
+
+
+class ListaMsc:
+    """Las opciones a la vista de una lista de PaginaDestinoMsc: cada lectura da lo que da 'leer' en ese momento."""
+
+    def __init__(self, pagina, nombre, leer):
+        self.pagina, self.nombre, self.leer = pagina, nombre, leer
+
+    def all_text_contents(self):
+        return list(self.leer())
+
+    def nth(self, i):
+        lista = self
+
+        class Opcion:
+            def element_handle(self, **k):
+                texto = lista.leer()[i]
+                dice = lista.pagina.texto_al_pulsar or texto
+                return ElemMsc(lista.pagina, f"{lista.nombre}: {dice}", texto=lambda: dice,
+                               al_pulsar=lambda: lista.pagina.elige(lista.nombre, dice))
+        return Opcion()
+
+
+class PaginaDestinoMsc(soporte.PaginaFalsa):
+    """La sección del destino final de MSC en «Route Details», con los ids medidos en los 165 HTML guardados (encargo
+    86, CICLO-msc-destino-final.md): la etiqueta «Door» del puerto de descarga y su radio, el combobox del modo (su
+    campo, su flecha y su lista) y el del destino (su campo y su lista, que llega después de escribir). Cada argumento
+    cambia una cosa: cuántos «Door» hay y qué dicen, si su clic activa la etiqueta y si marca el radio (Knockout le
+    quita al navegador su acción, así que puede activar la etiqueta sin marcar el radio), las opciones del modo, si su
+    clic queda en el campo, las lecturas sucesivas de la lista del destino (la última se repite), si su clic queda en
+    el campo, y el texto de la opción justo antes del clic. 'eventos' anota en orden lo que se hace."""
+
+    def __init__(self, puertas=1, dice="Door", activa_puerta=True, marca_puerta=False,
+                 modos=("TRUCK", "TRUCK/RAIL", "TRUCK/BARGE"), marca_modo=True,
+                 destinos=(("CIUDAD GAMMA 10, PAIS [XXGAM 10]", "CIUDAD GALAXIA, PAIS [XXGAL]"),), marca_destino=True,
+                 no_aceptan=()):
+        super().__init__(texto="")
+        self.eventos, self.escrito, self.texto_al_pulsar, self.no_aceptan = [], "", "", set(no_aceptan)
+        self.puerta, self.puerta_activa, self.modo_abierto, self.modo, self.destino = False, False, False, "", ""
+        self.puertas, self.dice, self.activa_puerta, self.marca_puerta = puertas, dice, activa_puerta, marca_puerta
+        self.modos, self.marca_modo = list(modos), marca_modo
+        self.destinos, self.marca_destino = [list(d) for d in destinos], marca_destino
+
+    def leer_destinos(self):
+        if not self.escrito:
+            return []
+        return self.destinos.pop(0) if len(self.destinos) > 1 else self.destinos[0]
+
+    def elige(self, lista, texto):
+        if lista == "modo" and self.marca_modo:
+            self.modo = texto
+        if lista == "destino" and self.marca_destino:
+            self.destino = texto
+
+    def pulsa_puerta(self):
+        self.puerta, self.puerta_activa = self.marca_puerta, self.activa_puerta
+
+    def en_door(self):
+        return self.puerta or self.puerta_activa
+
+    def abre_modo(self):
+        self.modo_abierto = True
+
+    def locator(self, sel):
+        m = self.mod
+        elementos = {
+            f"#{m.MSC_DESCARGA_A_PUERTA}Label": lambda: ElemMsc(
+                self, "Door", cuantos=lambda: self.puertas, texto=lambda: self.dice, al_pulsar=self.pulsa_puerta,
+                clase=lambda: "btnFilter active" if self.puerta_activa else "btnFilter"),
+            f"#{m.MSC_DESCARGA_A_PUERTA}": lambda: ElemMsc(self, "radio Door", marcado=lambda: self.puerta),
+            f"input[name='{m.MSC_MODO_DE_ENTREGA}_input']": lambda: ElemMsc(self, "campo del modo",
+                                                                            visible=self.en_door,
+                                                                            valor=lambda: self.modo),
+            f"span.k-select[aria-controls='{m.MSC_MODO_DE_ENTREGA}_listbox']": lambda: ElemMsc(
+                self, "flecha del modo", visible=self.en_door, al_pulsar=self.abre_modo),
+            f"#{m.MSC_MODO_DE_ENTREGA}_listbox li:visible": lambda: ListaMsc(
+                self, "modo", lambda: self.modos if self.modo_abierto else []),
+            f"input[name='{m.MSC_DESTINO_FINAL}_input']": lambda: ElemMsc(
+                self, "campo del destino", visible=lambda: self.modo == m.MSC_EN_CAMION, valor=lambda: self.destino),
+            f"#{m.MSC_DESTINO_FINAL}_listbox li:visible": lambda: ListaMsc(self, "destino", self.leer_destinos),
+        }
+        if sel == ":root":
+            return soporte.RaizFalsa(self)
+        if sel not in elementos:
+            raise AssertionError(f"localizador inesperado: {sel}")
+        return elementos[sel]()
+
+
+class TestDestinoFinalMsc(ConRegistro):
+    """MSC con un puerto de descarga y otro destino final (decisión de Marcelo, encargo 86, CICLO-msc-destino-final.md):
+    la fila los trae en dos columnas, «Puerto Descarga» y «Destino Final», y MSC los separa con la lectura de CMA-CGM.
+    En «Port of Discharge» va el puerto, y después «Door», el modo «TRUCK» y el destino en «Destination», como en el
+    video del dueño; el destino, solo si una sola sugerencia lo trae. Con un solo puerto, el camino no cambia."""
+    SEPARADA = dict(TestSinSugerenciaNoSigue.RESERVA)                       # PUERTO BETA y CIUDAD GAMMA
+    UN_PUERTO = dict(TestSinSugerenciaNoSigue.RESERVA, destino_orig="CIUDAD GAMMA")
+
+    def test_la_misma_lectura_que_cma(self):
+        # La regla de CMA-CGM (tiene_ramp_separado, en reservar_cma), leída de su código y corrida sobre los mismos
+        # casos: MSC separa en las mismas filas. Las celdas de la planilla de ejemplo, con los nombres cambiados.
+        tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
+        cma = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_cma")
+        regla = next(n.value for n in ast.walk(cma) if isinstance(n, ast.Assign)
+                     and ast.unparse(n.targets[0]) == "tiene_ramp_separado")
+        casos = [("PUERTO BETA ", "CIUDAD GAMMA", True), ("PUERTO BETA", "PUERTO BETA", False),
+                 ("puerto beta", "PUERTO BETA", False), ("PUERTO BETA", "PUERTO BETA, PAIS", False),
+                 ("PUERTO BETA, PAIS", "puerto beta", False), ("", "CIUDAD GAMMA", False), ("PUERTO BETA", "", False),
+                 (None, None, False), ("PUERTO DELTA", "Ciudad Eta sg", True), ("BETA", "CIUDAD GAMMA BETA", False)]
+        for orig, final, separa in casos:
+            with self.subTest(orig=orig, final=final):
+                d_orig, d_fin = (orig or "").strip(), (final or "").strip()
+                self.assertEqual(eval(compile(ast.Expression(regla), "cma", "eval"),
+                                      {"dest_orig": d_orig, "dest_fin": d_fin}), separa)
+                r = self.mod._msc_destino_separado({"destino_orig": orig, "destino_final": final})
+                self.assertEqual(r, (d_orig, d_fin) if separa else None)
+
+    def ruta(self, reserva, nombre):
+        """Corre reservar_msc hasta «Search Schedule», con los pasos de antes reemplazados (los de
+        TestSinSugerenciaNoSigue) y los ayudantes de la ruta anotando lo que reciben; «Search Schedule» corta, así que
+        la fila queda NO ENVIADA ahí. Devuelve (resultado, lo anotado, log.txt)."""
+        anotado = []
+
+        def puerto(page, name, ciudad, reg, etiqueta, evidencia=""):
+            anotado.append(("puerto", etiqueta, ciudad))
+            return True
+
+        def buscar(page, reg, listas=None):
+            anotado.append(("buscar", [i for i, _ in listas]))
+            raise self.mod.ObjetivoNoEncontrado("Search Schedule de MSC", "fin de la prueba")
+        cambios = dict(TestSinSugerenciaNoSigue.ANTES["reservar_msc"], _msc_puerto=puerto, _msc_buscar_itinerarios=buscar,
+                       _msc_destino_final=lambda page, reg, fila, final: anotado.append(("destino final", fila, final)))
+        reg, _, log = self.corrida(nombre)
+        with mock.patch.multiple(self.mod, **cambios):
+            r = self.mod.reservar_msc(PaginaHastaLaRuta(), dict(reserva), {"contrato": "CT-PRUEBA"}, reg)
+        return r, anotado, log.read_text(encoding="utf-8")
+
+    def test_los_dos_caminos(self):
+        fin = ("NO ENVIADA", "Search Schedule de MSC: no encontré fin de la prueba, así que no pulsé nada. La reserva "
+                             "no se envió; revisa ese paso en el portal.")
+        r, anotado, log = self.ruta(self.SEPARADA, "msc_separada")
+        self.assertEqual(r, fin)
+        self.assertEqual(anotado, [("puerto", "Port of Load", "PUERTO ALFA"), ("puerto", "Port of Discharge", "PUERTO BETA"),
+                                   ("destino final", 9, "CIUDAD GAMMA"),
+                                   ("buscar", ["POLId", "PODId", "OnCarriageMode", "BookingCarriage_DestinationLocationId"])])
+        self.assertIn("[MSC fila 9] PUERTO ALFA, CHILE -> PUERTO BETA / CIUDAD GAMMA | NAVE: NAVE PRUEBA UNO", log)
+        # El puerto de descarga, como cualquier puerto de MSC, con la parte de su celda antes de la primera coma; y con
+        # los espacios de a uno: un salto de línea en la celda sería la tecla Enter al escribirlo (revisión de
+        # seguridad).
+        for k, celda in enumerate(("PUERTO BETA, PAIS", "PUERTO\nBETA ,PAIS", " PUERTO  BETA")):
+            with self.subTest(celda=celda):
+                _, anotado, _ = self.ruta(dict(self.SEPARADA, destino_orig=celda), f"msc_separada_celda_{k}")
+                self.assertEqual(anotado[1:3], [("puerto", "Port of Discharge", "PUERTO BETA"),
+                                                ("destino final", 9, "CIUDAD GAMMA")])
+        # Con un solo puerto (el de descarga es el destino final, o viene vacío), como siempre: el destino en «Port of
+        # Discharge», sin el destino final aparte, y antes del clic, solo las listas de los puertos.
+        for k, reserva in enumerate((self.UN_PUERTO, dict(self.UN_PUERTO, destino_orig=""))):
+            with self.subTest(destino_orig=reserva["destino_orig"]):
+                r, anotado, log = self.ruta(reserva, f"msc_un_puerto_{k}")
+                self.assertEqual(r, fin)
+                self.assertEqual(anotado, [("puerto", "Port of Load", "PUERTO ALFA"),
+                                           ("puerto", "Port of Discharge", "CIUDAD GAMMA"), ("buscar", ["POLId", "PODId"])])
+                self.assertIn("[MSC fila 9] PUERTO ALFA, CHILE -> CIUDAD GAMMA | NAVE: NAVE PRUEBA UNO", log)
+
+    def destino_final(self, pagina, final="CIUDAD GAMMA, PAIS", nombre="msc_destino"):
+        """Corre _msc_destino_final sobre 'pagina', sin esperas y anotando cada evidencia en sus eventos."""
+        def evidencia(page, reg, n, *a, **k):
+            page.eventos.append(("evidencia", n))
+            if getattr(page, "al_dejar_evidencia", None):
+                page.al_dejar_evidencia(n)
+        reg, _, log = self.corrida(nombre)
+        pagina.mod = self.mod
+        with mock.patch.multiple(self.mod, esperar=_nada, _evidencia_antes_de_la_guarda=evidencia):
+            self.mod._msc_destino_final(pagina, reg, 9, final)
+        return log.read_text(encoding="utf-8")
+
+    PASOS = [("clic", "Door"), ("clic", "flecha del modo"), ("evidencia", "msc_f9_modo"), ("clic", "modo: TRUCK"),
+             ("clic", "campo del destino"), ("borra", "campo del destino"),
+             ("escribe", "campo del destino", "CIUDAD GAMMA"), ("evidencia", "msc_f9_destino_final"),
+             ("clic", "destino: CIUDAD GAMMA 10, PAIS [XXGAM 10]")]
+
+    def test_el_destino_final_en_la_pagina(self):
+        # «Door», «TRUCK» (la única opción que lo dice entero, entre TRUCK/RAIL y TRUCK/BARGE) y la única sugerencia que
+        # trae la ciudad: la parte de la celda antes de su primera coma, como los puertos de MSC.
+        pagina = PaginaDestinoMsc()
+        log = self.destino_final(pagina)
+        self.assertEqual(pagina.eventos, self.PASOS)
+        self.assertEqual((pagina.puerta_activa, pagina.modo, pagina.destino),
+                         (True, "TRUCK", "CIUDAD GAMMA 10, PAIS [XXGAM 10]"))
+        for linea in ("Destino final aparte del puerto: CIUDAD GAMMA, PAIS (Door, TRUCK)...",
+                      "Port of Discharge: Door ✓ (etiqueta activa: sí; radio marcado: no)",
+                      "On-carriage mode: 1 de las 3 opciones a la vista calzan con «TRUCK»", "On-carriage mode: TRUCK ✓",
+                      "Destination: 1 de las 2 opciones a la vista calzan con «CIUDAD GAMMA»",
+                      "Destination 'CIUDAD GAMMA': CIUDAD GAMMA 10, PAIS [XXGAM 10]"):
+            self.assertIn(linea, log)
+        # «Door» queda con la etiqueta activa (lo que pone el portal) o con el radio marcado: cualquiera de las dos.
+        pagina = PaginaDestinoMsc(activa_puerta=False, marca_puerta=True)
+        log = self.destino_final(pagina, nombre="msc_destino_radio")
+        self.assertEqual(pagina.eventos, self.PASOS)
+        self.assertIn("Port of Discharge: Door ✓ (etiqueta activa: no; radio marcado: sí)", log)
+        # La ciudad, con los espacios de a uno: la búsqueda del portal empieza por lo escrito.
+        pagina = PaginaDestinoMsc()
+        self.destino_final(pagina, final=" CIUDAD  GAMMA , PAIS", nombre="msc_destino_espacios")
+        self.assertEqual(pagina.eventos, self.PASOS)
+        # La lista del destino llega de a poco: decide con dos lecturas iguales seguidas, no con la primera.
+        pagina = PaginaDestinoMsc(destinos=(("CIUDAD GAMMA 10, PAIS [XXGAM 10]", "CIUDAD GAMMA 20, PAIS [XXGAM 20]"),
+                                            ("CIUDAD GAMMA 10, PAIS [XXGAM 10]",)))
+        self.destino_final(pagina, nombre="msc_destino_de_a_poco")
+        self.assertEqual(pagina.eventos, self.PASOS)
+        self.assertEqual(self.mod.MSC_EN_CAMION, "TRUCK")
+
+    def test_cada_paso_corta_sin_seguir(self):
+        # Si algo no está, no es lo que dice o no queda, corta ahí (NO ENVIADA, con el paso y lo que buscaba), sin pulsar
+        # nada más.
+        m, P = self.mod, self.PASOS
+        dos = ("CIUDAD GAMMA 10, PAIS [XXGAM 10]", "CIUDAD GAMMA 20, PAIS [XXGAM 20]")
+        casos = [
+            ("sin Door", dict(puertas=0), {}, m.MSC_PASO_PUERTA, "uno solo a la vista (hay 0)", []),
+            ("dos Door", dict(puertas=2), {}, m.MSC_PASO_PUERTA, "uno solo a la vista (hay 2)", []),
+            ("dice otra cosa", dict(dice="Port"), {}, m.MSC_PASO_PUERTA, "dice «Port»", []),
+            ("no queda activa", dict(activa_puerta=False), {}, m.MSC_PASO_PUERTA, "«Door» activa", P[:1]),
+            ("sin TRUCK entero", dict(modos=("TRUCK/RAIL", "TRUCK/BARGE")), {}, m.MSC_PASO_MODO,
+             "hay 0 entre 2", P[:3]),
+            ("dos TRUCK", dict(modos=("TRUCK", "TRUCK")), {}, m.MSC_PASO_MODO, "hay 2 entre 2", P[:3]),
+            ("TRUCK no queda", dict(marca_modo=False), {}, m.MSC_PASO_MODO, "el modo «TRUCK» en su campo", P[:4]),
+            ("ninguna sugerencia", dict(destinos=((),)), {}, m.MSC_PASO_DESTINO,
+             "la lista no trajo ninguna opción", P[:8]),
+            ("ninguna que calce", dict(destinos=(("CIUDAD GALAXIA, PAIS [XXGAL]",),)), {}, m.MSC_PASO_DESTINO,
+             "hay 0 entre 1", P[:8]),
+            ("dos que calzan", dict(destinos=(dos,)), {}, m.MSC_PASO_DESTINO, "hay 2 entre 2", P[:8]),
+            # La sugerencia empieza por la ciudad como palabra entera: otra localidad que empieza por ella (también con
+            # una letra de otro alfabeto), o la ciudad en otro lugar de la sugerencia, no calzan (revisiones del encargo).
+            ("otra que empieza por ella", dict(destinos=(("CIUDAD GAMMAS 10, PAIS [XXGMS 10]",),)), {},
+             m.MSC_PASO_DESTINO, "hay 0 entre 1", P[:8]),
+            ("otra con una letra de otro alfabeto", dict(destinos=(("CIUDAD GAMMAŞ, PAIS [XXGMS]",),)), {},
+             m.MSC_PASO_DESTINO, "hay 0 entre 1", P[:8]),
+            ("la ciudad en otro lugar", dict(destinos=(("OTRA, CIUDAD GAMMA, PAIS [XXOTR]",),)), {},
+             m.MSC_PASO_DESTINO, "hay 0 entre 1", P[:8]),
+            ("Door no acepta el clic", dict(no_aceptan=("Door",)), {}, m.MSC_PASO_PUERTA, "no aceptó el clic", []),
+            ("la opción no acepta el clic", dict(no_aceptan=("destino: CIUDAD GAMMA 10, PAIS [XXGAM 10]",)), {},
+             m.MSC_PASO_DESTINO, "no aceptó el clic", P[:8]),
+            ("la lista cambia en la evidencia", {}, {"cambia": True}, m.MSC_PASO_DESTINO,
+             "la lista cambió mientras la guardaba", P[:8]),
+            ("la opción ya dice otra cosa", {}, {"texto_al_pulsar": "CIUDAD OTRA"}, m.MSC_PASO_DESTINO,
+             "ya dice «CIUDAD OTRA»", P[:8]),
+            ("el destino no queda", dict(marca_destino=False), {}, m.MSC_PASO_DESTINO,
+             "en el campo «Destination», después del clic", P),
+            ("la celda sin una palabra", {}, {"final": "X"}, m.MSC_PASO_DESTINO, m._TEXTO_DE_LA_FILA, []),
+        ]
+        for caso, (nombre, kw, extra, paso, buscaba, eventos) in enumerate(casos):
+            with self.subTest(caso=nombre):
+                pagina = PaginaDestinoMsc(**kw)
+
+                def al_dejar_evidencia(n, p=pagina, extra=extra):
+                    # Lo que cambia la página mientras se guarda la evidencia del destino.
+                    if not n.endswith("destino_final"):
+                        return
+                    if extra.get("cambia"):
+                        p.destinos[:] = [["CIUDAD GAMMA 30, PAIS [XXGAM 30]"]]
+                    p.texto_al_pulsar = extra.get("texto_al_pulsar", "")
+                pagina.al_dejar_evidencia = al_dejar_evidencia
+                with self.assertRaises(m.ObjetivoNoEncontrado) as c:
+                    self.destino_final(pagina, final=extra.get("final", "CIUDAD GAMMA, PAIS"), nombre=f"msc_corta_{caso}")
+                self.assertEqual(c.exception.paso, paso)
+                self.assertIn(buscaba, c.exception.buscaba)
+                self.assertEqual(pagina.eventos, eventos)
+
+    def test_las_listas_del_destino_antes_de_buscar(self):
+        # Con un destino final aparte, antes de «Search Schedule» mira también la lista del modo y la del destino: si
+        # una quedó abierta, la cierra sin elegir nada y comprueba que su campo sigue igual, como las de los puertos
+        # (encargo 82).
+        m, hechos, lecturas = self.mod, [], [[[False, "A"], [False, "B"], [False, "TRUCK"], [True, "D"]],
+                                              [[False, "A"], [False, "B"], [False, "TRUCK"], [False, "D"]]]
+        listas = m.MSC_PUERTOS + m.MSC_LISTAS_DEL_DESTINO
+
+        def evaluar(js, *a):
+            if js == m._JS_MSC_LISTAS_DE_PUERTOS:
+                hechos.append(("lee", tuple(a[0])))
+                return lecturas.pop(0)
+            if js == m._JS_MSC_CERRAR_LISTA:
+                hechos.append(("cierra", a[0]))
+                return "cerrada"
+            raise AssertionError(f"JavaScript inesperado: {js[:60]}")
+        pagina = soporte.PaginaFalsa(texto=evaluar)
+        reg, _, log = self.corrida("msc_listas_destino")
+        with mock.patch.object(m, "click_si_existe", lambda *a, **k: hechos.append(("clic",)) or True):
+            m._msc_buscar_itinerarios(pagina, reg, listas)
+        ids = ("POLId", "PODId", "OnCarriageMode", "BookingCarriage_DestinationLocationId")
+        self.assertEqual(hechos, [("lee", ids), ("cierra", "BookingCarriage_DestinationLocationId"), ("lee", ids),
+                                  ("clic",)])
+        self.assertIn("Destination: lista cerrada, y su campo sigue con el puerto elegido", log.read_text(encoding="utf-8"))
+        self.assertEqual(m.MSC_LISTAS_DEL_DESTINO, (("OnCarriageMode", "On-carriage mode"),
+                                                    ("BookingCarriage_DestinationLocationId", "Destination")))
 
 
 class LocFalso:
