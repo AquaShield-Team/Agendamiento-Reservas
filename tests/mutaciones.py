@@ -10232,8 +10232,8 @@ CH_NO_SON = CH + "test_las_opciones_que_no_son_un_contrato_no_cuentan"
 CH_MOTIVOS = CH + "test_los_motivos_dicen_donde_se_escribe"
 CALZAN_E89 = "    calzan = _hmm_contratos_que_calzan(opciones, ctto)\n"
 SELECT_E89 = '    if not _hmm_select_por_texto(page, "#selContractNo", [calzan[0]], reg, "Contract No"):\n'
-CALZA_E89 = ("            if c and o and o.strip().lower() not in HMM_NO_SON_CONTRATO and _hmm_codigo_del_contrato(o) == c]"
-             "\n")
+SI_E89 = "            if c and o and o.strip().lower() not in HMM_NO_SON_CONTRATO\n"
+CALZA_E89 = "            and c in (_hmm_codigo_del_contrato(o), o.strip().upper())]\n"
 CODIGO_E89 = '    return str(opcion or "").split(" - ")[0].strip().upper()\n'
 PASO3_E89 = '    ctto = str(creds.get("contrato") or "").strip() or _contrato_por_defecto("hyundai")\n    if not ctto:\n'
 PASO2_E89 = '    ctto = str(creds.get("contrato") or "").strip() or _contrato_por_defecto("hyundai")\n    if ctto:\n'
@@ -10253,8 +10253,8 @@ MUTACIONES += [
          viejo=SELECT_E89, nuevo='    if not _hmm_select_por_texto(page, "#selContractNo", [ctto], reg, "Contract No"):\n'),
     dict(id="e89-calza-si-lo-contiene", pruebas=[CH_ENTERO],
          viejo=CALZA_E89,
-         nuevo="            if c and o and o.strip().lower() not in HMM_NO_SON_CONTRATO and c in o.upper()]\n"),
-    dict(id="e89-sigue-si-queda-otra", pruebas=[CH_QUEDA],
+         nuevo="            and c in o.upper()]\n"),
+    dict(id="e89-sigue-si-queda-otra", pruebas=[CH_QUEDA, CH_DOS],
          viejo="    if elegida != calzan[0].strip():\n", nuevo="    if False:\n"),
     dict(id="e89-da-por-elegida-sin-leerla", pruebas=[CH_QUEDA],
          viejo="        elegida = None\n", nuevo="        elegida = calzan[0]\n"),
@@ -10274,8 +10274,7 @@ MUTACIONES += [
     dict(id="e89-con-sus-espacios", pruebas=[CH_ELIGE],
          viejo='    c = str(ctto or "").strip().upper()\n', nuevo='    c = str(ctto or "").upper()\n'),
     dict(id="e89-calza-con-solo-espacios", pruebas=[CH_NO_SON],
-         viejo=CALZA_E89,
-         nuevo="            if o and o.strip().lower() not in HMM_NO_SON_CONTRATO and _hmm_codigo_del_contrato(o) == c]\n"),
+         viejo=SI_E89, nuevo="            if o and o.strip().lower() not in HMM_NO_SON_CONTRATO\n"),
     dict(id="e89-direct-input-es-un-contrato", pruebas=[CH_NO_SON],
          viejo='HMM_NO_SON_CONTRATO = ("select", "dummy", "direct input")\n', nuevo='HMM_NO_SON_CONTRATO = ("select",)\n'),
     dict(id="e89-motivo-con-config", pruebas=[CH_NO_ESTA, CH_MOTIVOS],
@@ -10311,6 +10310,20 @@ MUTACIONES += [
          viejo='            reg.info(f"Contract No: la lista quedó con «{_hmm_contrato_a_la_vista(elegida)}»")\n',
          nuevo="            pass\n"),
     dict(id="e89-motivo-sin-el-codigo", pruebas=[CH_NO_ESTA],
-         viejo='                                   f"entero con el código de cada opción, su texto antes de « - »; se corrige en el "\n',
-         nuevo='                                   f"entero con el código de cada opción; se corrige en el "\n'),
+         viejo='                                   f"entero con el código de cada opción, su texto antes de « - », o con su texto "\n',
+         nuevo='                                   f"entero con el código de cada opción, o con su texto "\n'),
+]
+
+# --- Encargo 90 (CICLO-hyundai-contrato-texto-completo.md): «Contract No» de HYUNDAI acepta también el contrato escrito
+# como el texto completo de la opción, comparado entero (_hmm_contratos_que_calzan), sin distinguir mayúsculas ni los
+# espacios de los extremos, en el contrato y en la opción; nunca «contiene». Sin el texto completo, distinguiendo
+# mayúsculas en la opción o con los espacios de la opción.
+CH_TEXTO = CH + "test_acepta_el_texto_completo_de_la_opcion"
+MUTACIONES += [
+    dict(id="e90-sin-el-texto-completo", pruebas=[CH_TEXTO],
+         viejo=CALZA_E89, nuevo="            and c == _hmm_codigo_del_contrato(o)]\n"),
+    dict(id="e90-texto-sin-mayusculas", pruebas=[CH_TEXTO],
+         viejo=CALZA_E89, nuevo="            and c in (_hmm_codigo_del_contrato(o), o.strip())]\n"),
+    dict(id="e90-texto-con-sus-espacios", pruebas=[CH_TEXTO],
+         viejo=CALZA_E89, nuevo="            and c in (_hmm_codigo_del_contrato(o), o.upper())]\n"),
 ]

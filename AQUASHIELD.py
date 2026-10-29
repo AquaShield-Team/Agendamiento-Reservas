@@ -8578,13 +8578,17 @@ def _hmm_codigo_del_contrato(opcion):
 
 
 def _hmm_contratos_que_calzan(opciones, ctto):
-    """Las opciones de «Contract No» cuyo código (_hmm_codigo_del_contrato) es el contrato configurado entero, sin los
-    espacios de sus extremos y sin distinguir mayúsculas; sin las que no son un contrato (HMM_NO_SON_CONTRATO).
-    Decisión de Marcelo (encargo 89, la opción (a) de la revisión de seguridad): hasta ahí bastaba que el texto de la
-    opción lo contuviera, y un contrato escrito a medias («CT-1») elegía otro que lo contenía («CT-12 - …»)."""
+    """Las opciones de «Contract No» cuyo código (_hmm_codigo_del_contrato) o cuyo texto completo es el contrato
+    configurado entero, sin los espacios de sus extremos y sin distinguir mayúsculas; sin las que no son un contrato
+    (HMM_NO_SON_CONTRATO). Nunca «el texto lo contiene».
+    Decisiones de Marcelo: en el encargo 89 (la opción (a) de la revisión de seguridad), el código: hasta ahí bastaba
+    que el texto de la opción lo contuviera, y un contrato escrito a medias («CT-1») elegía otro que lo contenía
+    («CT-12 - …»); en el 90 (CICLO-hyundai-contrato-texto-completo.md), también el texto completo, para el contrato
+    copiado de la lista tal cual («CT-1 - (GA)»), que con el 89 quedaba NO ENVIADA."""
     c = str(ctto or "").strip().upper()
     return [o for o in opciones
-            if c and o and o.strip().lower() not in HMM_NO_SON_CONTRATO and _hmm_codigo_del_contrato(o) == c]
+            if c and o and o.strip().lower() not in HMM_NO_SON_CONTRATO
+            and c in (_hmm_codigo_del_contrato(o), o.strip().upper())]
 
 
 def _hmm_contrato_a_la_vista(ctto):
@@ -8597,12 +8601,12 @@ def _hmm_contrato_a_la_vista(ctto):
 
 
 def _hmm_elegir_contrato(page, ctto, reg):
-    """Elige en «Contract No» del paso 3 de HYUNDAI la única opción cuyo código es el contrato configurado
-    (_hmm_contratos_que_calzan; la elige _hmm_select_por_texto con su texto entero, después de comprobar que es la
-    única) y comprueba, leyendo la lista, que quedó elegida esa misma. Si no hay una sola, corta sin elegir nada
-    (ObjetivoNoEncontrado: NO ENVIADA, con su evidencia), con el contrato que buscó (_hmm_contrato_a_la_vista) y, si se
-    corrige escribiéndolo, dónde (HMM_DONDE_VA_EL_CONTRATO); si el portal no mostró ningún contrato, lo dice, sin culpar
-    al configurado (revisión de código del encargo 89). Lee las opciones hasta que llegue la del contrato, o
+    """Elige en «Contract No» del paso 3 de HYUNDAI la única opción cuyo código o cuyo texto completo es el contrato
+    configurado (_hmm_contratos_que_calzan; la elige _hmm_select_por_texto con su texto entero, después de comprobar
+    que es la única) y comprueba, leyendo la lista, que quedó elegida esa misma. Si no hay una sola, corta sin elegir
+    nada (ObjetivoNoEncontrado: NO ENVIADA, con su evidencia), con el contrato que buscó (_hmm_contrato_a_la_vista) y,
+    si se corrige escribiéndolo, dónde (HMM_DONDE_VA_EL_CONTRATO); si el portal no mostró ningún contrato, lo dice, sin
+    culpar al configurado (revisión de código del encargo 89). Lee las opciones hasta que llegue la del contrato, o
     HMM_LECTURAS_CONTRATO veces. Si la lista no acepta la elección, o queda con otra opción, o no se puede leer cuál
     quedó, también corta.
     Decisión de Marcelo (encargo 89, CICLO-hyundai-contrato-por-posicion.md): hasta ahí, con un contrato configurado
@@ -8631,8 +8635,8 @@ def _hmm_elegir_contrato(page, ctto, reg):
     if not calzan:
         raise ObjetivoNoEncontrado("Contract No de HYUNDAI",
                                    f"el contrato «{visto}» entre los {len(reales)} que ofrece el portal (se compara "
-                                   f"entero con el código de cada opción, su texto antes de « - »; se corrige en el "
-                                   f"{HMM_DONDE_VA_EL_CONTRATO})")
+                                   f"entero con el código de cada opción, su texto antes de « - », o con su texto "
+                                   f"completo; se corrige en el {HMM_DONDE_VA_EL_CONTRATO})")
     if len(calzan) > 1:
         raise ObjetivoNoEncontrado("Contract No de HYUNDAI",
                                    f"una sola opción con el contrato «{visto}»: el portal ofrece {len(calzan)} con ese "
@@ -9242,8 +9246,8 @@ def reservar_hyundai(page, reserva, creds, reg, on_pausa=None):
 
     # 2. Contract No: esperar a que carguen las opciones del contrato tras fijar Shipper. Sin contrato (ni en las
     # credenciales ni en config.json) la reserva no sigue: elegir uno sería por su posición (encargo 44). Con uno, solo
-    # la única opción cuyo código es el contrato entero, y comprobando después que quedó elegida; si no, tampoco sigue
-    # (encargo 89, _hmm_elegir_contrato).
+    # la única opción cuyo código o cuyo texto completo es el contrato entero, y comprobando después que quedó elegida;
+    # si no, tampoco sigue (encargos 89 y 90, _hmm_elegir_contrato).
     ctto = str(creds.get("contrato") or "").strip() or _contrato_por_defecto("hyundai")
     if not ctto:
         raise ObjetivoNoEncontrado("Contract No de HYUNDAI",

@@ -1317,8 +1317,9 @@ class PaginaContrato:
 
 class TestContratoDeHyundai(soporte.CasoAQ):
     """«Contract No» del paso 3 de HYUNDAI (decisión de Marcelo, encargo 89, CICLO-hyundai-contrato-por-posicion.md):
-    con un contrato configurado, solo la única opción cuyo código (el texto antes de « - ») es el contrato entero, y
-    después se lee la lista para ver que quedó esa; si no está, si dos tienen ese código, si la lista no muestra ninguno
+    con un contrato configurado, solo la única opción cuyo código (el texto antes de « - ») o, desde el encargo 90,
+    cuyo texto completo es el contrato entero, y después se lee la lista para ver que quedó esa; si no está, si dos
+    calzan (comparten el código), si la lista no muestra ninguno
     o si queda otra, NO ENVIADA sin elegir otra cosa, con el contrato que buscó, saneado, y, si se corrige escribiéndolo,
     dónde (panel → Credenciales → HYUNDAI → columna Contrato). Hasta ahí elegía la primera opción real, por su posición,
     y bastaba que el texto de la opción contuviera el contrato."""
@@ -1326,8 +1327,8 @@ class TestContratoDeHyundai(soporte.CasoAQ):
     DONDE = "panel → Credenciales → HYUNDAI → columna Contrato"
     FIN = ", así que no pulsé nada. La reserva no se envió; revisa ese paso en el portal."
     NO_ESTA = ("Contract No de HYUNDAI: no encontré el contrato «{}» entre los {} que ofrece el portal (se compara "
-               "entero con el código de cada opción, su texto antes de « - »; se corrige en el panel → Credenciales → "
-               "HYUNDAI → columna Contrato)")
+               "entero con el código de cada opción, su texto antes de « - », o con su texto completo; se corrige en "
+               "el panel → Credenciales → HYUNDAI → columna Contrato)")
 
     def correr(self, pagina, nombre, ctto="CT-PRUEBA-HMM"):
         """Corre _hmm_elegir_contrato dentro de un reservador decorado como reservar_hyundai (_sin_clic_a_ciegas), con
@@ -1365,12 +1366,16 @@ class TestContratoDeHyundai(soporte.CasoAQ):
                 self.assertIn("Contract No: la lista quedó con la opción del contrato", log)
 
     def test_el_contrato_se_compara_entero(self):
-        # La decisión (a): el contrato entero contra el código de la opción, no «el texto lo contiene». Un contrato
-        # escrito a medias no calza con el que lo contiene (antes lo elegía); y con el entero, entre una opción que lo
+        # La decisión (a): el contrato entero contra el código de la opción (o, desde el encargo 90, contra su texto
+        # completo), nunca «el texto lo contiene». Un contrato escrito a medias no calza con el que lo contiene (antes
+        # lo elegía), tampoco un pedazo o un alargue del texto completo; y con el entero, entre una opción que lo
         # contiene y la suya, elige la suya (antes: «lo traen 2», NO ENVIADA).
         for k, (ctto, lista) in enumerate((("CT-PRUEBA", self.LISTA),
                                            ("CT-1", ["Select", "CT-12 - (GA)"]),
-                                           ("PRUEBA-HMM", self.LISTA))):
+                                           ("PRUEBA-HMM", self.LISTA),
+                                           ("CT-PRUEBA-HMM - (G", self.LISTA),
+                                           ("CT-PRUEBA-HMM - (GA) X", self.LISTA),
+                                           ("PRUEBA-HMM - (GA)", self.LISTA))):
             with self.subTest(ctto=ctto):
                 p = PaginaContrato([lista])
                 r, _ = self.correr(p, f"contrato_a_medias_{k}", ctto)
@@ -1382,6 +1387,26 @@ class TestContratoDeHyundai(soporte.CasoAQ):
         self.assertEqual(r, ("SIGUE", ""))
         self.assertEqual([h for h in p.hechos if h[0] != "lee"],
                          [("elige", "#selContractNo", "CT-PRUEBA-HMM"), ("comprueba",)])
+
+    def test_acepta_el_texto_completo_de_la_opcion(self):
+        # Decisión de Marcelo, encargo 90: el contrato copiado de la lista tal cual, con el texto completo de su opción,
+        # la elige, como su código; sin distinguir mayúsculas ni los espacios de los extremos, en el contrato y en la
+        # opción. Con el 89 quedaba NO ENVIADA.
+        minusculas = ["Select", "otro-uno - (ga)", "ct-prueba-hmm - (ga)"]
+        for k, (ctto, lista, valor) in enumerate((("CT-PRUEBA-HMM - (GA)", self.LISTA, "CT-PRUEBA-HMM"),
+                                                  (" ct-prueba-hmm - (ga) ", self.LISTA, "CT-PRUEBA-HMM"),
+                                                  ("CT-PRUEBA-HMM - (GA)", minusculas, "ct-prueba-hmm"))):
+            with self.subTest(ctto=ctto, lista=lista):
+                p = PaginaContrato([lista])
+                r, log = self.correr(p, f"contrato_texto_{k}", ctto)
+                self.assertEqual(r, ("SIGUE", ""))
+                self.assertEqual([h for h in p.hechos if h[0] != "lee"],
+                                 [("elige", "#selContractNo", valor), ("comprueba",)])
+                self.assertIn("Contract No: la lista quedó con la opción del contrato", log)
+        self.assertEqual(self.mod._hmm_contratos_que_calzan(self.LISTA, "ct-prueba-hmm - (ga)"),
+                         ["CT-PRUEBA-HMM - (GA)"])
+        self.assertEqual(self.mod._hmm_contratos_que_calzan(["  CT-PRUEBA-HMM - (GA) "], "CT-PRUEBA-HMM - (GA)"),
+                         ["  CT-PRUEBA-HMM - (GA) "])
 
     def test_si_no_esta_no_envia_y_no_elige_por_posicion(self):
         # Con la primera opción real a la vista y sin la del contrato: lee las 15 veces, cada 0,4 s, y corta sin elegir
@@ -1419,13 +1444,24 @@ class TestContratoDeHyundai(soporte.CasoAQ):
         self.assertEqual(self.mod._hmm_contratos_que_calzan(["   ", "CT-PRUEBA-HMM - (GA)"], "  "), [])
 
     def test_si_dos_tienen_el_mismo_codigo_no_elige_la_primera(self):
-        # Dos opciones con el mismo código no se distinguen escribiendo el contrato de otra forma: el motivo no manda a
-        # corregirlo, y el decorador dice que se revise el paso en el portal.
+        # Dos opciones con el mismo código: con el contrato escrito como el código, calzan las dos, y NO ENVIADA; el
+        # motivo no manda a corregirlo, y el decorador dice que se revise el paso en el portal.
         p = PaginaContrato([["Select", "CT-PRUEBA-HMM - (GA)", "CT-PRUEBA-HMM - (FMC)"]])
         r, _ = self.correr(p, "contrato_dos")
         self.assertEqual(r, ("NO ENVIADA", "Contract No de HYUNDAI: no encontré una sola opción con el contrato "
                                            "«CT-PRUEBA-HMM»: el portal ofrece 2 con ese mismo código" + self.FIN))
         self.assertNotIn("elige", [h[0] for h in p.hechos])
+        # Escrito con el texto completo de una de ellas (encargo 90), la regla la separa, pero _hmm_select_por_texto
+        # elige por el valor, que las dos comparten (el código, como lo modela la página falsa): queda la primera de la
+        # lista. Si es la del contrato, sigue; si no, la comprobación lo frena (revisión de código del encargo 90).
+        dos = ["Select", "CT-PRUEBA-HMM - (FMC)", "CT-PRUEBA-HMM - (GA)"]
+        p = PaginaContrato([dos])
+        self.assertEqual(self.correr(p, "contrato_dos_texto_primera", "CT-PRUEBA-HMM - (FMC)")[0], ("SIGUE", ""))
+        p = PaginaContrato([dos])
+        r, log = self.correr(p, "contrato_dos_texto_segunda", "CT-PRUEBA-HMM - (GA)")
+        self.assertEqual(r, ("NO ENVIADA", "Contract No de HYUNDAI: no encontré el contrato «CT-PRUEBA-HMM - (GA)» "
+                                           "elegido en la lista: después de elegirlo, quedó otra opción" + self.FIN))
+        self.assertIn("Contract No: la lista quedó con «CT-PRUEBA-HMM - (FMC)»", log)
 
     def test_si_la_lista_no_acepta_la_eleccion_corta(self):
         p = PaginaContrato([self.LISTA], acepta=False)

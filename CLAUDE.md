@@ -1202,7 +1202,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 1020 pruebas al 2026-10-29 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 1021 pruebas al 2026-10-29 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -1550,8 +1550,8 @@ línea cambian). De arriba hacia abajo:
    (40´)», o la fila de MAERSK pide otro contenedor que «40 HC REEFER» (encargo 63), o cuando la nave está y ninguna de
    sus salidas trae el viaje de la fila (en las seis desde el encargo 66), o la tarjeta que eligió MSC ya no es la
    misma justo antes del clic (encargo 67), o MSC no puede dejar el destino final aparte del puerto de descarga
-   (encargo 86), o «Contract No» de HYUNDAI no trae una sola opción cuyo código es el contrato configurado, no queda
-   elegida, o no hay un contrato (encargos 44 y 89). `DETENIDO`, con «Detener»: en
+   (encargo 86), o «Contract No» de HYUNDAI no trae una sola opción cuyo código o cuyo texto completo es el contrato
+   configurado, no queda elegida, o no hay un contrato (encargos 44, 89 y 90). `DETENIDO`, con «Detener»: en
    COSCO y, desde el encargo 56, en la espera del deslizador de CMA-CGM. `REVISAR`, entre otros (en MAERSK
    y en COSCO, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el motivo dice hasta qué fecha buscó (ver
    «Ampliar la búsqueda»). Después: `EMITIDA`, `EMITIDA – CONFIRMAR POR CORREO` (COSCO, encargo 77; CMA-CGM, 78),
@@ -1982,16 +1982,19 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
     NO ENVIADA, en «Contract No», las 5 filas del 26-10 y las 2 del 28-10 de ese colega; su portal ofrecía la misma única
     opción real que el de este equipo, y el código de HYUNDAI de `estable` (`b39c95c`) es el de `main` (encargo 88,
     `CICLO-hyundai-contrato-del-colega.md`).
-  - **Con un contrato configurado, el paso 3 elige solo la única opción cuyo código es ese contrato, entero**
-    (decisiones de Marcelo, encargo 89, `CICLO-hyundai-contrato-por-posicion.md`; `_hmm_elegir_contrato`). El código de
-    una opción de «Contract No» (`#selContractNo`) es su texto antes del primer « - » (`_hmm_codigo_del_contrato`), y
-    se compara con el contrato sin los espacios de sus extremos y sin distinguir mayúsculas (`_hmm_contratos_que_calzan`),
-    sin contar «Select», «Dummy» ni «Direct Input» (`HMM_NO_SON_CONTRATO`). Lee las opciones hasta que llegue esa,
+  - **Con un contrato configurado, el paso 3 elige solo la única opción cuyo código o cuyo texto completo es ese
+    contrato, entero** (decisiones de Marcelo, encargo 89, `CICLO-hyundai-contrato-por-posicion.md`, y encargo 90,
+    `CICLO-hyundai-contrato-texto-completo.md`; `_hmm_elegir_contrato`). El código de una opción de «Contract No»
+    (`#selContractNo`) es su texto antes del primer « - » (`_hmm_codigo_del_contrato`); el código y el texto completo se
+    comparan con el contrato sin los espacios de los extremos y sin distinguir mayúsculas, en los dos
+    (`_hmm_contratos_que_calzan`); nunca «el texto lo contiene». Así calza el contrato escrito como su código («CT-1») y
+    el copiado de la lista tal cual («CT-1 - (GA)»), y no un pedazo ni un alargue. Sin contar «Select», «Dummy» ni
+    «Direct Input» (`HMM_NO_SON_CONTRATO`). Lee las opciones hasta que llegue esa,
     hasta `HMM_LECTURAS_CONTRATO` veces cada 0,4 s (6 s, como antes). Después de comprobar que es la única, se la pasa a
     `_hmm_select_por_texto` con su texto entero, y **después lee la lista para comprobar que quedó elegida esa misma**
-    (el texto de la opción elegida, `selectedIndex`). Si la lista no trae ningún contrato, si ninguna opción tiene el
-    código, si lo tienen dos, si la lista no acepta la elección, si queda con otra opción o si no se puede leer cuál
-    quedó, NO ENVIADA (`ObjetivoNoEncontrado`, `hmm_f<fila>_sin_objetivo`, con el contrato que buscó). El paso 2 y el
+    (el texto de la opción elegida, `selectedIndex`). Si la lista no trae ningún contrato, si ninguna opción calza (ni
+    por su código ni por su texto completo), si calzan dos, si la lista no acepta la elección, si queda con otra opción
+    o si no se puede leer cuál quedó, NO ENVIADA (`ObjetivoNoEncontrado`, `hmm_f<fila>_sin_objetivo`, con el contrato que buscó). El paso 2 y el
     paso 3 le quitan los espacios de los extremos al contrato de las credenciales, como ONE, MSC y CMA-CGM, y uno de solo
     espacios cuenta como ninguno.
     - Hasta ahí, con el contrato fuera de la lista elegía la primera opción real, por su posición (`Contract No (primera
@@ -2002,13 +2005,18 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
       medias («CT-1») elegía otro que lo contenía («CT-12 - …»), y con «CT-1 - …» y «CT-12 - …» las dos lo traían (la
       revisión de seguridad del encargo). Y no se miraba qué opción quedaba elegida: `_hmm_select_por_texto` vuelve a
       leer la lista y elige la primera que contiene su texto, sin mirar que sea la única.
+    - Del encargo 89 al 90, el contrato escrito como el texto completo de la opción quedaba NO ENVIADA: se comparaba
+      solo con el código.
   - **Los motivos de «Contract No» dicen dónde se escribe y muestran el contrato saneado** (misma decisión). El lugar es
     «panel → Credenciales → HYUNDAI → columna Contrato» (`HMM_DONDE_VA_EL_CONTRATO`), en vez de config.json:
     - sin contrato: «no encontré un contrato (se escribe en el panel → Credenciales → HYUNDAI → columna Contrato)»;
     - con uno que no está: «no encontré el contrato «…» entre los N que ofrece el portal (se compara entero con el
-      código de cada opción, su texto antes de « - »; se corrige en el …)»;
-    - con dos que tienen ese código: «… el portal ofrece N con ese mismo código», sin mandar a corregirlo, porque
-      escribirlo de otra forma no las distingue;
+      código de cada opción, su texto antes de « - », o con su texto completo; se corrige en el …)»;
+    - con dos que calzan: «… el portal ofrece N con ese mismo código» (dos que calzan siempre comparten el código),
+      sin mandar a corregirlo. Escrito con el texto completo de una de ellas, la regla la separa, pero
+      `_hmm_select_por_texto` elige por el valor, que las dos comparten (medido en el 89: el valor es el código), y queda
+      la primera de la lista: si no es la del contrato, la comprobación lo frena, con «quedó otra opción» (revisión de
+      código del encargo 90);
     - si la lista no trae ningún contrato, tampoco manda a corregirlo, que puede estar bien: «no encontré ningún
       contrato en la lista del portal (no mostró ninguno en 6 s; el configurado es «…»)»;
     - si queda otra opción, o no se puede leer: «no encontré el contrato «…» elegido en la lista: después de elegirlo,
@@ -2016,9 +2024,11 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
 
     El contrato va como lo muestra `_hmm_contrato_a_la_vista`: con los espacios de a uno, hasta 40 caracteres y cada
     carácter de control, de formato, privado o sin asignar como «?», como el contenedor y el destino final (revisión de
-    seguridad del encargo 89: el motivo va a la planilla, y openpyxl no escribe un carácter de control). La regla compara
-    el contrato escrito. La cola de todos los motivos sin objetivo, «revisa ese paso en el portal», es la del decorador,
-    común a las seis navieras: no cambió. `contratos_por_defecto` sigue valiendo, detrás de las credenciales.
+    seguridad del encargo 89: el motivo va a la planilla, y openpyxl no escribe un carácter de control). Que el motivo
+    muestre el contrato lo confirmó Marcelo en el encargo 90, sabiendo que es un dato de la cuenta y que la planilla
+    puede salir del equipo. La regla compara el contrato escrito. La cola de todos los motivos sin objetivo, «revisa ese
+    paso en el portal», es la del decorador, común a las seis navieras: no cambió. `contratos_por_defecto` sigue
+    valiendo, detrás de las credenciales.
   - **Medido antes de cada cambio**, en las 29 filas de HYUNDAI de los log.txt de `logs/` y de «1. pruebas» (18
     corridas), con su control positivo (la corrida del 28-10 de este equipo):
     - antes de la primera regla (`.trabajo/e89/medir.py`), las 20 que llegaron a la guarda (15 OK-EJEMPLO y 5 EMITIDA
@@ -2028,7 +2038,11 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
       código de su única opción real, la opción trae la forma «código - (…)», y el contrato configurado hoy para su
       operador es ese código entero: la regla exacta elige la misma. El control en la otra dirección: con el contrato
       sin su último carácter, la regla de antes elegía en las 20 y la exacta en ninguna. El contrato configurado en las
-      corridas viejas pudo ser otro: se midió el de hoy.
+      corridas viejas pudo ser otro: se midió el de hoy;
+    - antes de sumar el texto completo (`.trabajo/e90/medir_texto.py`, que importa la lectura de `medir_exacto.py`), en
+      las 20, con el contrato configurado hoy, la regla del 89 y la del 90 eligen una sola opción, y la misma; con el
+      texto completo de la opción elegida como contrato, la del 90 elige esa misma y la del 89 ninguna; y con el
+      contrato sin su último carácter, ninguna de las dos elige.
 
     Ninguna cambia de resultado. El HTML del paso 3 no se guardó nunca (0 listas «Contract No» en los 1.122 HTML de
     `logs/`): lo que se sabe de la lista sale de la línea «Contract No opciones» de log.txt, que trae hasta 6.
@@ -2037,8 +2051,6 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
       antes de «CT-1 - (GA)», con el contrato «CT-1»), si está antes, la elige `_hmm_select_por_texto` (la primera que
       contiene el texto), y la comprobación deja la fila NO ENVIADA, con la lista del portal en el otro contrato y sin
       pulsar nada más. No se vio. Se quitaría eligiendo la opción por su texto exacto o por su índice.
-    - Un contrato escrito como el texto entero de la opción («CT-1 - (GA)») queda NO ENVIADA: se compara con el código.
-      Antes del cambio se elegía. Aceptar también el texto entero lo decide Marcelo.
     - Que dos opciones con el mismo código den NO ENVIADA lo decidió el ciclo, no Marcelo. En lo medido, la lista trajo
       siempre una sola opción real.
     - «Named Customer» (`#actualShipperCode`) y «HMM Sales Person» (`#hmmSalesmanCd`), en el mismo paso, siguen
