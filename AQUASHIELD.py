@@ -8559,12 +8559,14 @@ HMM_DONDE_VA_EL_CONTRATO = "panel → Credenciales → HYUNDAI → columna Contr
 HMM_NO_SON_CONTRATO = ("select", "dummy", "direct input")
 HMM_LECTURAS_CONTRATO = 15
 
-# Lo que lee _hmm_elegir_contrato de la lista «Contract No»: el texto de cada opción y el de la opción elegida
-# (selectedIndex), sin los espacios de sus extremos; sin la lista, [] y null. Sin clics. test_ayudantes los corre en
-# Node sobre una lista falsa (revisión de código del encargo 89: leer el valor en vez del texto dejaría NO ENVIADA cada
-# fila de HYUNDAI, y la página falsa no lo veía).
-_JS_HMM_CONTRATOS = """()=>{const s=document.querySelector('#selContractNo');
-    return s ? [...s.options].map(o=>(o.textContent||'').trim()) : [];}"""
+# Lo que leen _hmm_elegir_contrato y _hmm_contrato_paso2 de una lista de contrato (su selector, el argumento): de cada
+# opción, su texto, sin los espacios de sus extremos, su valor y su etiqueta (label) (desde el encargo 91, para no
+# elegir una opción cuyo valor comparte otra: `select_option(value=…)` de Playwright para Python elige la primera cuyo
+# valor o cuya etiqueta es ese valor); y de «Contract No» del paso 3, el texto de la opción elegida (selectedIndex). Sin
+# la lista, [] y null. Sin clics. test_ayudantes los corre en Node sobre una lista falsa (revisión de código del encargo
+# 89: leer el valor en vez del texto dejaría NO ENVIADA cada fila de HYUNDAI, y la página falsa no lo veía).
+_JS_HMM_CONTRATOS = """(sel)=>{const s=document.querySelector(sel);
+    return s ? [...s.options].map(o=>[(o.textContent||'').trim(), o.value, o.label]) : [];}"""
 _JS_HMM_CONTRATO_ELEGIDO = """()=>{const s=document.querySelector('#selContractNo');
     const o = s && s.selectedIndex >= 0 ? s.options[s.selectedIndex] : null;
     return o ? (o.textContent||'').trim() : null;}"""
@@ -8600,6 +8602,24 @@ def _hmm_contrato_a_la_vista(ctto):
     return _destino_a_la_vista(ctto)[:40]
 
 
+def _hmm_pares(page, sel):
+    """Las opciones de la lista de contrato 'sel' como (texto, valor, etiqueta), leídas con _JS_HMM_CONTRATOS; lo que
+    no tenga esa forma no cuenta. Si la lectura falla, la excepción sale: cada paso decide qué hacer con ella."""
+    pares = page.evaluate(_JS_HMM_CONTRATOS, sel)
+    return [tuple("" if x is None else str(x) for x in p) for p in (pares or [])
+            if isinstance(p, (list, tuple)) and len(p) == 3]
+
+
+def _hmm_valor_compartido(pares, opcion):
+    """Cuántas opciones de la lista ('pares', de _hmm_pares) responden al valor de 'opcion' (su texto) al elegir: las
+    que tienen ese valor o esa etiqueta. Más de una y no se distinguen: `select_option(value=…)`, también el de
+    `_hmm_select_por_texto`, deja elegida la primera cuyo valor o cuya etiqueta es ese valor (decisión de Marcelo,
+    encargo 91, CICLO-hyundai-valor-compartido-y-paso2.md; lo de la etiqueta, medido por su revisión de código en el
+    Chromium de Playwright 1.58)."""
+    valor = next(v for t, v, _ in pares if t == opcion)
+    return sum(v == valor or e == valor for _, v, e in pares)
+
+
 def _hmm_elegir_contrato(page, ctto, reg):
     """Elige en «Contract No» del paso 3 de HYUNDAI la única opción cuyo código o cuyo texto completo es el contrato
     configurado (_hmm_contratos_que_calzan; la elige _hmm_select_por_texto con su texto entero, después de comprobar
@@ -8616,16 +8636,19 @@ def _hmm_elegir_contrato(page, ctto, reg):
     en las corridas de un colega: las 20 que llegaron a la guarda eligieron su contrato, la única opción real de la
     lista, cuyo código es el contrato entero; ninguna eligió por posición."""
     visto = _hmm_contrato_a_la_vista(ctto)
-    opciones = []
+    pares, opciones = [], []
     for _ in range(HMM_LECTURAS_CONTRATO):
         esperar(page, 0.4)
         try:
-            opciones = page.evaluate(_JS_HMM_CONTRATOS)
+            pares = _hmm_pares(page, "#selContractNo")
         except Exception:
-            opciones = []
+            pares = []
+        opciones = [t for t, *_ in pares]
         if _hmm_contratos_que_calzan(opciones, ctto):
             break
-    reg.info("Contract No opciones: " + " | ".join([o for o in opciones if o][:6]))
+    # Saneada, como el motivo: el texto de las opciones viene del portal (revisión de seguridad del encargo 89;
+    # encargo 91).
+    reg.info("Contract No opciones: " + " | ".join([_destino_a_la_vista(o) for o in opciones if o][:6]))
     calzan = _hmm_contratos_que_calzan(opciones, ctto)
     reales = [o for o in opciones if o and o.strip().lower() not in HMM_NO_SON_CONTRATO]
     segundos = round(HMM_LECTURAS_CONTRATO * 0.4)
@@ -8641,6 +8664,13 @@ def _hmm_elegir_contrato(page, ctto, reg):
         raise ObjetivoNoEncontrado("Contract No de HYUNDAI",
                                    f"una sola opción con el contrato «{visto}»: el portal ofrece {len(calzan)} con ese "
                                    "mismo código")
+    # Dos opciones con el mismo valor no se distinguen al elegir: NO ENVIADA, se haya escrito el texto completo de la
+    # primera o el de la segunda (decisión de Marcelo, encargo 91). Hasta ahí, con el de la primera, la reserva seguía.
+    comparten = _hmm_valor_compartido(pares, calzan[0])
+    if comparten > 1:
+        raise ObjetivoNoEncontrado("Contract No de HYUNDAI",
+                                   f"una sola opción con el contrato «{visto}»: el portal da el mismo valor a "
+                                   f"{comparten} opciones, y al elegir no se distinguen")
     if not _hmm_select_por_texto(page, "#selContractNo", [calzan[0]], reg, "Contract No"):
         raise ObjetivoNoEncontrado("Contract No de HYUNDAI", f"cómo dejar elegido el contrato «{visto}»: la lista no "
                                                              "lo aceptó o ya no lo trae")
@@ -8649,7 +8679,7 @@ def _hmm_elegir_contrato(page, ctto, reg):
     try:
         elegida = page.evaluate(_JS_HMM_CONTRATO_ELEGIDO)
     except Exception as e:
-        reg.info(f"Contract No: err al leer la opción elegida ({str(e)[:50]})")
+        reg.info(f"Contract No: err al leer la opción elegida ({_destino_a_la_vista(str(e))[:50]})")
         elegida = None
     if elegida != calzan[0].strip():
         if elegida is not None:
@@ -8658,6 +8688,48 @@ def _hmm_elegir_contrato(page, ctto, reg):
                                    f"el contrato «{visto}» elegido en la lista: después de elegirlo, "
                                    + ("no pude leer qué opción quedó" if elegida is None else "quedó otra opción"))
     reg.info("Contract No: la lista quedó con la opción del contrato")
+
+
+# La lista de contrato del paso 2 de HYUNDAI («Select Vessel»), la que encuentra el programa: el primer <select> cuyo id
+# o name trae «contract». Medido en el encargo 91, en el HTML que las 17 corridas guardaron justo antes del paso 2: una
+# sola lista así, y sin opciones (`.trabajo/e91/medir_paso2.py`).
+HMM_LISTA_PASO2 = "select[id*='contract' i], select[name*='contract' i]"
+
+
+def _hmm_contrato_paso2(page, ctto, reg):
+    """Elige en la lista de contrato del paso 2 de HYUNDAI (HMM_LISTA_PASO2) la única opción cuyo código o cuyo texto
+    completo es el contrato configurado, como el paso 3 (_hmm_contratos_que_calzan; nunca «contiene»), y solo si ninguna
+    otra opción tiene su valor, ni como valor ni como etiqueta (_hmm_valor_compartido); la elige por ese valor. Si no,
+    no elige nada y queda el del portal, como antes cuando no encontraba una opción: el paso 2 no corta, porque el
+    contrato de la reserva lo elige y lo comprueba el paso 3. Lo que lee del portal va a log.txt saneado. Devuelve si
+    eligió.
+    Decisión de Marcelo, encargo 91 (CICLO-hyundai-valor-compartido-y-paso2.md): hasta ahí elegía con
+    _hmm_select_por_texto la primera opción cuyo texto contenía el contrato, y un contrato escrito a medias podía elegir
+    otro. Medido antes del cambio en el HTML de las 17 corridas: la lista no traía ninguna opción, y las 10 que tenían
+    contrato dijeron «sin opción para»: ninguna eligió, y ninguna cambia."""
+    try:
+        pares = _hmm_pares(page, HMM_LISTA_PASO2)
+    except Exception as e:
+        reg.info(f"Contract No (Paso 2): err lectura ({_destino_a_la_vista(str(e))[:50]}); queda el del portal")
+        return False
+    calzan = _hmm_contratos_que_calzan([t for t, *_ in pares], ctto)
+    if len(calzan) != 1:
+        reg.info(f"Contract No (Paso 2): sin opción que calce exacto con el contrato (calzan {len(calzan)} de "
+                 f"{len(pares)}); queda el del portal")
+        return False
+    comparten = _hmm_valor_compartido(pares, calzan[0])
+    if comparten > 1:
+        reg.info(f"Contract No (Paso 2): sin opción que se distinga (el mismo valor en {comparten} opciones); queda el "
+                 "del portal")
+        return False
+    valor = next(v for t, v, _ in pares if t == calzan[0])
+    try:
+        page.select_option(HMM_LISTA_PASO2, value=valor, timeout=5000)
+    except Exception as e:
+        reg.info(f"Contract No (Paso 2): err select ({_destino_a_la_vista(str(e))[:50]}); queda el del portal")
+        return False
+    reg.info(f"Contract No (Paso 2): '{_destino_a_la_vista(valor)}'")
+    return True
 
 
 def _hmm_llenar_detalles(page, reserva, reg):
@@ -9020,16 +9092,12 @@ def reservar_hyundai(page, reserva, creds, reg, on_pausa=None):
     _hmm_fecha(page, reserva.get("dia_carga", ""), reg)
 
     # Seleccionar contrato en Paso 2 si está disponible. Sin contrato (ni en las credenciales ni en config.json)
-    # no elige nada: con un texto vacío, _hmm_select_por_texto tomaría la primera opción (encargo 44). El de las
-    # credenciales va sin los espacios de sus extremos, como en el paso 3 (decisión de Marcelo, encargo 89): uno de
-    # solo espacios cuenta como ninguno.
+    # no elige nada (encargo 44). El de las credenciales va sin los espacios de sus extremos, como en el paso 3
+    # (decisión de Marcelo, encargo 89): uno de solo espacios cuenta como ninguno. Con uno, solo la opción que calza
+    # exacto, como el paso 3 (encargo 91, _hmm_contrato_paso2); si no, queda el del portal.
     ctto = str(creds.get("contrato") or "").strip() or _contrato_por_defecto("hyundai")
     if ctto:
-        try:
-            _hmm_select_por_texto(page, "select[id*='contract' i], select[name*='contract' i]", [ctto], reg,
-                                  "Contract No (Paso 2)")
-        except Exception:
-            pass
+        _hmm_contrato_paso2(page, ctto, reg)
     else:
         reg.info("Contract No (Paso 2): sin contrato en las credenciales ni en config.json; queda el del portal")
 

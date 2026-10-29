@@ -1219,22 +1219,25 @@ class TestContratosPorDefecto(soporte.CasoAQ):
         self.assertEqual(lectores, ["reservar_hyundai"])
 
     def test_hyundai_sin_contrato_no_elige_a_ciegas(self):
-        # Con un texto vacío, _hmm_select_por_texto toma la primera opción: reservar_hyundai nunca le pasa el
-        # contrato sin mirar antes que no esté vacío (en un equipo sin los contratos en config.json, lo estaría). En
-        # el paso 2 no elige nada; en Booking Details corta (revisión de código del encargo 44: hasta ahí, sin
-        # contrato iba a la primera opción real de la lista). Con contrato, desde el encargo 89 lo elige
-        # _hmm_elegir_contrato, después del corte (TestContratoDeHyundai).
+        # reservar_hyundai nunca elige un contrato sin mirar antes que no esté vacío (en un equipo sin los contratos en
+        # config.json, lo estaría). En el paso 2 no elige nada: desde el encargo 91 lo elige _hmm_contrato_paso2, dentro
+        # de «if ctto», y ya no _hmm_select_por_texto, que con un texto vacío tomaba la primera opción. En Booking
+        # Details corta (revisión de código del encargo 44: hasta ahí, sin contrato iba a la primera opción real de la
+        # lista). Con contrato, desde el encargo 89 lo elige _hmm_elegir_contrato, después del corte
+        # (TestContratoDeHyundai).
         tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
         f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_hyundai")
 
         def con_ctto(nodo):
             return [n for n in ast.walk(nodo) if isinstance(n, ast.Call)
-                    and getattr(n.func, "id", "") == "_hmm_select_por_texto" and len(n.args) > 2
-                    and isinstance(n.args[2], ast.List)
-                    and [getattr(e, "id", "") for e in n.args[2].elts] == ["ctto"]]
+                    and ((getattr(n.func, "id", "") == "_hmm_select_por_texto" and len(n.args) > 2
+                          and "ctto" in ast.unparse(n.args[2]))
+                         or (getattr(n.func, "id", "") == "_hmm_contrato_paso2"
+                             and [getattr(a, "id", "") for a in n.args[:2]] == ["page", "ctto"]))]
 
         guardadas = {id(c) for n in ast.walk(f) if isinstance(n, ast.If) and getattr(n.test, "id", "") == "ctto"
                      for parte in n.body for c in con_ctto(parte)}
+        self.assertEqual([getattr(c.func, "id", "") for c in con_ctto(f)], ["_hmm_contrato_paso2"])
         cortes = [n.lineno for n in ast.walk(f) if isinstance(n, ast.If) and isinstance(n.test, ast.UnaryOp)
                   and isinstance(n.test.op, ast.Not) and getattr(n.test.operand, "id", "") == "ctto"
                   and any(isinstance(m, ast.Raise)
@@ -1275,17 +1278,27 @@ class TestContratosPorDefecto(soporte.CasoAQ):
 
 
 class PaginaContrato:
-    """La lista «Contract No» del paso 3 de HYUNDAI (#selContractNo). Cada lectura de sus opciones da la siguiente de
-    'lecturas' (la última se repite); el JavaScript de _hmm_select_por_texto elige como el del programa (la primera
-    opción que trae todos los textos, en mayúsculas) y da su valor, el código; select_option la elige, o falla si
-    'acepta' es False; y la lectura de la opción elegida da su texto, o 'queda' si se le pasa (la lista quedó con
-    otra), o falla si 'se_lee' es False. Anota cada lectura, cada elección y cada comprobación, y cada espera aparte;
-    un JavaScript que no conoce lo anota en 'inesperado' y devuelve None, porque el programa se tragaría una excepción
-    en su try (la prueba exige esa lista vacía)."""
+    """La lista «Contract No» del paso 3 de HYUNDAI (#selContractNo). Cada opción es un texto (su valor es su código,
+    el texto antes de « - », como en el HTML del paso 3 que guardaron las corridas del colega) o un par (texto, valor).
+    Cada lectura de sus opciones (el JavaScript de _hmm_pares, con el selector de argumento) da la siguiente de
+    'lecturas' (la última se repite), en pares; el JavaScript de _hmm_select_por_texto elige como el del programa (la
+    primera opción que trae todos los textos, en mayúsculas) y da su valor; select_option deja elegida la primera con
+    ese valor, como el navegador, o falla si 'acepta' es False; y la lectura de la opción elegida da su texto, o
+    'queda' si se le pasa (la lista quedó con otra), o falla si 'se_lee' es False. Anota cada lectura, cada elección y
+    cada comprobación, y cada espera aparte; un JavaScript que no conoce lo anota en 'inesperado' y devuelve None,
+    porque el programa se tragaría una excepción en su try (la prueba exige esa lista vacía)."""
 
     def __init__(self, lecturas, acepta=True, queda=None, se_lee=True):
-        self.lecturas, self.acepta, self.queda, self.se_lee = list(lecturas), acepta, queda, se_lee
+        self.lecturas = [[self.opcion(o) for o in lista] for lista in lecturas]
+        self.acepta, self.queda, self.se_lee = acepta, queda, se_lee
         self.actual, self.elegida, self.hechos, self.esperas, self.inesperado = [], None, [], [], []
+
+    @staticmethod
+    def opcion(o):
+        """Una opción como (texto, valor, etiqueta): el valor, si no viene, es su código; la etiqueta, si no viene, su
+        texto con los espacios de a uno, como el `label` de una opción sin ese atributo."""
+        o = o if isinstance(o, tuple) else (o, o.split(" - ")[0])
+        return o if len(o) == 3 else (o[0], o[1], " ".join(o[0].split()))
 
     def wait_for_timeout(self, ms):
         self.esperas.append(ms)
@@ -1294,17 +1307,17 @@ class PaginaContrato:
         if arg is None and "#selContractNo" in js and "selectedIndex" in js:
             self.hechos.append(("comprueba",))
             if not self.se_lee:
-                raise RuntimeError("la página no contestó")
+                raise RuntimeError("la página no contestó" + chr(10) + "LINEA FALSA")
             return self.queda if self.queda is not None else self.elegida
-        if arg is None and "#selContractNo" in js and "s.options" in js:
+        if arg == "#selContractNo" and "s.options" in js:
             if self.lecturas:
                 self.actual = self.lecturas.pop(0)
             self.hechos.append(("lee", len(self.actual)))
-            return list(self.actual)
+            return [list(o) for o in self.actual]
         if isinstance(arg, dict) and arg.get("sel") == "#selContractNo":
             toks = arg["toks"]
-            o = next((o for o in self.actual if all(t in o.upper() for t in toks)), None)
-            return o.split(" - ")[0] if o else ""
+            o = next((v for t, v, _ in self.actual if all(x in t.upper() for x in toks)), None)
+            return o if o is not None else ""
         self.inesperado.append(js[:60])
         return None
 
@@ -1312,7 +1325,32 @@ class PaginaContrato:
         self.hechos.append(("elige", sel, value))
         if not self.acepta:
             raise RuntimeError("el portal no la aceptó")
-        self.elegida = next((o for o in self.actual if o.split(" - ")[0] == value), None)
+        self.elegida = next((t for t, v, e in self.actual if value in (v, e)), None)
+
+
+class PaginaPaso2:
+    """La lista de contrato del paso 2 de HYUNDAI (HMM_LISTA_PASO2): su lectura (el JavaScript de _hmm_pares, con ese
+    selector) da 'opciones', pares (texto, valor), o falla si 'lee' no es True (con 'lee' como mensaje);
+    select_option la elige, o falla si 'acepta' es False. Anota cada lectura y cada elección; un JavaScript que no
+    conoce lo anota en 'inesperado' (la prueba exige esa lista vacía)."""
+
+    def __init__(self, sel, opciones, lee=True, acepta=True):
+        self.sel, self.opciones, self.lee, self.acepta = sel, opciones, lee, acepta
+        self.hechos, self.inesperado = [], []
+
+    def evaluate(self, js, arg=None):
+        if arg == self.sel and "s.options" in js:
+            self.hechos.append(("lee",))
+            if self.lee is not True:
+                raise RuntimeError(self.lee or "la página no contestó")
+            return [list(PaginaContrato.opcion(o)) for o in self.opciones]
+        self.inesperado.append(js[:60])
+        return None
+
+    def select_option(self, sel, value=None, timeout=None):
+        self.hechos.append(("elige", sel, value))
+        if not self.acepta:
+            raise RuntimeError("el portal no la aceptó")
 
 
 class TestContratoDeHyundai(soporte.CasoAQ):
@@ -1451,17 +1489,40 @@ class TestContratoDeHyundai(soporte.CasoAQ):
         self.assertEqual(r, ("NO ENVIADA", "Contract No de HYUNDAI: no encontré una sola opción con el contrato "
                                            "«CT-PRUEBA-HMM»: el portal ofrece 2 con ese mismo código" + self.FIN))
         self.assertNotIn("elige", [h[0] for h in p.hechos])
-        # Escrito con el texto completo de una de ellas (encargo 90), la regla la separa, pero _hmm_select_por_texto
-        # elige por el valor, que las dos comparten (el código, como lo modela la página falsa): queda la primera de la
-        # lista. Si es la del contrato, sigue; si no, la comprobación lo frena (revisión de código del encargo 90).
+        # Escrito con el texto completo de una de ellas (encargo 90), la regla la separa, pero si las dos tienen el
+        # mismo valor (el código, como en el HTML del paso 3), al elegir no se distinguen: NO ENVIADA, sin elegir nada,
+        # se haya escrito el texto de la primera o el de la segunda (decisión de Marcelo, encargo 91). Hasta ahí, con
+        # el de la primera la reserva seguía, y con el de la segunda la frenaba la comprobación.
         dos = ["Select", "CT-PRUEBA-HMM - (FMC)", "CT-PRUEBA-HMM - (GA)"]
-        p = PaginaContrato([dos])
-        self.assertEqual(self.correr(p, "contrato_dos_texto_primera", "CT-PRUEBA-HMM - (FMC)")[0], ("SIGUE", ""))
-        p = PaginaContrato([dos])
-        r, log = self.correr(p, "contrato_dos_texto_segunda", "CT-PRUEBA-HMM - (GA)")
-        self.assertEqual(r, ("NO ENVIADA", "Contract No de HYUNDAI: no encontré el contrato «CT-PRUEBA-HMM - (GA)» "
-                                           "elegido en la lista: después de elegirlo, quedó otra opción" + self.FIN))
-        self.assertIn("Contract No: la lista quedó con «CT-PRUEBA-HMM - (FMC)»", log)
+        for k, ctto in enumerate(("CT-PRUEBA-HMM - (FMC)", "CT-PRUEBA-HMM - (GA)")):
+            with self.subTest(ctto=ctto):
+                p = PaginaContrato([dos])
+                r, _ = self.correr(p, f"contrato_dos_texto_{k}", ctto)
+                self.assertEqual(r, ("NO ENVIADA", "Contract No de HYUNDAI: no encontré una sola opción con el "
+                                                   f"contrato «{ctto}»: el portal da el mismo valor a 2 opciones, y al "
+                                                   "elegir no se distinguen" + self.FIN))
+                self.assertNotIn("elige", [h[0] for h in p.hechos])
+        # Lo mismo si el valor lo comparte una opción que no es un contrato («Select», por ejemplo).
+        p = PaginaContrato([[("Select", "CT-PRUEBA-HMM"), "CT-PRUEBA-HMM - (GA)"]])
+        r, _ = self.correr(p, "contrato_valor_de_select")
+        self.assertEqual(r, ("NO ENVIADA", "Contract No de HYUNDAI: no encontré una sola opción con el contrato "
+                                           "«CT-PRUEBA-HMM»: el portal da el mismo valor a 2 opciones, y al elegir no "
+                                           "se distinguen" + self.FIN))
+        # Y si otra opción tiene ese valor como etiqueta (su texto): `select_option(value=…)` de Playwright para Python
+        # elige por el valor o por la etiqueta (revisión de código del encargo 91).
+        p = PaginaContrato([[("Select", ""), ("CT-1", "ZZ"), ("CT-1 - (GA)", "CT-1")]])
+        r, _ = self.correr(p, "contrato_valor_como_etiqueta", "CT-1 - (GA)")
+        self.assertEqual(r, ("NO ENVIADA", "Contract No de HYUNDAI: no encontré una sola opción con el contrato "
+                                           "«CT-1 - (GA)»: el portal da el mismo valor a 2 opciones, y al elegir no se "
+                                           "distinguen" + self.FIN))
+        self.assertNotIn("elige", [h[0] for h in p.hechos])
+        # Con el mismo código y valores distintos, el texto completo elige la suya; el código solo, sigue sin poder.
+        distintos = [("Select", ""), ("CT-PRUEBA-HMM - (FMC)", "CT-FMC"), ("CT-PRUEBA-HMM - (GA)", "CT-GA")]
+        p = PaginaContrato([distintos])
+        self.assertEqual(self.correr(p, "contrato_valores_distintos", "CT-PRUEBA-HMM - (GA)")[0], ("SIGUE", ""))
+        self.assertEqual([h for h in p.hechos if h[0] != "lee"], [("elige", "#selContractNo", "CT-GA"), ("comprueba",)])
+        p = PaginaContrato([distintos])
+        self.assertEqual(self.correr(p, "contrato_valores_distintos_codigo")[0][0], "NO ENVIADA")
 
     def test_si_la_lista_no_acepta_la_eleccion_corta(self):
         p = PaginaContrato([self.LISTA], acepta=False)
@@ -1491,26 +1552,32 @@ class TestContratoDeHyundai(soporte.CasoAQ):
                     self.assertIn(f"Contract No: la lista quedó con «{quedo}»", log)
                 else:
                     self.assertNotIn("la lista quedó con «", log)
+                    # El error va saneado: un salto de línea no parte la línea (encargo 91).
+                    self.assertIn("Contract No: err al leer la opción elegida (la página no contestó LINEA FALSA)", log)
 
     def test_js_lee_la_lista_y_la_opcion_elegida(self):
         # Los dos JavaScript que leen «Contract No», corridos en Node sobre una lista falsa (segunda revisión de código
-        # del encargo 89: la página falsa de arriba los reconoce por su texto y no los corre). El texto de cada opción y
-        # el de la elegida, sin los espacios de sus extremos (no su valor); sin la lista, [] y null.
+        # del encargo 89: la página falsa de arriba los reconoce por su texto y no los corre). De cada opción, su texto
+        # sin los espacios de sus extremos y, desde el encargo 91, su valor, de la lista del selector que recibe; de la
+        # elegida, su texto (no su valor); sin la lista, [] y null.
         guion = ("const lee = " + self.mod._JS_HMM_CONTRATOS + ";\nconst elegida = " + self.mod._JS_HMM_CONTRATO_ELEGIDO
-                 + r""";
-const op = (t, v) => ({textContent: t, value: v});
-const s = (i) => ({options: [op('Select', ''), op('\n   CT-PRUEBA-HMM - (GA)\n', 'CT-PRUEBA-HMM'),
-                             op('OTRO-UNO - (GA)', 'OTRO-UNO')], selectedIndex: i});
+                 + ";\nconst P2 = " + json.dumps(self.mod.HMM_LISTA_PASO2) + r""";
+const op = (t, v, l) => ({textContent: t, value: v, label: l});
+const s = (i) => ({options: [op('Select', '', 'Select'), op('\n   CT-PRUEBA-HMM - (GA)\n', 'CT-PRUEBA-HMM', 'L-UNO'),
+                             op('OTRO-UNO - (GA)', 'OTRO-UNO', 'L-DOS')], selectedIndex: i});
+const paso2 = {options: [op('PASO-DOS - (GA)', 'PASO-DOS', 'L-TRES')], selectedIndex: 0};
 const r = [];
 for (const sel of [s(1), s(2), s(0), s(-1), null]) {
-  global.document = {querySelector: (q) => (q === '#selContractNo' ? sel : null)};
-  r.push([lee(), elegida()]);
+  global.document = {querySelector: (q) => (q === '#selContractNo' ? sel : (q === P2 ? paso2 : null))};
+  r.push([lee('#selContractNo'), elegida(), lee(P2)]);
 }
 console.log(JSON.stringify(r));
 """)
-        lista = ["Select", "CT-PRUEBA-HMM - (GA)", "OTRO-UNO - (GA)"]
-        self.assertEqual(correr_node(self, guion), [[lista, "CT-PRUEBA-HMM - (GA)"], [lista, "OTRO-UNO - (GA)"],
-                                                    [lista, "Select"], [lista, None], [[], None]])
+        lista = [["Select", "", "Select"], ["CT-PRUEBA-HMM - (GA)", "CT-PRUEBA-HMM", "L-UNO"],
+                 ["OTRO-UNO - (GA)", "OTRO-UNO", "L-DOS"]]
+        p2 = [["PASO-DOS - (GA)", "PASO-DOS", "L-TRES"]]
+        self.assertEqual(correr_node(self, guion), [[lista, "CT-PRUEBA-HMM - (GA)", p2], [lista, "OTRO-UNO - (GA)", p2],
+                                                    [lista, "Select", p2], [lista, None, p2], [[], None, p2]])
 
     def test_el_motivo_muestra_el_contrato_saneado(self):
         # El motivo va a la planilla, y openpyxl no escribe un carácter de control: el contrato va como lo muestra
@@ -1522,20 +1589,30 @@ console.log(JSON.stringify(r));
         p = PaginaContrato([self.LISTA])
         r, _ = self.correr(p, "contrato_saneado", ctto)
         self.assertEqual(r, ("NO ENVIADA", self.NO_ESTA.format(visto, 2) + self.FIN))
+        # La línea «Contract No opciones» de log.txt va saneada igual: el texto de las opciones viene del portal
+        # (encargo 91; revisión de seguridad del encargo 89). Hasta ahí, una opción con un salto de línea partía la
+        # línea.
+        rara = "OTRO" + chr(0) + "UNO" + chr(10) + "- (GA)"
+        p = PaginaContrato([["Select", rara, "CT-PRUEBA-HMM - (GA)"]])
+        r, log = self.correr(p, "contrato_opciones_saneadas")
+        self.assertEqual(r, ("SIGUE", ""))
+        self.assertIn("Contract No opciones: Select | OTRO?UNO - (GA) | CT-PRUEBA-HMM - (GA)", log)
+        self.assertNotIn(chr(0), log)
 
     def test_los_motivos_dicen_donde_se_escribe(self):
-        # Los seis cortes de «Contract No de HYUNDAI» del programa: sin contrato (en reservar_hyundai) y los cinco de
-        # _hmm_elegir_contrato. Ninguno nombra config.json; los dos que se corrigen escribiendo el contrato dicen
-        # dónde; y ninguno muestra el contrato sin sanear (ctto). Sin contrato: «no encontré un contrato (se escribe
-        # en el panel → Credenciales → HYUNDAI → columna Contrato)». Y reservar_hyundai le quita los espacios al de las
-        # credenciales, en el paso 2 y en el 3, como ONE, MSC y CMA-CGM.
+        # Los siete cortes de «Contract No de HYUNDAI» del programa: sin contrato (en reservar_hyundai) y los seis de
+        # _hmm_elegir_contrato (desde el encargo 91, también el del valor compartido). Ninguno nombra config.json; los
+        # dos que se corrigen escribiendo el contrato dicen dónde; y ninguno muestra el contrato sin sanear (ctto). Sin
+        # contrato: «no encontré un contrato (se escribe en el panel → Credenciales → HYUNDAI → columna Contrato)». Y
+        # reservar_hyundai le quita los espacios al de las credenciales, en el paso 2 y en el 3, como ONE, MSC y
+        # CMA-CGM.
         self.assertEqual(self.mod.HMM_DONDE_VA_EL_CONTRATO, self.DONDE)
         tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
         cortes = [(f.name, n.exc.args[1]) for f in tree.body if isinstance(f, ast.FunctionDef) for n in ast.walk(f)
                   if isinstance(n, ast.Raise) and isinstance(n.exc, ast.Call)
                   and getattr(n.exc.func, "id", "") == "ObjetivoNoEncontrado" and n.exc.args
                   and getattr(n.exc.args[0], "value", "") == "Contract No de HYUNDAI"]
-        self.assertEqual(sorted(nombre for nombre, _ in cortes), ["_hmm_elegir_contrato"] * 5 + ["reservar_hyundai"])
+        self.assertEqual(sorted(nombre for nombre, _ in cortes), ["_hmm_elegir_contrato"] * 6 + ["reservar_hyundai"])
         textos = [ast.unparse(b) for _, b in cortes]
         self.assertEqual([t for t in textos if "config.json" in t], [])
         self.assertEqual(sum("HMM_DONDE_VA_EL_CONTRATO" in t for t in textos), 2)
@@ -1547,6 +1624,80 @@ console.log(JSON.stringify(r));
         ctto = [ast.unparse(n.value) for n in ast.walk(f) if isinstance(n, ast.Assign)
                 and ast.unparse(n.targets[0]) == "ctto"]
         self.assertEqual(ctto, ["str(creds.get('contrato') or '').strip() or _contrato_por_defecto('hyundai')"] * 2)
+
+
+class TestContratoPaso2DeHyundai(soporte.CasoAQ):
+    """La lista de contrato del paso 2 de HYUNDAI (decisión de Marcelo, encargo 91,
+    CICLO-hyundai-valor-compartido-y-paso2.md): _hmm_contrato_paso2 elige solo la opción cuyo código o texto completo
+    es el contrato, como el paso 3, y cuyo valor no comparte otra, por su valor; si no, no elige nada y no corta: queda
+    el del portal. Hasta ahí elegía con _hmm_select_por_texto la primera que contenía el contrato. Medido antes del
+    cambio: en el HTML de las 17 corridas, la lista no traía ninguna opción."""
+    OPCIONES = [("Select", ""), ("OTRO-UNO - (GA)", "OTRO-UNO"), ("CT-PRUEBA-HMM - (GA)", "CT-PRUEBA-HMM")]
+
+    def paso2(self, pagina, nombre, ctto="CT-PRUEBA-HMM"):
+        """Corre _hmm_contrato_paso2; devuelve (lo que devolvió, log.txt) y exige que la página no viera nada inesperado
+        y que no saliera ninguna excepción."""
+        log = self.sb / nombre / "log.txt"
+        reg = self.mod.Registro(log)
+        self.addCleanup(reg.cerrar)
+        r = self.mod._hmm_contrato_paso2(pagina, ctto, reg)
+        self.assertEqual(pagina.inesperado, [])
+        return r, log.read_text(encoding="utf-8")
+
+    def test_elige_solo_la_que_calza_exacto_por_su_valor(self):
+        sel = self.mod.HMM_LISTA_PASO2
+        self.assertEqual(sel, "select[id*='contract' i], select[name*='contract' i]")
+        for k, ctto in enumerate(("CT-PRUEBA-HMM", " ct-prueba-hmm - (ga) ")):
+            with self.subTest(ctto=ctto):
+                p = PaginaPaso2(sel, self.OPCIONES)
+                r, log = self.paso2(p, f"paso2_elige_{k}", ctto)
+                self.assertIs(r, True)
+                self.assertEqual(p.hechos, [("lee",), ("elige", sel, "CT-PRUEBA-HMM")])
+                self.assertIn("Contract No (Paso 2): 'CT-PRUEBA-HMM'", log)
+
+    def test_sin_una_que_calce_exacto_no_elige(self):
+        # La lista vacía (lo medido), un contrato a medias (con «contiene», lo elegía), dos con el mismo código, o
+        # una cuyo valor comparte otra: no elige nada, queda el del portal, y log.txt lo dice.
+        sel = self.mod.HMM_LISTA_PASO2
+        for k, (opciones, ctto, dice) in enumerate((
+                ([], "CT-PRUEBA-HMM", "sin opción que calce exacto con el contrato (calzan 0 de 0)"),
+                (self.OPCIONES, "CT-PRUEBA", "sin opción que calce exacto con el contrato (calzan 0 de 3)"),
+                ([("CT-PRUEBA-HMM - (GA)", "A"), ("CT-PRUEBA-HMM - (FMC)", "B")], "CT-PRUEBA-HMM",
+                 "sin opción que calce exacto con el contrato (calzan 2 de 2)"),
+                ([("CT-PRUEBA-HMM - (FMC)", "CT-PRUEBA-HMM"), ("CT-PRUEBA-HMM - (GA)", "CT-PRUEBA-HMM")],
+                 "CT-PRUEBA-HMM - (FMC)", "sin opción que se distinga (el mismo valor en 2 opciones)"),
+                ([("Select", ""), ("CT-1", "ZZ"), ("CT-1 - (GA)", "CT-1")], "CT-1 - (GA)",
+                 "sin opción que se distinga (el mismo valor en 2 opciones)"))):
+            with self.subTest(k=k):
+                p = PaginaPaso2(sel, opciones)
+                r, log = self.paso2(p, f"paso2_no_elige_{k}", ctto)
+                self.assertIs(r, False)
+                self.assertEqual(p.hechos, [("lee",)])
+                self.assertIn(f"Contract No (Paso 2): {dice}; queda el del portal", log)
+
+    def test_si_falla_no_corta(self):
+        # Si la lectura o la elección fallan, no elige y sigue: el paso 2 nunca corta (el contrato de la reserva lo
+        # elige y lo comprueba el paso 3). El error va a log.txt saneado: un salto de línea no parte la línea.
+        sel = self.mod.HMM_LISTA_PASO2
+        p = PaginaPaso2(sel, self.OPCIONES, lee="no contestó" + chr(10) + "LINEA FALSA")
+        r, log = self.paso2(p, "paso2_no_lee")
+        self.assertIs(r, False)
+        self.assertIn("Contract No (Paso 2): err lectura (no contestó LINEA FALSA); queda el del portal", log)
+        p = PaginaPaso2(sel, self.OPCIONES, acepta=False)
+        r, log = self.paso2(p, "paso2_no_acepta")
+        self.assertIs(r, False)
+        self.assertEqual(p.hechos, [("lee",), ("elige", sel, "CT-PRUEBA-HMM")])
+        self.assertIn("Contract No (Paso 2): err select (el portal no la aceptó); queda el del portal", log)
+
+    def test_lo_del_portal_va_saneado(self):
+        sel = self.mod.HMM_LISTA_PASO2
+        valor = "CT" + chr(0) + "1"
+        p = PaginaPaso2(sel, [("Select", ""), ("CT" + chr(0) + "1 - (GA)", valor)])
+        r, log = self.paso2(p, "paso2_saneado", "CT" + chr(0) + "1")
+        self.assertIs(r, True)
+        self.assertEqual(p.hechos, [("lee",), ("elige", sel, valor)])
+        self.assertIn("Contract No (Paso 2): 'CT?1'", log)
+        self.assertNotIn(chr(0), log)
 
 
 class TestPlantilla(soporte.CasoAQ):

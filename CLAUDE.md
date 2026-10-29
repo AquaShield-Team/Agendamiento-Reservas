@@ -1202,7 +1202,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 1021 pruebas al 2026-10-29 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 1025 pruebas al 2026-10-29 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -1551,10 +1551,11 @@ línea cambian). De arriba hacia abajo:
    sus salidas trae el viaje de la fila (en las seis desde el encargo 66), o la tarjeta que eligió MSC ya no es la
    misma justo antes del clic (encargo 67), o MSC no puede dejar el destino final aparte del puerto de descarga
    (encargo 86), o «Contract No» de HYUNDAI no trae una sola opción cuyo código o cuyo texto completo es el contrato
-   configurado, no queda elegida, o no hay un contrato (encargos 44, 89 y 90). `DETENIDO`, con «Detener»: en
-   COSCO y, desde el encargo 56, en la espera del deslizador de CMA-CGM. `REVISAR`, entre otros (en MAERSK
-   y en COSCO, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el motivo dice hasta qué fecha buscó (ver
-   «Ampliar la búsqueda»). Después: `EMITIDA`, `EMITIDA – CONFIRMAR POR CORREO` (COSCO, encargo 77; CMA-CGM, 78),
+   configurado, o su valor lo comparte otra, o no queda elegida, o no hay un contrato (encargos 44, 89, 90 y 91).
+   `DETENIDO`, con «Detener»: en COSCO y, desde el encargo 56, en la espera del deslizador de CMA-CGM. `REVISAR`,
+   entre otros (en MAERSK y en COSCO, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el motivo dice
+   hasta qué fecha buscó (ver «Ampliar la búsqueda»). Después: `EMITIDA`,
+   `EMITIDA – CONFIRMAR POR CORREO` (COSCO, encargo 77; CMA-CGM, 78),
    `ENVIADA – REVISAR EN PORTAL`, `NO ENVIADA`. El panel los pinta con
    `lecturaEstado` (en `JS_INDEX`):
    un estado nuevo necesita su rama ahí. `OK-EJEMPLO` es «lista», no «emitida»: la columna «N° reserva emitida» dice
@@ -1993,10 +1994,31 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
     hasta `HMM_LECTURAS_CONTRATO` veces cada 0,4 s (6 s, como antes). Después de comprobar que es la única, se la pasa a
     `_hmm_select_por_texto` con su texto entero, y **después lee la lista para comprobar que quedó elegida esa misma**
     (el texto de la opción elegida, `selectedIndex`). Si la lista no trae ningún contrato, si ninguna opción calza (ni
-    por su código ni por su texto completo), si calzan dos, si la lista no acepta la elección, si queda con otra opción
-    o si no se puede leer cuál quedó, NO ENVIADA (`ObjetivoNoEncontrado`, `hmm_f<fila>_sin_objetivo`, con el contrato que buscó). El paso 2 y el
-    paso 3 le quitan los espacios de los extremos al contrato de las credenciales, como ONE, MSC y CMA-CGM, y uno de solo
-    espacios cuenta como ninguno.
+    por su código ni por su texto completo), si calzan dos, si el valor de la que calza lo comparte otra opción, si la
+    lista no acepta la elección, si queda con otra opción o si no se puede leer cuál quedó, NO ENVIADA
+    (`ObjetivoNoEncontrado`, `hmm_f<fila>_sin_objetivo`, con el contrato que buscó). El paso 2 y el paso 3 le quitan los
+    espacios de los extremos al contrato de las credenciales, como ONE, MSC y CMA-CGM, y uno de solo espacios cuenta
+    como ninguno.
+    - **Dos opciones con el mismo valor no se distinguen al elegir** (decisión de Marcelo, encargo 91,
+      `CICLO-hyundai-valor-compartido-y-paso2.md`; `_hmm_valor_compartido`): `select_option(value=…)`, también el de
+      `_hmm_select_por_texto`, deja elegida la primera opción cuyo valor **o cuya etiqueta** (`label`, su texto) es ese
+      valor (medido en el Chromium de Playwright 1.58 por la revisión de código del encargo 91). Así que si otra opción
+      responde al valor de la que calza, como valor (un contrato del mismo código, o «Select», «Dummy» o «Direct Input»)
+      o como etiqueta (una opción cuyo texto es ese valor), NO ENVIADA, sin elegir nada, se haya escrito el texto
+      completo de la primera o el de la segunda. Hasta ahí, con el de la primera la reserva seguía, y con el de la
+      segunda la frenaba la comprobación. `_JS_HMM_CONTRATOS` lee por eso el texto, el valor y la etiqueta de cada
+      opción (`_hmm_pares`), de la lista que recibe por argumento.
+    - **El paso 2 elige con la misma regla** (misma decisión; `_hmm_contrato_paso2`, `HMM_LISTA_PASO2`, el primer
+      `select` cuyo id o name trae «contract»): solo la única opción cuyo código o texto completo es el contrato, y solo
+      si ninguna otra responde a su valor, por ese valor (`select_option`). Si no, no elige nada y queda el del portal,
+      como antes cuando no encontraba una opción: el paso 2 no corta, porque el contrato de la reserva lo elige y lo
+      comprueba el paso 3; si la lectura o la elección fallan, tampoco. Hasta el encargo 91 elegía con
+      `_hmm_select_por_texto` la primera opción cuyo texto contenía el contrato.
+    - **Lo que se lee del portal va saneado a log.txt** (misma decisión; `_destino_a_la_vista`): la línea «Contract No
+      opciones», las del paso 2, también sus errores, y el error al leer la opción elegida del paso 3. Hasta ahí, una
+      opción con un salto de línea partía la línea (revisión de seguridad del encargo 89), y un error de plazo de
+      Playwright, que trae un salto de línea, también. `_hmm_select_por_texto`, el ayudante común de las listas de
+      HYUNDAI, sigue escribiendo tal cual el valor («Contract No: '…'») y sus errores («err lectura», «err select»).
     - Hasta ahí, con el contrato fuera de la lista elegía la primera opción real, por su posición (`Contract No (primera
       real)`, residual de los encargos 70 y 71), y con dos que lo traían, la primera de ellas. La espera se cortaba con
       la primera lectura que traía una opción real, aunque la del contrato llegara después, y si la lista no cargaba,
@@ -2013,10 +2035,10 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
     - con uno que no está: «no encontré el contrato «…» entre los N que ofrece el portal (se compara entero con el
       código de cada opción, su texto antes de « - », o con su texto completo; se corrige en el …)»;
     - con dos que calzan: «… el portal ofrece N con ese mismo código» (dos que calzan siempre comparten el código),
-      sin mandar a corregirlo. Escrito con el texto completo de una de ellas, la regla la separa, pero
-      `_hmm_select_por_texto` elige por el valor, que las dos comparten (medido en el 89: el valor es el código), y queda
-      la primera de la lista: si no es la del contrato, la comprobación lo frena, con «quedó otra opción» (revisión de
-      código del encargo 90);
+      sin mandar a corregirlo;
+    - con el valor de la que calza en otra opción, como valor o como etiqueta (el texto completo de una de dos del
+      mismo código y el mismo valor, como en el HTML medido): «no encontré una sola opción con el contrato «…»: el
+      portal da el mismo valor a N opciones, y al elegir no se distinguen» (encargo 91);
     - si la lista no trae ningún contrato, tampoco manda a corregirlo, que puede estar bien: «no encontré ningún
       contrato en la lista del portal (no mostró ninguno en 6 s; el configurado es «…»)»;
     - si queda otra opción, o no se puede leer: «no encontré el contrato «…» elegido en la lista: después de elegirlo,
@@ -2042,10 +2064,18 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
     - antes de sumar el texto completo (`.trabajo/e90/medir_texto.py`, que importa la lectura de `medir_exacto.py`), en
       las 20, con el contrato configurado hoy, la regla del 89 y la del 90 eligen una sola opción, y la misma; con el
       texto completo de la opción elegida como contrato, la del 90 elige esa misma y la del 89 ninguna; y con el
-      contrato sin su último carácter, ninguna de las dos elige.
+      contrato sin su último carácter, ninguna de las dos elige;
+    - antes del paso 2 exacto (`.trabajo/e91/medir_paso2.py`), en el HTML que 17 corridas guardaron justo antes del
+      paso 2 (`hmm_f<fila>_destino`), la lista de contrato del paso 2 es una sola y no trae ninguna opción, y tampoco en
+      ningún HTML de HYUNDAI de después; las 10 filas con contrato dijeron «sin opción para», y las 7 sin contrato (las
+      del colega) no la miraron. Ni «contiene» ni la regla exacta eligen nada: ninguna cambia. Control positivo que
+      aborta: lo que predice «contiene» sobre el HTML es lo que log.txt dice que hizo, en las 10.
 
-    Ninguna cambia de resultado. El HTML del paso 3 no se guardó nunca (0 listas «Contract No» en los 1.122 HTML de
-    `logs/`): lo que se sabe de la lista sale de la línea «Contract No opciones» de log.txt, que trae hasta 6.
+    Ninguna cambia de resultado. **El HTML del paso 3 está guardado solo en los 7 cortes de «Contract No» de las
+    corridas del colega** (`hmm_f<fila>_sin_objetivo.html`, en «1. pruebas»; en `logs/` de este equipo, ninguno). Medido
+    en el encargo 91 (`.trabajo/e91/medir_paso3.py`): 4 opciones y 1 real en cada uno; el valor de la real es su código;
+    ningún valor se repite; «Select» trae el valor vacío, y «Dummy» y «Direct Input», valores distintos del de la real.
+    Lo demás de la lista sale de la línea «Contract No opciones» de log.txt, que trae hasta 6.
   - **Lo que queda residual:**
     - Una opción de otro contrato cuyo texto contiene entero el de la opción del contrato (por ejemplo «XCT-1 - (GA)»
       antes de «CT-1 - (GA)», con el contrato «CT-1»), si está antes, la elige `_hmm_select_por_texto` (la primera que
@@ -2055,13 +2085,18 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
       siempre una sola opción real.
     - «Named Customer» (`#actualShipperCode`) y «HMM Sales Person» (`#hmmSalesmanCd`), en el mismo paso, siguen
       eligiendo la primera opción real, por su posición (revisión de seguridad del encargo 89; quedan para un ciclo
-      propio, decisión de Marcelo). Para elegirlas bien hace falta saber, en el HTML del paso 3 (que no se guarda) y con
-      Marcelo, cuántas opciones traen, cuál corresponde a AquaChile y si depende del Shipper o del contrato, y si el
-      portal ya trae una elegida.
+      propio, decisión de Marcelo). Para elegirlas bien hace falta saber, en el HTML del paso 3 y con Marcelo, cuántas
+      opciones traen, cuál corresponde a AquaChile y si depende del Shipper o del contrato, y si el portal ya trae una
+      elegida. Los 7 cortes del colega en «1. pruebas» traen ese HTML, sin contrato elegido.
+    - En el paso 2, si una lista que calza con `HMM_LISTA_PASO2` estuviera dentro de una raíz shadow antes de la de la
+      página, `document.querySelector` (lo que lee) y `select_option` (lo que elige) tomarían listas distintas:
+      Playwright entra a la raíz shadow (medido por la revisión de código del encargo 91, en su Chromium). Ya pasaba con
+      `_hmm_select_por_texto`; en lo medido hay una sola lista así, en la página, y el contrato lo comprueba el paso 3.
   - Lo vigilan `test_ayudantes.TestContratoDeHyundai` (los casos sobre una página falsa, que anota cada lectura, cada
     elección y cada comprobación; los motivos, leídos del código; y los dos JavaScript que leen la lista,
     `_JS_HMM_CONTRATOS` y `_JS_HMM_CONTRATO_ELEGIDO`, corridos en Node: la página falsa los reconoce por su texto y no
-    los corre) y `TestContratosPorDefecto.test_hyundai_sin_contrato_no_elige_a_ciegas`.
+    los corre), `test_ayudantes.TestContratoPaso2DeHyundai` (el paso 2) y
+    `TestContratosPorDefecto.test_hyundai_sin_contrato_no_elige_a_ciegas`.
 - `codigo_shipper_hyundai` (`_codigo_shipper_hyundai`): el código con que HYUNDAI identifica a la empresa como
   Shipper. Sin él, el modal busca el Shipper solo por el nombre y el respaldo en JavaScript no escribe el código.
 
