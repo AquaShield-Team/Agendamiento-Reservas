@@ -1213,6 +1213,12 @@ python tests/correr.py --todo          # las dos cosas (más de una hora; el cen
 cd tests && python -m unittest test_planilla.TestLectorWeb.test_web_one    # una sola prueba
 ```
 
+**Cada texto viejo de `tests/mutaciones.py` tiene que aparecer una vez en su archivo**, o el censo completo falla
+(`preparar_fuentes`). Desde el encargo 86 fallaba así: la copia de la elección de MAERSK que hizo MSC (`_msc_opciones` y
+su elección) repetía las anclas de 4 mutaciones de MAERSK. Desde el encargo 92 llevan las líneas de MAERSK de alrededor,
+y `.trabajo/e92/anclas.py` cuenta todas las anclas sin correr el censo (con `--compilar`, también que cada mutación
+compile).
+
 El censo completo del 2026-10-06 (1.848 mutaciones, 2.252 pares) tardó unos 120 minutos, con otros programas cargando
 el equipo. En segundo plano, la herramienta Bash de Claude Code lo corta a las 2 horas: el primero se cortó ahí, y el
 segundo corrió aparte (encargo 52; el plan B está en el entorno de la máquina, `~/.claude/CLAUDE.md`). Mientras corre,
@@ -1551,7 +1557,8 @@ línea cambian). De arriba hacia abajo:
    sus salidas trae el viaje de la fila (en las seis desde el encargo 66), o la tarjeta que eligió MSC ya no es la
    misma justo antes del clic (encargo 67), o MSC no puede dejar el destino final aparte del puerto de descarga
    (encargo 86), o «Contract No» de HYUNDAI no trae una sola opción cuyo código o cuyo texto completo es el contrato
-   configurado, o su valor lo comparte otra, o no queda elegida, o no hay un contrato (encargos 44, 89, 90 y 91).
+   configurado, o su valor lo comparte otra, o no queda elegida, o no hay un contrato (encargos 44, 89, 90 y 91), o
+   «HMM Sales Person» trae más de una opción real, o su valor lo comparte otra, o no queda elegida (encargo 92).
    `DETENIDO`, con «Detener»: en COSCO y, desde el encargo 56, en la espera del deslizador de CMA-CGM. `REVISAR`,
    entre otros (en MAERSK y en COSCO, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el motivo dice
    hasta qué fecha buscó (ver «Ampliar la búsqueda»). Después: `EMITIDA`,
@@ -2029,6 +2036,25 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
       leer la lista y elige la primera que contiene su texto, sin mirar que sea la única.
     - Del encargo 89 al 90, el contrato escrito como el texto completo de la opción quedaba NO ENVIADA: se comparaba
       solo con el código.
+  - **«HMM Sales Person» elige solo su única opción real** (encargo 92, `CICLO-hyundai-sales-person-y-residual-91.md`;
+    `_hmm_sales_person`): la que tiene un valor y no es «Select», «Dummy» ni «Direct Input» (`_hmm_reales`), por su
+    valor, si ninguna otra responde a él (`_hmm_responden`), y lee y elige con el mismo localizador, el de la única lista
+    que calza con `#hmmSalesmanCd` (`_hmm_una_lista`). Después comprueba, en una sola lectura, que quedó elegida la misma
+    opción que leyó (texto, valor y etiqueta), todavía la única real y la única con su valor; si no, log.txt dice cuál
+    quedó. Sin la lista, sin ninguna opción real o sin poder leerla, no elige y sigue, como antes. Con dos listas (también
+    si aparece otra al leer: la lectura falla por el modo estricto del localizador, y vuelve a contar), con dos opciones
+    reales, si la lista no acepta la elección o si no queda, NO ENVIADA. Hasta ahí elegía la primera opción con un valor
+    que no era «select», por su posición, y si algo fallaba seguía. Medido antes del cambio (`.trabajo/e92/medir_nc_sp.py`
+    y `medir_nc_codigo.py`): en los 7 HTML del paso 3 del colega, «Select» sin valor y una sola opción real; en las 20
+    filas de este equipo que llegaron a la guarda, siempre el mismo valor, el de esa opción. **Cuántas trae con el
+    contrato ya elegido no está medido** (los 7 HTML son de cortes sin contrato): lo dice su línea de log.txt, `HMM Sales
+    Person opciones: …`. Lo de sus opciones y su valor va a log.txt saneado y con un tope de 60 caracteres.
+  - **«Named Customer» (`#actualShipperCode`) es un FRENO** (encargo 92): qué opción elegir lo decide Marcelo. Sigue
+    eligiendo como siempre, la primera opción con un valor que no es «select», y en las 20 filas medidas esa fue «Direct
+    Input», un texto fijo del portal, no un cliente (ni el código de Shipper ni el contrato de `config.json`). Su lista se
+    llena después de elegir el contrato: en los 7 HTML del colega, sin contrato, trae solo «Select». Desde el encargo 92,
+    log.txt dice sus opciones (`_hmm_named_customer_opciones`, `Named Customer opciones: …`), saneadas y con su tope, sin
+    elegir nada: es el dato para decidir.
   - **Los motivos de «Contract No» dicen dónde se escribe y muestran el contrato saneado** (misma decisión). El lugar es
     «panel → Credenciales → HYUNDAI → columna Contrato» (`HMM_DONDE_VA_EL_CONTRATO`), en vez de config.json:
     - sin contrato: «no encontré un contrato (se escribe en el panel → Credenciales → HYUNDAI → columna Contrato)»;
@@ -2083,11 +2109,9 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
       pulsar nada más. No se vio. Se quitaría eligiendo la opción por su texto exacto o por su índice.
     - Que dos opciones con el mismo código den NO ENVIADA lo decidió el ciclo, no Marcelo. En lo medido, la lista trajo
       siempre una sola opción real.
-    - «Named Customer» (`#actualShipperCode`) y «HMM Sales Person» (`#hmmSalesmanCd`), en el mismo paso, siguen
-      eligiendo la primera opción real, por su posición (revisión de seguridad del encargo 89; quedan para un ciclo
-      propio, decisión de Marcelo). Para elegirlas bien hace falta saber, en el HTML del paso 3 y con Marcelo, cuántas
-      opciones traen, cuál corresponde a AquaChile y si depende del Shipper o del contrato, y si el portal ya trae una
-      elegida. Los 7 cortes del colega en «1. pruebas» traen ese HTML, sin contrato elegido.
+    - «Named Customer» sigue eligiendo la primera opción con valor, por su posición: es el FRENO del encargo 92 (arriba).
+    - La comprobación de «HMM Sales Person» mira un solo instante: una opción real que el portal sume después de la
+      lectura de después no se ve (revisión de seguridad del encargo 92; no se vio, y lo medido es una lista fija).
     - En el paso 2, si una lista que calza con `HMM_LISTA_PASO2` estuviera dentro de una raíz shadow antes de la de la
       página, `document.querySelector` (lo que lee) y `select_option` (lo que elige) tomarían listas distintas:
       Playwright entra a la raíz shadow (medido por la revisión de código del encargo 91, en su Chromium). Ya pasaba con
@@ -2096,7 +2120,8 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
     elección y cada comprobación; los motivos, leídos del código; y los dos JavaScript que leen la lista,
     `_JS_HMM_CONTRATOS` y `_JS_HMM_CONTRATO_ELEGIDO`, corridos en Node: la página falsa los reconoce por su texto y no
     los corre), `test_ayudantes.TestContratoPaso2DeHyundai` (el paso 2) y
-    `TestContratosPorDefecto.test_hyundai_sin_contrato_no_elige_a_ciegas`.
+    `TestContratosPorDefecto.test_hyundai_sin_contrato_no_elige_a_ciegas`; «HMM Sales Person» y las opciones de «Named
+    Customer», `test_ayudantes.TestSalesPersonDeHyundai` (con `PaginaLista`, que lee y elige con un localizador).
 - `codigo_shipper_hyundai` (`_codigo_shipper_hyundai`): el código con que HYUNDAI identifica a la empresa como
   Shipper. Sin él, el modal busca el Shipper solo por el nombre y el respaldo en JavaScript no escribe el código.
 

@@ -7861,15 +7861,23 @@ MUTACIONES += [
          viejo="    if len(exactas) != 1:\n",
          nuevo="    if not exactas:\n"),
     dict(id="e62-sin-juntar-los-espacios", pruebas=[CM_ELIGE],
-         viejo='    return op, [" ".join((t or "").split()) for t in op.all_text_contents()]\n',
-         nuevo='    return op, [(t or "").strip() for t in op.all_text_contents()]\n'),
-    dict(id="e62-sin-esperar-la-lista-quieta", pruebas=[CM_QUIETA], viejo="        if textos and textos == anterior:\n",
-         nuevo="        if textos:\n"),
+         viejo=('    op = page.locator("mc-option:visible")\n'
+                '    return op, [" ".join((t or "").split()) for t in op.all_text_contents()]\n'),
+         nuevo=('    op = page.locator("mc-option:visible")\n'
+                '    return op, [(t or "").strip() for t in op.all_text_contents()]\n')),
+    dict(id="e62-sin-esperar-la-lista-quieta", pruebas=[CM_QUIETA],
+         viejo=("            op, textos = _mk_opciones_de_contenedor(page)\n        except Exception:\n"
+                "            op, textos = None, []\n        if textos and textos == anterior:\n"),
+         nuevo=("            op, textos = _mk_opciones_de_contenedor(page)\n        except Exception:\n"
+                "            op, textos = None, []\n        if textos:\n")),
     dict(id="e62-sin-evidencia", pruebas=[CM_ELIGE, CM_SIN_UNA, CM_DECORADOR, EV_SOLO_AHI],
          viejo='    _evidencia_antes_de_la_guarda(page, reg, evidencia, f"con la {lista}", completa=False)\n',
          nuevo=""),
-    dict(id="e62-elige-de-otra-lista", pruebas=[CM_CAMBIA], viejo="    if despues != textos:\n",
-         nuevo="    if False:\n"),
+    dict(id="e62-elige-de-otra-lista", pruebas=[CM_CAMBIA],
+         viejo=("        _, despues = _mk_opciones_de_contenedor(page)\n    except Exception:\n"
+                "        despues = []\n    if despues != textos:\n"),
+         nuevo=("        _, despues = _mk_opciones_de_contenedor(page)\n    except Exception:\n"
+                "        despues = []\n    if False:\n")),
     dict(id="e62-el-campo-que-falla-sigue", pruebas=[CM_FALLA],
          viejo=('        raise ObjetivoNoEncontrado(MK_TIPO_CONTENEDOR, f"el campo «Select container type and size» '
                 'para'),
@@ -8123,7 +8131,8 @@ MUTACIONES += [
     # del clic (el censo del encargo 65 lo mostró); lo ven las dos que eligen, cuya página no admite ese clic.
     dict(id="e65-clic-por-posicion",
          pruebas=[CM_ELIGE, "test_clics.TestReeferMaersk.test_elige_la_unica_con_el_texto_entero"],
-         viejo="        opcion.click(timeout=3000)\n", nuevo="        op.nth(exactas[0]).click(timeout=3000)\n"),
+         viejo='ya dice «{ahora[:40]}»")\n    try:\n        opcion.click(timeout=3000)\n',
+         nuevo='ya dice «{ahora[:40]}»")\n    try:\n        op.nth(exactas[0]).click(timeout=3000)\n'),
     dict(id="e65-sin-comprobar-la-opcion", pruebas=[CM_REPINTA], viejo="    if ahora != buscado:\n",
          nuevo="    if False:\n"),
     dict(id="e65-la-opcion-que-no-se-toma-sigue", pruebas=[CM_REPINTA],
@@ -10245,7 +10254,8 @@ MUTACIONES += [
     dict(id="e89-elige-la-primera-de-dos", pruebas=[CH_DOS],
          viejo="    if len(calzan) > 1:\n", nuevo="    if False:\n"),
     dict(id="e89-culpa-al-contrato-sin-lista", pruebas=[CH_SIN_LISTA],
-         viejo="    if not reales:\n", nuevo="    if False:\n"),
+         viejo='    if not reales:\n        raise ObjetivoNoEncontrado("Contract No de HYUNDAI", f"ningún contrato',
+         nuevo='    if False:\n        raise ObjetivoNoEncontrado("Contract No de HYUNDAI", f"ningún contrato'),
     dict(id="e89-sigue-si-no-la-acepta", pruebas=[CH_NO_ACEPTA],
          viejo=SELECT_E89,
          nuevo='    if _hmm_select_por_texto(page, "#selContractNo", [calzan[0]], reg, "Contract No") and False:\n'),
@@ -10394,4 +10404,99 @@ MUTACIONES += [
          pruebas=["test_ayudantes.TestContratoDeHyundai.test_si_la_lista_queda_con_otra_opcion_corta"],
          viejo='        reg.info(f"Contract No: err al leer la opción elegida ({_destino_a_la_vista(str(e))[:50]})")\n',
          nuevo='        reg.info(f"Contract No: err al leer la opción elegida ({str(e)[:50]})")\n'),
+]
+
+# --- Encargo 92 (CICLO-hyundai-sales-person-y-residual-91.md), frente 1: «HMM Sales Person» de HYUNDAI elige solo su
+# única opción real, por su valor y si ninguna otra responde a él, y comprueba que quedó (_hmm_sales_person); la lista se
+# lee y se elige con el mismo localizador, el del único elemento que calza (_hmm_una_lista); y «Named Customer» dice sus
+# opciones en log.txt, saneadas (su elección es un FRENO). Eligiendo la primera, con «Dummy» y «Direct Input» como
+# reales, sin el valor compartido, sin comprobar, siguiendo si no acepta, con dos listas, sin sanear, leyendo por
+# posición, sin contar las listas, o sin llamarla.
+SP = "test_ayudantes.TestSalesPersonDeHyundai."
+SP_ELIGE = SP + "test_elige_la_unica_opcion_real_por_su_valor"
+SP_NINGUNA = SP + "test_sin_una_opcion_real_no_elige_y_sigue"
+SP_DOS = SP + "test_con_mas_de_una_no_elige_por_su_posicion"
+SP_COMPARTIDO = SP + "test_si_otra_responde_a_su_valor_no_elige"
+SP_QUEDA = SP + "test_si_no_queda_elegida_corta"
+SP_SANEADO = SP + "test_lo_del_portal_va_saneado"
+SP_JS = SP + "test_js_lee_las_opciones_y_la_elegida"
+SP_UNA = SP + "test_una_lista_da_la_elegida_y_cuenta_antes_de_leer"
+SP_RESERVAR = SP + "test_reservar_hyundai_la_llama_despues_del_contrato"
+SP_NC = SP + "test_named_customer_solo_anota_sus_opciones"
+MUTACIONES += [
+    dict(id="e92-sp-elige-la-primera", pruebas=[SP_DOS],
+         cambios=[('    if len(reales) > 1:\n        raise ObjetivoNoEncontrado(paso, f"una sola opción en «{nombre}»',
+                   '    if False:\n        raise ObjetivoNoEncontrado(paso, f"una sola opción en «{nombre}»'),
+                  ("    [unica] = reales\n", "    unica = reales[0]\n")]),
+    dict(id="e92-sp-relleno-como-real", pruebas=[SP_ELIGE, SP_NINGUNA],
+         viejo="    return [(t, v, e) for t, v, e in pares if v.strip() and t.strip().lower() not in HMM_NO_SON_CONTRATO]\n",
+         nuevo="    return [(t, v, e) for t, v, e in pares if v.strip()]\n"),
+    dict(id="e92-sp-sin-el-valor-compartido", pruebas=[SP_COMPARTIDO],
+         viejo="    comparten = _hmm_responden(pares, valor)\n    if comparten > 1:\n",
+         nuevo="    comparten = _hmm_responden(pares, valor)\n    if False:\n"),
+    dict(id="e92-sp-sin-comprobar", pruebas=[SP_QUEDA],
+         viejo="    if elegida != unica or _hmm_reales(despues) != [elegida] or _hmm_responden(despues, valor) > 1:\n",
+         nuevo="    if False:\n"),
+    dict(id="e92-sp-comprueba-sin-recontar", pruebas=[SP_QUEDA],
+         viejo="    if elegida != unica or _hmm_reales(despues) != [elegida] or _hmm_responden(despues, valor) > 1:\n",
+         nuevo="    if elegida != unica:\n"),
+    dict(id="e92-sp-comprueba-solo-el-valor", pruebas=[SP_QUEDA],
+         viejo="    if elegida != unica or _hmm_reales(despues) != [elegida] or _hmm_responden(despues, valor) > 1:\n",
+         nuevo="    if elegida[1] != valor or len(_hmm_reales(despues)) != 1 or _hmm_responden(despues, valor) > 1:\n"),
+    dict(id="e92-sp-no-dice-que-quedo", pruebas=[SP_QUEDA],
+         viejo='        reg.info(f"{nombre}: la lista quedó con «{_destino_a_la_vista(elegida[0])[:40]}» (opciones reales: "\n',
+         nuevo='        pass\n        if False: reg.info(f"{nombre}: la lista quedó con «{_destino_a_la_vista(elegida[0])[:40]}» (opciones reales: "\n'),
+    dict(id="e92-sp-sin-volver-a-contar-las-listas", pruebas=[SP_DOS],
+         viejo="        try:\n            n = page.locator(sel).count()\n        except Exception:\n            n = 0\n",
+         nuevo="        n = 1\n"),
+    dict(id="e92-sp-sigue-si-no-acepta", pruebas=[SP_QUEDA],
+         viejo='        raise ObjetivoNoEncontrado(paso, f"cómo dejar elegida la única opción de «{nombre}»',
+         nuevo='        return\n        raise ObjetivoNoEncontrado(paso, f"cómo dejar elegida la única opción de «{nombre}»'),
+    dict(id="e92-sp-con-dos-listas-sigue", pruebas=[SP_DOS],
+         viejo="    if n > 1:\n        raise ObjetivoNoEncontrado(paso, f\"una sola lista «{nombre}»",
+         nuevo="    if False:\n        raise ObjetivoNoEncontrado(paso, f\"una sola lista «{nombre}»"),
+    dict(id="e92-sp-opciones-sin-sanear", pruebas=[SP_SANEADO],
+         viejo='    reg.info(f"{nombre} opciones: " + " | ".join([_destino_a_la_vista(t)[:60] for t, *_ in pares if t][:6]))\n',
+         nuevo='    reg.info(f"{nombre} opciones: " + " | ".join([t[:60] for t, *_ in pares if t][:6]))\n'),
+    dict(id="e92-sp-opciones-sin-tope", pruebas=[SP_SANEADO],
+         viejo='    reg.info(f"{nombre} opciones: " + " | ".join([_destino_a_la_vista(t)[:60] for t, *_ in pares if t][:6]))\n',
+         nuevo='    reg.info(f"{nombre} opciones: " + " | ".join([_destino_a_la_vista(t) for t, *_ in pares if t][:6]))\n'),
+    dict(id="e92-sp-valor-sin-sanear", pruebas=[SP_SANEADO],
+         viejo="    reg.info(f\"{nombre}: '{_destino_a_la_vista(valor)[:60]}'\")\n",
+         nuevo="    reg.info(f\"{nombre}: '{valor[:60]}'\")\n"),
+    dict(id="e92-sp-valor-sin-tope", pruebas=[SP_SANEADO],
+         viejo="    reg.info(f\"{nombre}: '{_destino_a_la_vista(valor)[:60]}'\")\n",
+         nuevo="    reg.info(f\"{nombre}: '{_destino_a_la_vista(valor)}'\")\n"),
+    dict(id="e92-sp-error-sin-sanear", pruebas=[SP_SANEADO],
+         viejo='        reg.info(f"{nombre}: err select ({_destino_a_la_vista(str(e))[:50]})")\n',
+         nuevo='        reg.info(f"{nombre}: err select ({str(e)[:50]})")\n'),
+    dict(id="e92-sp-no-atrapa-la-lectura", pruebas=[SP_NINGUNA],
+         viejo='    except Exception as e:\n        # Si entre la cuenta y la lectura apareció otra lista',
+         nuevo='    except ZeroDivisionError as e:\n        # Si entre la cuenta y la lectura apareció otra lista'),
+    dict(id="e92-js-lista-sin-la-elegida", pruebas=[SP_JS],
+         viejo="    elegida: s.selectedIndex})\"\"\"\n", nuevo="    elegida: 0})\"\"\"\n"),
+    dict(id="e92-una-lista-elegida-por-posicion", pruebas=[SP_UNA, SP_ELIGE],
+         viejo="    return 1, lista, pares, tuple(\"\" if x is None else str(x) for x in crudas[i])\n",
+         nuevo="    return 1, lista, pares, tuple(\"\" if x is None else str(x) for x in crudas[0])\n"),
+    dict(id="e92-una-lista-sin-contar", pruebas=[SP_UNA, SP_DOS],
+         viejo="    if n != 1:\n        return n, None, [], None\n", nuevo=""),
+    dict(id="e92-una-lista-con-document", pruebas=[SP_UNA],
+         viejo="    leido = lista.evaluate(_JS_HMM_LISTA, timeout=5000) or {}\n",
+         nuevo="    leido = page.evaluate(_JS_HMM_LISTA, sel) or {}\n"),
+    dict(id="e92-reservar-sin-sales-person", pruebas=[SP_RESERVAR],
+         viejo="    _hmm_sales_person(page, reg)\n", nuevo="    pass\n"),
+    dict(id="e92-nc-opciones-sin-sanear", pruebas=[SP_NC],
+         viejo='    reg.info("Named Customer opciones: " + " | ".join([_destino_a_la_vista(t)[:60] for t, *_ in pares if t][:6]))\n',
+         nuevo='    reg.info("Named Customer opciones: " + " | ".join([t for t, *_ in pares if t][:6]))\n'),
+    dict(id="e92-nc-no-atrapa-la-lectura", pruebas=[SP_NC],
+         viejo='    except Exception as e:\n        reg.info(f"Named Customer: err al leer sus opciones',
+         nuevo='    except ZeroDivisionError as e:\n        reg.info(f"Named Customer: err al leer sus opciones'),
+    dict(id="e92-nc-con-dos-listas", pruebas=[SP_NC],
+         viejo='    if n != 1:\n        reg.info(f"Named Customer: no hay una sola lista (hay {n})")\n        return\n',
+         nuevo=""),
+    dict(id="e92-reservar-sin-named-customer", pruebas=[SP_RESERVAR],
+         viejo="    _hmm_named_customer_opciones(page, reg)\n", nuevo="    pass\n"),
+    dict(id="e92-nc-valor-sin-sanear", pruebas=[SP_RESERVAR],
+         viejo="            reg.info(f\"Named Customer: '{_destino_a_la_vista(actual_shippers[0])[:60]}'\")\n",
+         nuevo="            reg.info(f\"Named Customer: '{actual_shippers[0]}'\")\n"),
 ]
