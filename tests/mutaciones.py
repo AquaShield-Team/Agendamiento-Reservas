@@ -10240,10 +10240,10 @@ CH_SANEADO = CH + "test_el_motivo_muestra_el_contrato_saneado"
 CH_NO_SON = CH + "test_las_opciones_que_no_son_un_contrato_no_cuentan"
 CH_MOTIVOS = CH + "test_los_motivos_dicen_donde_se_escribe"
 CALZAN_E89 = "    calzan = _hmm_contratos_que_calzan(opciones, ctto)\n"
-SELECT_E89 = '    if not _hmm_select_por_texto(page, "#selContractNo", [calzan[0]], reg, "Contract No"):\n'
+SELECT_E89 = '        raise ObjetivoNoEncontrado("Contract No de HYUNDAI", f"cómo dejar elegido el contrato'
 SI_E89 = "            if c and o and o.strip().lower() not in HMM_NO_SON_CONTRATO\n"
-CALZA_E89 = "            and c in (_hmm_codigo_del_contrato(o), o.strip().upper())]\n"
-CODIGO_E89 = '    return str(opcion or "").split(" - ")[0].strip().upper()\n'
+CALZA_E89 = "            and c in (_hmm_codigo_del_contrato(o), _mayusculas_ascii(o.strip()))]\n"
+CODIGO_E89 = '    return _mayusculas_ascii(str(opcion or "").split(" - ")[0].strip())\n'
 PASO3_E89 = '    ctto = str(creds.get("contrato") or "").strip() or _contrato_por_defecto("hyundai")\n    if not ctto:\n'
 PASO2_E89 = '    ctto = str(creds.get("contrato") or "").strip() or _contrato_por_defecto("hyundai")\n    if ctto:\n'
 MUTACIONES += [
@@ -10258,16 +10258,22 @@ MUTACIONES += [
          nuevo='    if False:\n        raise ObjetivoNoEncontrado("Contract No de HYUNDAI", f"ningún contrato'),
     dict(id="e89-sigue-si-no-la-acepta", pruebas=[CH_NO_ACEPTA],
          viejo=SELECT_E89,
-         nuevo='    if _hmm_select_por_texto(page, "#selContractNo", [calzan[0]], reg, "Contract No") and False:\n'),
-    dict(id="e89-elige-con-el-texto-configurado", pruebas=[CH_ENTERO],
-         viejo=SELECT_E89, nuevo='    if not _hmm_select_por_texto(page, "#selContractNo", [ctto], reg, "Contract No"):\n'),
+         nuevo='        return\n' + SELECT_E89),
+    dict(id="e89-elige-con-el-texto-configurado", pruebas=[CH + "test_acepta_el_texto_completo_de_la_opcion"],
+         viejo=("    valor = next(v for t, v, _ in pares if t == calzan[0])\n    try:\n"
+                "        lista.select_option(value=valor, timeout=5000)\n    except Exception as e:\n        reg.info(f\"Contract No: err select"),
+         nuevo=("    valor = ctto\n    try:\n"
+                "        lista.select_option(value=valor, timeout=5000)\n    except Exception as e:\n        reg.info(f\"Contract No: err select")),
     dict(id="e89-calza-si-lo-contiene", pruebas=[CH_ENTERO],
          viejo=CALZA_E89,
          nuevo="            and c in o.upper()]\n"),
     dict(id="e89-sigue-si-queda-otra", pruebas=[CH_QUEDA],
-         viejo="    if elegida != calzan[0].strip():\n", nuevo="    if False:\n"),
+         viejo="    if elegida is None or elegida[0] != texto or elegida[1] != valor:\n", nuevo="    if False:\n"),
     dict(id="e89-da-por-elegida-sin-leerla", pruebas=[CH_QUEDA],
-         viejo="        elegida = None\n", nuevo="        elegida = calzan[0]\n"),
+         viejo='        reg.info(f"Contract No: err al leer la opción elegida ({_destino_a_la_vista(str(e))[:50]})")\n'
+               "        despues, elegida = [], None\n",
+         nuevo='        reg.info(f"Contract No: err al leer la opción elegida ({_destino_a_la_vista(str(e))[:50]})")\n'
+               "        despues, elegida = [], (texto, valor, texto)\n"),
     dict(id="e89-se-queda-con-la-primera-lectura-real", pruebas=[CH_ELIGE],
          viejo="        if _hmm_contratos_que_calzan(opciones, ctto):\n            break\n",
          nuevo=("        if [o for o in opciones if o and o.lower() not in HMM_NO_SON_CONTRATO]:\n"
@@ -10278,11 +10284,11 @@ MUTACIONES += [
          viejo="    for _ in range(HMM_LECTURAS_CONTRATO):\n        esperar(page, 0.4)\n",
          nuevo="    for _ in range(HMM_LECTURAS_CONTRATO):\n        pass\n"),
     dict(id="e89-distingue-mayusculas", pruebas=[CH_ELIGE],
-         viejo='    c = str(ctto or "").strip().upper()\n', nuevo='    c = str(ctto or "").strip()\n'),
+         viejo='    c = _mayusculas_ascii(str(ctto or "").strip())\n', nuevo='    c = str(ctto or "").strip()\n'),
     dict(id="e89-opcion-sin-mayusculas", pruebas=[CH_ELIGE],
          viejo=CODIGO_E89, nuevo='    return str(opcion or "").split(" - ")[0].strip()\n'),
     dict(id="e89-con-sus-espacios", pruebas=[CH_ELIGE],
-         viejo='    c = str(ctto or "").strip().upper()\n', nuevo='    c = str(ctto or "").upper()\n'),
+         viejo='    c = _mayusculas_ascii(str(ctto or "").strip())\n', nuevo='    c = _mayusculas_ascii(str(ctto or ""))\n'),
     dict(id="e89-calza-con-solo-espacios", pruebas=[CH_NO_SON],
          viejo=SI_E89, nuevo="            if o and o.strip().lower() not in HMM_NO_SON_CONTRATO\n"),
     dict(id="e89-direct-input-es-un-contrato", pruebas=[CH_NO_SON],
@@ -10291,7 +10297,8 @@ MUTACIONES += [
          viejo='HMM_DONDE_VA_EL_CONTRATO = "panel → Credenciales → HYUNDAI → columna Contrato"\n',
          nuevo='HMM_DONDE_VA_EL_CONTRATO = "config.json → opciones → contratos_por_defecto → hyundai"\n'),
     dict(id="e89-motivo-sin-sanear", pruebas=[CH_SANEADO],
-         viejo="    visto = _hmm_contrato_a_la_vista(ctto)\n", nuevo='    visto = str(ctto or "").strip()\n'),
+         viejo="    visto = _hmm_contrato_a_la_vista(ctto)\n    n, lista, pares, opciones, error = ",
+         nuevo='    visto = str(ctto or "").strip()\n    n, lista, pares, opciones, error = '),
     dict(id="e89-saneado-sin-tope", pruebas=[CH_SANEADO],
          viejo="    return _destino_a_la_vista(ctto)[:40]\n", nuevo="    return _destino_a_la_vista(ctto)\n"),
     dict(id="e89-sin-contrato-con-el-motivo-de-antes", pruebas=[CH_MOTIVOS],
@@ -10304,20 +10311,14 @@ MUTACIONES += [
          viejo=PASO2_E89,
          nuevo='    ctto = creds.get("contrato", "") or _contrato_por_defecto("hyundai")\n    if ctto:\n'),
     dict(id="e89-paso3-sin-elegir", pruebas=[CD_HMM],
-         viejo="    _hmm_elegir_contrato(page, ctto, reg)\n", nuevo="    pass\n"),
+         viejo="    elegido = _hmm_elegir_contrato(page, ctto, reg)\n", nuevo="    elegido = None\n"),
     # Tras la segunda revisión de código: los dos JavaScript que leen la lista, corridos en Node; la línea de log.txt
     # que dice qué opción quedó; y el motivo que dice qué es el código.
-    dict(id="e89-js-elegida-lee-el-valor", pruebas=[CH + "test_js_lee_la_lista_y_la_opcion_elegida"],
-         viejo="    return o ? (o.textContent||'').trim() : null;}\"\"\"\n",
-         nuevo="    return o ? o.value : null;}\"\"\"\n"),
-    dict(id="e89-js-elegida-la-primera", pruebas=[CH + "test_js_lee_la_lista_y_la_opcion_elegida"],
-         viejo="    const o = s && s.selectedIndex >= 0 ? s.options[s.selectedIndex] : null;\n",
-         nuevo="    const o = s && s.selectedIndex >= 0 ? s.options[0] : null;\n"),
-    dict(id="e89-js-opciones-sin-recortar", pruebas=[CH + "test_js_lee_la_lista_y_la_opcion_elegida"],
-         viejo="    return s ? [...s.options].map(o=>[(o.textContent||'').trim(), o.value, o.label]) : [];}\"\"\"\n",
-         nuevo="    return s ? [...s.options].map(o=>[o.textContent||'', o.value, o.label]) : [];}\"\"\"\n"),
+    dict(id="e89-js-opciones-sin-recortar", pruebas=["test_ayudantes.TestSalesPersonDeHyundai.test_js_lee_las_opciones_y_la_elegida"],
+         viejo="_JS_HMM_LISTA = \"\"\"(s)=>({opciones: [...s.options].map(o=>[(o.textContent||'').trim(), o.value, o.label]),\n",
+         nuevo="_JS_HMM_LISTA = \"\"\"(s)=>({opciones: [...s.options].map(o=>[o.textContent||'', o.value, o.label]),\n"),
     dict(id="e89-no-dice-cual-quedo", pruebas=[CH_QUEDA],
-         viejo='            reg.info(f"Contract No: la lista quedó con «{_hmm_contrato_a_la_vista(elegida)}»")\n',
+         viejo='            reg.info(f"Contract No: la lista quedó con «{_hmm_contrato_a_la_vista(elegida[0])}» ({cuando})")\n',
          nuevo="            pass\n"),
     dict(id="e89-motivo-sin-el-codigo", pruebas=[CH_NO_ESTA],
          viejo='                                   f"entero con el código de cada opción, su texto antes de « - », o con su texto "\n',
@@ -10345,7 +10346,7 @@ MUTACIONES += [
 # uno, con «contiene» en el paso 2, cortando o tragándose mal un error del paso 2, eligiendo por el texto, sin sanear,
 # sin los valores en el JavaScript, sin llamar al paso 2, o con otra lista.
 CH_DOS_E91 = "test_ayudantes.TestContratoDeHyundai.test_si_dos_tienen_el_mismo_codigo_no_elige_la_primera"
-CH_JS_E91 = "test_ayudantes.TestContratoDeHyundai.test_js_lee_la_lista_y_la_opcion_elegida"
+CH_JS_E91 = "test_ayudantes.TestSalesPersonDeHyundai.test_js_lee_las_opciones_y_la_elegida"
 CH_SANEADO_E91 = "test_ayudantes.TestContratoDeHyundai.test_el_motivo_muestra_el_contrato_saneado"
 P2 = "test_ayudantes.TestContratoPaso2DeHyundai."
 P2_ELIGE = P2 + "test_elige_solo_la_que_calza_exacto_por_su_valor"
@@ -10354,15 +10355,15 @@ P2_FALLA = P2 + "test_si_falla_no_corta"
 P2_SANEADO = P2 + "test_lo_del_portal_va_saneado"
 MUTACIONES += [
     dict(id="e91-sigue-con-el-valor-compartido", pruebas=[CH_DOS_E91],
-         viejo="    if comparten > 1:\n        raise ObjetivoNoEncontrado(\"Contract No de HYUNDAI\",\n",
-         nuevo="    if False:\n        raise ObjetivoNoEncontrado(\"Contract No de HYUNDAI\",\n"),
+         viejo="    if comparten > 1:\n        return (f\"una sola opción con el contrato",
+         nuevo="    if False:\n        return (f\"una sola opción con el contrato"),
     dict(id="e91-valor-compartido-cuenta-uno", pruebas=[CH_DOS_E91, P2_NO],
          viejo="    return sum(v == valor or e == valor for _, v, e in pares)\n", nuevo="    return 1\n"),
     dict(id="e91-js-sin-valores", pruebas=[CH_JS_E91],
-         viejo="    return s ? [...s.options].map(o=>[(o.textContent||'').trim(), o.value, o.label]) : [];}\"\"\"\n",
-         nuevo="    return s ? [...s.options].map(o=>[(o.textContent||'').trim(), '', o.label]) : [];}\"\"\"\n"),
+         viejo="map(o=>[(o.textContent||'').trim(), o.value, o.label]),\n",
+         nuevo="map(o=>[(o.textContent||'').trim(), '', o.label]),\n"),
     dict(id="e91-opciones-sin-sanear", pruebas=[CH_SANEADO_E91],
-         viejo='    reg.info("Contract No opciones: " + " | ".join([_destino_a_la_vista(o) for o in opciones if o][:6]))\n',
+         viejo='    reg.info("Contract No opciones: " + " | ".join([_destino_a_la_vista(o)[:60] for o in opciones if o][:6]))\n',
          nuevo='    reg.info("Contract No opciones: " + " | ".join([o for o in opciones if o][:6]))\n'),
     dict(id="e91-paso2-contiene", pruebas=[P2_NO],
          viejo="    calzan = _hmm_contratos_que_calzan([t for t, *_ in pares], ctto)\n",
@@ -10379,10 +10380,12 @@ MUTACIONES += [
          viejo='        reg.info(f"Contract No (Paso 2): err lectura ({_destino_a_la_vista(str(e))[:50]}); queda el del portal")\n',
          nuevo='        reg.info(f"Contract No (Paso 2): err lectura ({str(e)[:50]}); queda el del portal")\n'),
     dict(id="e91-paso2-elige-por-el-texto", pruebas=[P2_ELIGE],
-         viejo="        page.select_option(HMM_LISTA_PASO2, value=valor, timeout=5000)\n",
-         nuevo="        page.select_option(HMM_LISTA_PASO2, value=calzan[0], timeout=5000)\n"),
+         viejo=("        lista.select_option(value=valor, timeout=5000)\n    except Exception as e:\n"
+                '        reg.info(f"Contract No (Paso 2): err select'),
+         nuevo=("        lista.select_option(value=calzan[0], timeout=5000)\n    except Exception as e:\n"
+                '        reg.info(f"Contract No (Paso 2): err select')),
     dict(id="e91-paso2-valor-sin-sanear", pruebas=[P2_SANEADO],
-         viejo="    reg.info(f\"Contract No (Paso 2): '{_destino_a_la_vista(valor)}'\")\n",
+         viejo="    reg.info(f\"Contract No (Paso 2): '{_destino_a_la_vista(valor)[:60]}'\")\n",
          nuevo="    reg.info(f\"Contract No (Paso 2): '{valor}'\")\n"),
     dict(id="e91-paso2-otra-lista", pruebas=[P2_ELIGE],
          viejo="HMM_LISTA_PASO2 = \"select[id*='contract' i], select[name*='contract' i]\"\n",
@@ -10395,11 +10398,10 @@ MUTACIONES += [
          viejo="    return sum(v == valor or e == valor for _, v, e in pares)\n",
          nuevo="    return sum(v == valor for _, v, e in pares)\n"),
     dict(id="e91-js-sin-etiqueta", pruebas=[CH_JS_E91],
-         viejo="    return s ? [...s.options].map(o=>[(o.textContent||'').trim(), o.value, o.label]) : [];}\"\"\"\n",
-         nuevo="    return s ? [...s.options].map(o=>[(o.textContent||'').trim(), o.value, '']) : [];}\"\"\"\n"),
-    dict(id="e91-js-selector-fijo", pruebas=[CH_JS_E91],
-         viejo='_JS_HMM_CONTRATOS = """(sel)=>{const s=document.querySelector(sel);\n',
-         nuevo='_JS_HMM_CONTRATOS = """(sel)=>{const s=document.querySelector(\'#selContractNo\');\n'),
+         viejo="map(o=>[(o.textContent||'').trim(), o.value, o.label]),\n",
+         nuevo="map(o=>[(o.textContent||'').trim(), o.value, '']),\n"),
+    dict(id="e91-js-selector-fijo", pruebas=[P2_ELIGE],
+         viejo="    lista = page.locator(sel)\n", nuevo="    lista = page.locator(\"#selContractNo\")\n"),
     dict(id="e91-elegida-error-sin-sanear",
          pruebas=["test_ayudantes.TestContratoDeHyundai.test_si_la_lista_queda_con_otra_opcion_corta"],
          viejo='        reg.info(f"Contract No: err al leer la opción elegida ({_destino_a_la_vista(str(e))[:50]})")\n',
@@ -10499,4 +10501,75 @@ MUTACIONES += [
     dict(id="e92-nc-valor-sin-sanear", pruebas=[SP_RESERVAR],
          viejo="            reg.info(f\"Named Customer: '{_destino_a_la_vista(actual_shippers[0])[:60]}'\")\n",
          nuevo="            reg.info(f\"Named Customer: '{actual_shippers[0]}'\")\n"),
+]
+
+# --- Encargo 92 (CICLO-hyundai-sales-person-y-residual-91.md), frente 2, el residual del encargo 91: los pasos 2 y 3
+# leen y eligen la lista de contrato con el mismo localizador (_hmm_una_lista), el paso 3 elige por el valor y la
+# comprobación de después vuelve a contar (_hmm_sin_una_opcion); las mayúsculas, solo de a-z (_mayusculas_ascii); y
+# _hmm_select_por_texto escribe saneado. Eligiendo con page.select_option, con dos listas, sin volver a contar, sin
+# mirar el valor de la elegida, con str.upper(), en el paso 2 con dos listas, o sin sanear.
+CH_E92 = "test_ayudantes.TestContratoDeHyundai."
+SPT = "test_ayudantes.TestSelectPorTextoDeHyundai.test_lo_del_portal_va_saneado"
+MUTACIONES += [
+    dict(id="e92-contrato-elige-con-page", pruebas=[CH_E92 + "test_lee_y_elige_con_el_mismo_localizador", CH_ELIGE],
+         viejo=("    try:\n        lista.select_option(value=valor, timeout=5000)\n    except Exception as e:\n        reg.info(f\"Contract No: err select"),
+         nuevo=("    try:\n        page.select_option(\"#selContractNo\", value=valor, timeout=5000)\n    except Exception as e:\n        reg.info(f\"Contract No: err select")),
+    dict(id="e92-contrato-con-dos-listas", pruebas=[CH_E92 + "test_con_dos_listas_no_elige"],
+         viejo='    if n > 1:\n        raise ObjetivoNoEncontrado("Contract No de HYUNDAI", f"una sola lista',
+         nuevo='    if False:\n        raise ObjetivoNoEncontrado("Contract No de HYUNDAI", f"una sola lista'),
+    dict(id="e92-contrato-sin-volver-a-contar", pruebas=[CH_E92 + "test_despues_de_elegir_vuelve_a_contar"],
+         viejo="    motivo = _hmm_sin_una_opcion(_hmm_contratos_que_calzan([t for t, *_ in despues], ctto), despues, visto)\n",
+         nuevo="    motivo = \"\"\n"),
+    dict(id="e92-contrato-comprueba-sin-el-valor", pruebas=[CH_E92 + "test_despues_de_elegir_vuelve_a_contar"],
+         viejo="    if elegida is None or elegida[0] != texto or elegida[1] != valor:\n",
+         nuevo="    if elegida is None or elegida[0] != texto:\n"),
+    dict(id="e92-mayusculas-con-upper", pruebas=[CH_E92 + "test_las_mayusculas_solo_de_a_z"],
+         viejo="    return str(texto).translate(_A_MAYUSCULAS)\n", nuevo="    return str(texto).upper()\n"),
+    dict(id="e92-paso2-con-dos-listas", pruebas=["test_ayudantes.TestContratoPaso2DeHyundai.test_sin_una_sola_lista_no_elige"],
+         viejo='    if n != 1:\n        reg.info(f"Contract No (Paso 2): no hay una sola lista',
+         nuevo='    if False:\n        reg.info(f"Contract No (Paso 2): no hay una sola lista'),
+    dict(id="e92-select-por-texto-valor-sin-sanear", pruebas=[SPT],
+         viejo="        reg.info(f\"{etiqueta}: '{_destino_a_la_vista(val)[:60]}'\")\n",
+         nuevo="        reg.info(f\"{etiqueta}: '{val}'\")\n"),
+    dict(id="e92-select-por-texto-lectura-sin-sanear", pruebas=[SPT],
+         viejo='        reg.info(f"{etiqueta}: err lectura ({_destino_a_la_vista(str(e))[:50]})"); return False\n',
+         nuevo='        reg.info(f"{etiqueta}: err lectura ({str(e)[:50]})"); return False\n'),
+    dict(id="e92-select-por-texto-select-sin-sanear", pruebas=[SPT],
+         viejo='        reg.info(f"{etiqueta}: err select ({_destino_a_la_vista(str(e))[:50]})"); return False\n',
+         nuevo='        reg.info(f"{etiqueta}: err select ({str(e)[:50]})"); return False\n'),
+]
+
+# --- Encargo 92, frente 2, tras sus revisiones de código y de seguridad: la comprobación se repite antes de «NEXT -
+# Additional Information» (_hmm_comprobar_contrato, «antes de seguir») y compara el texto sin recortarlo otra vez;
+# _hmm_sin_una_opcion da un motivo sin ninguna que calce; si la última lectura falla, log.txt lo dice y se vuelven a
+# contar las listas; lo del portal, con su tope; «Size opciones» saneado. Sin mirar antes de seguir, comparando solo el
+# valor o recortando, cayendo sin ninguna que calce, sin decir el error, sin volver a contar, sin tope o sin sanear.
+SPT_SIZE = "test_ayudantes.TestSelectPorTextoDeHyundai.test_size_opciones_va_saneado"
+MUTACIONES += [
+    dict(id="e92-contrato-sin-mirar-antes-de-seguir", pruebas=[CH_E92 + "test_antes_de_seguir_vuelve_a_mirar"],
+         viejo='    _hmm_comprobar_contrato(page, ctto, *elegido, reg, "antes de seguir")\n', nuevo="    pass\n"),
+    dict(id="e92-contrato-comprueba-solo-el-valor", pruebas=[CH_E92 + "test_despues_de_elegir_vuelve_a_contar"],
+         viejo="    if elegida is None or elegida[0] != texto or elegida[1] != valor:\n",
+         nuevo="    if elegida is None or elegida[1] != valor:\n"),
+    dict(id="e92-contrato-comprueba-recortando", pruebas=[CH_E92 + "test_despues_de_elegir_vuelve_a_contar"],
+         viejo="    if elegida is None or elegida[0] != texto or elegida[1] != valor:\n",
+         nuevo="    if elegida is None or elegida[0] != texto.strip() or elegida[1] != valor:\n"),
+    dict(id="e92-contrato-sin-una-cae-sin-ninguna", pruebas=[CH_E92 + "test_despues_de_elegir_vuelve_a_contar"],
+         viejo='    if not calzan:\n        return f"una sola opción con el contrato «{visto}»: ya no calza ninguna"\n',
+         nuevo=""),
+    dict(id="e92-contrato-lectura-sin-decirlo", pruebas=[CH_E92 + "test_si_la_lectura_falla_lo_dice_y_vuelve_a_contar"],
+         viejo='        reg.info(f"Contract No: err lectura ({_destino_a_la_vista(str(error))[:50]})")\n', nuevo=""),
+    dict(id="e92-contrato-lectura-sin-volver-a-contar",
+         pruebas=[CH_E92 + "test_si_la_lectura_falla_lo_dice_y_vuelve_a_contar"],
+         viejo='        try:\n            n = page.locator("#selContractNo").count()\n        except Exception:\n            n = 0\n',
+         nuevo=""),
+    dict(id="e92-contrato-opciones-sin-tope", pruebas=[CH_SANEADO],
+         viejo='    reg.info("Contract No opciones: " + " | ".join([_destino_a_la_vista(o)[:60] for o in opciones if o][:6]))\n',
+         nuevo='    reg.info("Contract No opciones: " + " | ".join([_destino_a_la_vista(o) for o in opciones if o][:6]))\n'),
+    dict(id="e92-select-por-texto-valor-sin-tope", pruebas=[SPT],
+         viejo="        reg.info(f\"{etiqueta}: '{_destino_a_la_vista(val)[:60]}'\")\n",
+         nuevo="        reg.info(f\"{etiqueta}: '{_destino_a_la_vista(val)}'\")\n"),
+    dict(id="e92-size-opciones-sin-sanear", pruebas=[SPT_SIZE],
+         viejo='    reg.info("Size opciones: " + " | ".join([_destino_a_la_vista(o)[:60] for o in opciones if o][:12]))\n',
+         nuevo='    reg.info("Size opciones: " + " | ".join([o for o in opciones if o][:12]))\n'),
 ]

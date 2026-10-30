@@ -1995,14 +1995,22 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
     `CICLO-hyundai-contrato-texto-completo.md`; `_hmm_elegir_contrato`). El código de una opción de «Contract No»
     (`#selContractNo`) es su texto antes del primer « - » (`_hmm_codigo_del_contrato`); el código y el texto completo se
     comparan con el contrato sin los espacios de los extremos y sin distinguir mayúsculas, en los dos
-    (`_hmm_contratos_que_calzan`); nunca «el texto lo contiene». Así calza el contrato escrito como su código («CT-1») y
+    (`_hmm_contratos_que_calzan`; desde el encargo 92, las mayúsculas solo de a-z, `_mayusculas_ascii`: `str.upper()`
+    igualaba «ß» con «SS» o «ı» con «I»); nunca «el texto lo contiene». Así calza el contrato escrito como su código («CT-1») y
     el copiado de la lista tal cual («CT-1 - (GA)»), y no un pedazo ni un alargue. Sin contar «Select», «Dummy» ni
     «Direct Input» (`HMM_NO_SON_CONTRATO`). Lee las opciones hasta que llegue esa,
-    hasta `HMM_LECTURAS_CONTRATO` veces cada 0,4 s (6 s, como antes). Después de comprobar que es la única, se la pasa a
-    `_hmm_select_por_texto` con su texto entero, y **después lee la lista para comprobar que quedó elegida esa misma**
-    (el texto de la opción elegida, `selectedIndex`). Si la lista no trae ningún contrato, si ninguna opción calza (ni
+    hasta `HMM_LECTURAS_CONTRATO` veces cada 0,4 s (6 s, como antes). Después de comprobar que es la única, la elige por
+    su valor, con el mismo localizador con que leyó la lista (desde el encargo 92, `_hmm_una_lista`: el de la única que
+    calza con su id), y **después lee la lista para comprobar que quedó elegida esa misma** (su texto y su valor,
+    `selectedIndex`), en la misma lectura que vuelve a contar si es la única que calza y se distingue
+    (`_hmm_comprobar_contrato`, `_hmm_sin_una_opcion`). **Y la vuelve a leer igual, sin tocar nada, antes de «NEXT -
+    Additional Information»** (desde el encargo 92, revisión de seguridad: entre las dos corren Named Customer, Sales
+    Person, el peso, la mercancía y la carga, y el `change` de una lista puede cambiar otra; no está medido que el portal
+    lo haga). Si la lista no trae ningún contrato, si ninguna opción calza (ni
     por su código ni por su texto completo), si calzan dos, si el valor de la que calza lo comparte otra opción, si la
-    lista no acepta la elección, si queda con otra opción o si no se puede leer cuál quedó, NO ENVIADA
+    lista no acepta la elección, si queda con otra opción o si no se puede leer cuál quedó, si después de elegir ya no es
+    la única que se distingue, si antes de seguir ya no está elegida, o si la página trae dos listas «Contract No» (las
+    tres últimas, desde el encargo 92), NO ENVIADA
     (`ObjetivoNoEncontrado`, `hmm_f<fila>_sin_objetivo`, con el contrato que buscó). El paso 2 y el paso 3 le quitan los
     espacios de los extremos al contrato de las credenciales, como ONE, MSC y CMA-CGM, y uno de solo espacios cuenta
     como ninguno.
@@ -2013,19 +2021,28 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
       responde al valor de la que calza, como valor (un contrato del mismo código, o «Select», «Dummy» o «Direct Input»)
       o como etiqueta (una opción cuyo texto es ese valor), NO ENVIADA, sin elegir nada, se haya escrito el texto
       completo de la primera o el de la segunda. Hasta ahí, con el de la primera la reserva seguía, y con el de la
-      segunda la frenaba la comprobación. `_JS_HMM_CONTRATOS` lee por eso el texto, el valor y la etiqueta de cada
-      opción (`_hmm_pares`), de la lista que recibe por argumento.
-    - **El paso 2 elige con la misma regla** (misma decisión; `_hmm_contrato_paso2`, `HMM_LISTA_PASO2`, el primer
-      `select` cuyo id o name trae «contract»): solo la única opción cuyo código o texto completo es el contrato, y solo
+      segunda la frenaba la comprobación. Por eso se lee el texto, el valor y la etiqueta de cada opción (desde el
+      encargo 92, con `_hmm_una_lista` y `_JS_HMM_LISTA`; en el 91, con `_JS_HMM_CONTRATOS` y `_hmm_pares`).
+    - **El paso 2 elige con la misma regla** (misma decisión; `_hmm_contrato_paso2`, `HMM_LISTA_PASO2`: el `select` cuyo
+      id o name trae «contract», si es uno solo): solo la única opción cuyo código o texto completo es el contrato, y solo
       si ninguna otra responde a su valor, por ese valor (`select_option`). Si no, no elige nada y queda el del portal,
       como antes cuando no encontraba una opción: el paso 2 no corta, porque el contrato de la reserva lo elige y lo
       comprueba el paso 3; si la lectura o la elección fallan, tampoco. Hasta el encargo 91 elegía con
-      `_hmm_select_por_texto` la primera opción cuyo texto contenía el contrato.
+      `_hmm_select_por_texto` la primera opción cuyo texto contenía el contrato. Desde el encargo 92 lee y elige con el
+      mismo localizador (`_hmm_una_lista`), y con ninguna o con más de una lista que calce, no elige: en el HTML de las 17
+      corridas, la página del paso 2 trae una sola (la del paso 3 trae dos: `#selContractNo` y la de otra ruta).
     - **Lo que se lee del portal va saneado a log.txt** (misma decisión; `_destino_a_la_vista`): la línea «Contract No
       opciones», las del paso 2, también sus errores, y el error al leer la opción elegida del paso 3. Hasta ahí, una
       opción con un salto de línea partía la línea (revisión de seguridad del encargo 89), y un error de plazo de
-      Playwright, que trae un salto de línea, también. `_hmm_select_por_texto`, el ayudante común de las listas de
-      HYUNDAI, sigue escribiendo tal cual el valor («Contract No: '…'») y sus errores («err lectura», «err select»).
+      Playwright, que trae un salto de línea, también. Desde el encargo 92, también `_hmm_select_por_texto`, el ayudante
+      común de las listas de HYUNDAI (Contract Holder, el contenedor y el reefer): su valor y sus errores; y «Size
+      opciones», de `_hmm_llenar_detalles`. Desde el mismo encargo, con un tope de 60 caracteres por texto (revisión de
+      seguridad: una opción de 200 mil caracteres daba una línea de ese largo).
+    - **Leer y elegir con el mismo localizador** (residual de la revisión de seguridad del encargo 91, arreglado en el
+      92; `_hmm_una_lista`): Playwright entra a las raíces shadow abiertas al contar, al leer y al elegir, y
+      `document.querySelector`, con el que se leía, no. Así se podía leer una lista y elegir en otra. Medido en los 99
+      HTML de HYUNDAI guardados (`.trabajo/e92/medir_listas.py`): ninguno trae una raíz shadow, y cada lista está una
+      sola vez en su paso, así que ninguna fila cambia.
     - Hasta ahí, con el contrato fuera de la lista elegía la primera opción real, por su posición (`Contract No (primera
       real)`, residual de los encargos 70 y 71), y con dos que lo traían, la primera de ellas. La espera se cortaba con
       la primera lectura que traía una opción real, aunque la del contrato llegara después, y si la lista no cargaba,
@@ -2068,7 +2085,13 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
     - si la lista no trae ningún contrato, tampoco manda a corregirlo, que puede estar bien: «no encontré ningún
       contrato en la lista del portal (no mostró ninguno en 6 s; el configurado es «…»)»;
     - si queda otra opción, o no se puede leer: «no encontré el contrato «…» elegido en la lista: después de elegirlo,
-      quedó otra opción» (o «no pude leer qué opción quedó»), y log.txt dice cuál quedó, saneada.
+      quedó otra opción» (o «no pude leer qué opción quedó»), y log.txt dice cuál quedó, saneada;
+    - si después de elegirlo ya no es la única que calza o se distingue, el motivo de esos dos casos, con «(después de
+      elegirlo)» (encargo 92);
+    - si antes de seguir ya no está elegida, «… elegido en la lista: antes de seguir, quedó otra opción» (o «no pude leer
+      qué opción quedó»), y si ya no se distingue, el motivo con «(antes de seguir)» (encargo 92);
+    - si la página trae dos listas «Contract No»: «no encontré una sola lista «Contract No»: la página trae N, y elegir
+      en una sería por su posición» (encargo 92).
 
     El contrato va como lo muestra `_hmm_contrato_a_la_vista`: con los espacios de a uno, hasta 40 caracteres y cada
     carácter de control, de formato, privado o sin asignar como «?», como el contenedor y el destino final (revisión de
@@ -2095,7 +2118,11 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
       paso 2 (`hmm_f<fila>_destino`), la lista de contrato del paso 2 es una sola y no trae ninguna opción, y tampoco en
       ningún HTML de HYUNDAI de después; las 10 filas con contrato dijeron «sin opción para», y las 7 sin contrato (las
       del colega) no la miraron. Ni «contiene» ni la regla exacta eligen nada: ninguna cambia. Control positivo que
-      aborta: lo que predice «contiene» sobre el HTML es lo que log.txt dice que hizo, en las 10.
+      aborta: lo que predice «contiene» sobre el HTML es lo que log.txt dice que hizo, en las 10;
+    - antes del residual del 91 (encargo 92, `.trabajo/e92/medir_listas.py`), en los 99 HTML de HYUNDAI (sin los
+      marcos): ninguna raíz shadow, y una sola lista de contrato en cada página del paso 2; y las 63 opciones de las
+      listas de contrato, las 40 líneas de log.txt con opciones o valores de «Contract No» y el contrato configurado,
+      todos en ASCII, donde la mayúscula solo de a-z y `str.upper()` dan lo mismo. Ninguna fila cambia.
 
     Ninguna cambia de resultado. **El HTML del paso 3 está guardado solo en los 7 cortes de «Contract No» de las
     corridas del colega** (`hmm_f<fila>_sin_objetivo.html`, en «1. pruebas»; en `logs/` de este equipo, ninguno). Medido
@@ -2103,23 +2130,19 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
     ningún valor se repite; «Select» trae el valor vacío, y «Dummy» y «Direct Input», valores distintos del de la real.
     Lo demás de la lista sale de la línea «Contract No opciones» de log.txt, que trae hasta 6.
   - **Lo que queda residual:**
-    - Una opción de otro contrato cuyo texto contiene entero el de la opción del contrato (por ejemplo «XCT-1 - (GA)»
-      antes de «CT-1 - (GA)», con el contrato «CT-1»), si está antes, la elige `_hmm_select_por_texto` (la primera que
-      contiene el texto), y la comprobación deja la fila NO ENVIADA, con la lista del portal en el otro contrato y sin
-      pulsar nada más. No se vio. Se quitaría eligiendo la opción por su texto exacto o por su índice.
     - Que dos opciones con el mismo código den NO ENVIADA lo decidió el ciclo, no Marcelo. En lo medido, la lista trajo
       siempre una sola opción real.
     - «Named Customer» sigue eligiendo la primera opción con valor, por su posición: es el FRENO del encargo 92 (arriba).
+    - `_hmm_select_por_texto` (Contract Holder, el tipo, el tamaño, la unidad y la ventilación del reefer) y la elección de
+      «Named Customer» leen con `document.querySelector` y eligen con `page.select_option`, que entra a las raíces shadow:
+      con una copia de la lista en una raíz shadow, leerían una y elegirían otra. Las listas de contrato y de «HMM Sales
+      Person» ya no (revisión de código del encargo 92; en lo medido, ninguna raíz shadow).
     - La comprobación de «HMM Sales Person» mira un solo instante: una opción real que el portal sume después de la
       lectura de después no se ve (revisión de seguridad del encargo 92; no se vio, y lo medido es una lista fija).
-    - En el paso 2, si una lista que calza con `HMM_LISTA_PASO2` estuviera dentro de una raíz shadow antes de la de la
-      página, `document.querySelector` (lo que lee) y `select_option` (lo que elige) tomarían listas distintas:
-      Playwright entra a la raíz shadow (medido por la revisión de código del encargo 91, en su Chromium). Ya pasaba con
-      `_hmm_select_por_texto`; en lo medido hay una sola lista así, en la página, y el contrato lo comprueba el paso 3.
-  - Lo vigilan `test_ayudantes.TestContratoDeHyundai` (los casos sobre una página falsa, que anota cada lectura, cada
-    elección y cada comprobación; los motivos, leídos del código; y los dos JavaScript que leen la lista,
-    `_JS_HMM_CONTRATOS` y `_JS_HMM_CONTRATO_ELEGIDO`, corridos en Node: la página falsa los reconoce por su texto y no
-    los corre), `test_ayudantes.TestContratoPaso2DeHyundai` (el paso 2) y
+  - Lo vigilan `test_ayudantes.TestContratoDeHyundai` (los casos sobre una página falsa, que lee y elige con un
+    localizador y anota cada lectura, cada elección y cada comprobación; los motivos, leídos del código; y, desde el
+    encargo 92, que los pasos 2 y 3 lean y elijan con `_hmm_una_lista`), `test_ayudantes.TestContratoPaso2DeHyundai` (el
+    paso 2), `test_ayudantes.TestSelectPorTextoDeHyundai` (lo saneado de `_hmm_select_por_texto`) y
     `TestContratosPorDefecto.test_hyundai_sin_contrato_no_elige_a_ciegas`; «HMM Sales Person» y las opciones de «Named
     Customer», `test_ayudantes.TestSalesPersonDeHyundai` (con `PaginaLista`, que lee y elige con un localizador).
 - `codigo_shipper_hyundai` (`_codigo_shipper_hyundai`): el código con que HYUNDAI identifica a la empresa como
