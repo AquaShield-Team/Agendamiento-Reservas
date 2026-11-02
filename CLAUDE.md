@@ -2166,17 +2166,33 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
     en el encargo 91 (`.trabajo/e91/medir_paso3.py`): 4 opciones y 1 real en cada uno; el valor de la real es su código;
     ningún valor se repite; «Select» trae el valor vacío, y «Dummy» y «Direct Input», valores distintos del de la real.
     Lo demás de la lista sale de la línea «Contract No opciones» de log.txt, que trae hasta 6.
+  - **«Named Customer» y «HMM Sales Person» se vuelven a mirar antes de seguir** (encargo 93, residual de la revisión de
+    seguridad del 92; `_hmm_comprobar_la_unica`, con los datos de cada lista en `HMM_LISTA_NAMED` y `HMM_LISTA_SALES`):
+    justo después de la comprobación del contrato de «antes de seguir», sin tocar nada, la misma lectura de después de
+    elegir, con «antes de seguir» en el motivo y en log.txt («… la lista quedó con … (antes de seguir)»). Sales Person,
+    solo si eligió una. Si cambió, NO ENVIADA. Hasta ahí se comprobaban un solo instante.
+  - **`_hmm_select_por_texto` lee y elige con el mismo localizador** (encargo 93, residual de la revisión de código del
+    92): el de la única lista que calza con su selector (`_hmm_una_lista`; con ninguna, «sin opción para», y con más de
+    una, «no hay una sola lista», y no elige), con las mayúsculas solo de a-z (`_mayusculas_ascii`). Hasta ahí leía con
+    `document.querySelector`, que no entra a las raíces shadow, elegía con `page.select_option`, que sí, y comparaba con
+    `toUpperCase`. La lectura de las opciones de «Size» (`_hmm_llenar_detalles`), igual. Lo usan Contract Holder, el
+    tipo, el tamaño, la unidad y la ventilación del reefer; la regla de cuál elige no cambió (la que trae todas las
+    palabras, o la primera que trae la primera). Medido: en los 99 HTML de HYUNDAI guardados, ninguna raíz shadow, y los
+    textos de esas listas y sus palabras son ASCII.
   - **Lo que queda residual:**
-    - `_hmm_select_por_texto` (Contract Holder, el tipo, el tamaño, la unidad y la ventilación del reefer) lee con
-      `document.querySelector` y elige con `page.select_option`, que entra a las raíces shadow: con una copia de la lista
-      en una raíz shadow, leería una y elegiría otra. Las listas de contrato, de «HMM Sales Person» y, desde el encargo
-      93, de «Named Customer» ya no (revisión de código del encargo 92; en lo medido, ninguna raíz shadow).
-    - La comprobación de «HMM Sales Person» mira un solo instante: una opción real que el portal sume después de la
-      lectura de después no se ve (revisión de seguridad del encargo 92; no se vio, y lo medido es una lista fija).
+    - Cada comprobación de «Named Customer» y «HMM Sales Person» mira un solo instante: una opción que el portal sume
+      entre la de antes de seguir y el «NEXT» no se ve (no se vio, y lo medido es una lista fija).
+    - `_hmm_select_por_texto` elige por valor (`select_option(value=…)`), que en Playwright toma la primera opción cuyo
+      valor o etiqueta es ese valor: si otra opción de esas listas lo compartiera, podría quedar otra. No mira después
+      qué quedó (no se vio: sus listas traen valores distintos).
+    - El signo de la temperatura del reefer se escribe con JavaScript sobre `document.querySelector` (no es una
+      elección con Playwright).
   - Lo vigilan `test_ayudantes.TestContratoDeHyundai` (los casos sobre una página falsa, que lee y elige con un
     localizador y anota cada lectura, cada elección y cada comprobación; los motivos, leídos del código; y, desde el
     encargo 92, que los pasos 2 y 3 lean y elijan con `_hmm_una_lista`), `test_ayudantes.TestContratoPaso2DeHyundai` (el
-    paso 2), `test_ayudantes.TestSelectPorTextoDeHyundai` (lo saneado de `_hmm_select_por_texto`) y
+    paso 2), `test_ayudantes.TestSelectPorTextoDeHyundai` (lo saneado de `_hmm_select_por_texto`, y desde el encargo
+    93, que lee y elige con el mismo localizador), `test_ayudantes.TestAntesDeSeguirDeHyundai` (la segunda mirada de
+    «Named Customer» y «HMM Sales Person») y
     `TestContratosPorDefecto.test_hyundai_sin_contrato_no_elige_a_ciegas`; «HMM Sales Person»,
     `test_ayudantes.TestSalesPersonDeHyundai`, y «Named Customer», `test_ayudantes.TestNamedCustomerDeHyundai` (con
     `PaginaLista`, que lee y elige con un localizador).

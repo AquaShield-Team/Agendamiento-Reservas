@@ -8531,23 +8531,26 @@ def _hmm_select_por_texto(page, sel, tokens, reg, etiqueta):
     """Selecciona en un <select> nativo la opción cuyo texto contiene todos los
     tokens (o, si no hay match total, la primera que contenga el primer token). Lo que viene del portal, el valor de la
     opción y los errores (que traen saltos de línea), va a log.txt saneado (_destino_a_la_vista; residual del encargo
-    91, arreglado en el 92)."""
-    T = [t.upper() for t in tokens if t]
+    91, arreglado en el 92). Desde el encargo 93 (residual de la revisión de código del 92) lee y elige con el mismo
+    localizador, el de la única lista que calza con 'sel' (_hmm_una_lista; con ninguna o con más de una, no elige), y
+    compara las mayúsculas solo de a-z (_mayusculas_ascii): hasta ahí leía con document.querySelector, que no entra a
+    las raíces shadow, elegía con page.select_option, que sí, y comparaba con toUpperCase. Medido: en los 99 HTML de
+    HYUNDAI guardados, ninguna raíz shadow; y los textos de sus listas y los tokens son ASCII."""
+    T = [_mayusculas_ascii(t) for t in tokens if t]
     try:
-        val = page.evaluate("""(args)=>{
-            const {sel, toks} = args;
-            const s=document.querySelector(sel); if(!s) return '__NOSEL__';
-            const ops=[...s.options];
-            let o=ops.find(o=>toks.every(t=>(o.textContent||'').toUpperCase().includes(t)));
-            if(!o && toks.length) o=ops.find(o=>(o.textContent||'').toUpperCase().includes(toks[0]));
-            return o? o.value : '';
-        }""", {"sel": sel, "toks": T})
+        n, lista, pares, _ = _hmm_una_lista(page, sel)
     except Exception as e:
         reg.info(f"{etiqueta}: err lectura ({_destino_a_la_vista(str(e))[:50]})"); return False
-    if val == "__NOSEL__" or val == "":
+    if n > 1:
+        reg.info(f"{etiqueta}: no hay una sola lista (hay {n})"); return False
+    textos = [(_mayusculas_ascii(t), v) for t, v, _ in pares]
+    val = next((v for t, v in textos if all(x in t for x in T)), None)
+    if val is None and T:
+        val = next((v for t, v in textos if T[0] in t), None)
+    if lista is None or not val:
         reg.info(f"{etiqueta}: sin opción para {tokens}"); return False
     try:
-        page.select_option(sel, value=val, timeout=5000)
+        lista.select_option(value=val, timeout=5000)
         reg.info(f"{etiqueta}: '{_destino_a_la_vista(val)[:60]}'")
         return True
     except Exception as e:
@@ -8907,6 +8910,18 @@ def _hmm_elegir_la_unica(page, reg, sel, paso, nombre, cuales, que, la, contadas
         reg.info(f"{nombre}: err select ({_destino_a_la_vista(str(e))[:50]})")
         raise ObjetivoNoEncontrado(paso, f"cómo dejar elegida {la} de «{nombre}»: la lista no la aceptó")
     reg.info(f"{nombre}: '{_destino_a_la_vista(valor)[:60]}'")
+    return _hmm_comprobar_la_unica(page, reg, sel, paso, nombre, cuales, la, contadas, quedo, unica,
+                                   "después de elegirla")
+
+
+def _hmm_comprobar_la_unica(page, reg, sel, paso, nombre, cuales, la, contadas, quedo, unica, cuando):
+    """Lee la lista 'sel' una vez, sin tocar nada, y corta (ObjetivoNoEncontrado: NO ENVIADA, con su evidencia) si no
+    quedó elegida 'unica' (la misma opción: su texto, su valor y su etiqueta), si ya no es la única que sirve
+    ('cuales') o la única que responde a su valor, o si no se puede leer. 'cuando' va en el motivo y en log.txt:
+    «después de elegirla» (_hmm_elegir_la_unica) o «antes de seguir» (reservar_hyundai, antes de «NEXT - Additional
+    Information»: entre las dos corren el peso, la mercancía y la carga, y el `change` de una lista puede cambiar otra;
+    residual de la revisión de seguridad del encargo 92, que la comprobaba un solo instante). Devuelve 'unica'."""
+    valor = unica[1]
     # Lo que quedó, en una sola lectura de la lista: la misma opción que se leyó (su texto, su valor y su etiqueta), y
     # que siga siendo la única que sirve y la única que responde a su valor. Si el portal cambia la lista entre la
     # lectura y la elección, Playwright puede elegir otra con ese valor (revisión de seguridad del encargo 92).
@@ -8916,14 +8931,14 @@ def _hmm_elegir_la_unica(page, reg, sel, paso, nombre, cuales, que, la, contadas
         reg.info(f"{nombre}: err al leer la opción elegida ({_destino_a_la_vista(str(e))[:50]})")
         despues, elegida = [], None
     if elegida is None:
-        raise ObjetivoNoEncontrado(paso, f"{la} de «{nombre}» elegida en la lista: después de elegirla, no pude leer qué "
+        raise ObjetivoNoEncontrado(paso, f"{la} de «{nombre}» elegida en la lista: {cuando}, no pude leer qué "
                                          "opción quedó")
     if elegida != unica or cuales(despues) != [elegida] or _hmm_responden(despues, valor) > 1:
         reg.info(f"{nombre}: la lista quedó con «{_destino_a_la_vista(elegida[0])[:40]}» ({contadas}: "
                  f"{len(cuales(despues))}; con su valor: {_hmm_responden(despues, valor)})")
-        raise ObjetivoNoEncontrado(paso, f"{la} de «{nombre}» elegida en la lista: después de elegirla, "
+        raise ObjetivoNoEncontrado(paso, f"{la} de «{nombre}» elegida en la lista: {cuando}, "
                                          + ("quedó otra opción" if elegida != unica else "ya no es la única"))
-    reg.info(f"{nombre}: la lista quedó con {quedo}")
+    reg.info(f"{nombre}: la lista quedó con {quedo} ({cuando})")
     return unica
 
 
@@ -8938,11 +8953,8 @@ def _hmm_named_customer(page, reg):
     algo fallaba seguía. Medido en el encargo 92: en las 20 filas de este equipo que llegaron a la guarda esa fue «Direct
     Input», un texto fijo del portal, no un cliente; el 02-11, con el contrato ya elegido, la lista trajo «Select» y
     «Direct Input»."""
-    return _hmm_elegir_la_unica(page, reg, "#actualShipperCode", "Named Customer de HYUNDAI", "Named Customer",
-                                lambda pares: [p for p in pares if _hmm_es_direct_input(p[0])],
-                                que=f"opción «{HMM_NAMED_CUSTOMER}»", la=f"la opción «{HMM_NAMED_CUSTOMER}»",
-                                contadas="con ese texto", quedo=f"«{HMM_NAMED_CUSTOMER}»",
-                                lecturas=HMM_LECTURAS_NAMED, obligatoria=True)
+    return _hmm_elegir_la_unica(page, reg, que=f"opción «{HMM_NAMED_CUSTOMER}»", lecturas=HMM_LECTURAS_NAMED,
+                                obligatoria=True, **HMM_LISTA_NAMED)
 
 
 def _hmm_sales_person(page, reg):
@@ -8958,9 +8970,17 @@ def _hmm_sales_person(page, reg):
     una sola opción real; en las 20 filas de este equipo que llegaron a la guarda, el programa eligió siempre el mismo
     valor, el de esa opción. El 02-11, con el contrato elegido, la lista trajo «Select» y una sola opción real. Desde el
     encargo 93, con el ayudante que comparte con «Named Customer»."""
-    return _hmm_elegir_la_unica(page, reg, "#hmmSalesmanCd", "HMM Sales Person de HYUNDAI", "HMM Sales Person",
-                                _hmm_reales, que="opción", la="la única opción", contadas="opciones reales",
-                                quedo="su única opción")
+    return _hmm_elegir_la_unica(page, reg, que="opción", **HMM_LISTA_SALES)
+
+
+# Lo que identifica cada lista para _hmm_elegir_la_unica y _hmm_comprobar_la_unica (desde el encargo 93, para elegirla y
+# volver a comprobarla antes de seguir con los mismos datos): su selector, el paso y el nombre de los motivos, las
+# opciones que sirven, y cómo la nombran los motivos y log.txt.
+HMM_LISTA_NAMED = dict(sel="#actualShipperCode", paso="Named Customer de HYUNDAI", nombre="Named Customer",
+                       cuales=lambda pares: [p for p in pares if _hmm_es_direct_input(p[0])],
+                       la=f"la opción «{HMM_NAMED_CUSTOMER}»", contadas="con ese texto", quedo=f"«{HMM_NAMED_CUSTOMER}»")
+HMM_LISTA_SALES = dict(sel="#hmmSalesmanCd", paso="HMM Sales Person de HYUNDAI", nombre="HMM Sales Person",
+                       cuales=_hmm_reales, la="la única opción", contadas="opciones reales", quedo="su única opción")
 
 
 def _hmm_llenar_detalles(page, reserva, reg):
@@ -8982,8 +9002,8 @@ def _hmm_llenar_detalles(page, reserva, reg):
     for _ in range(10):
         esperar(page, 0.7)
         try:
-            opciones = page.evaluate("""()=>{const s=document.querySelector('#containerSize0');
-                return s? [...s.options].map(o=>(o.textContent||'').trim()) : [];}""")
+            # Con el mismo localizador con que _hmm_select_por_texto la elige (encargo 93).
+            opciones = [t for t, *_ in _hmm_una_lista(page, "#containerSize0")[2]]
         except Exception:
             opciones = []
         if len([o for o in opciones if o and o.lower() != "select"]) >= 1:
@@ -9557,11 +9577,11 @@ def reservar_hyundai(page, reserva, creds, reg, on_pausa=None):
     # 2b. Named Customer: «Direct Input», por su texto, y si no está, NO ENVIADA (decisión de Marcelo, encargo 93, la
     # opción (a) del freno del 92; _hmm_named_customer). Hasta ahí, la primera opción con valor, por su posición, y si
     # algo fallaba seguía; en las 20 filas medidas, esa fue «Direct Input».
-    _hmm_named_customer(page, reg)
+    cliente = _hmm_named_customer(page, reg)
 
     # 3. HMM Sales Person: solo su única opción real, y si hay más de una, NO ENVIADA (encargo 92, _hmm_sales_person).
     # Hasta ahí, la primera opción con valor, por su posición.
-    _hmm_sales_person(page, reg)
+    vendedor = _hmm_sales_person(page, reg)
 
     # 4. Gross Weight
     try:
@@ -9638,6 +9658,11 @@ def reservar_hyundai(page, reserva, creds, reg, on_pausa=None):
     # El contrato, otra vez, sin tocar nada: entre su comprobación y aquí corrieron Named Customer, Sales Person, el
     # peso, la mercancía y la carga, y el `change` de una lista puede cambiar otra (revisión de seguridad del encargo 92).
     _hmm_comprobar_contrato(page, ctto, *elegido, reg, "antes de seguir")
+    # Y «Named Customer» y «HMM Sales Person», igual (encargo 93, residual de la revisión de seguridad del 92: su
+    # comprobación miraba un solo instante). Sales Person, solo si eligió una.
+    _hmm_comprobar_la_unica(page, reg, unica=cliente, cuando="antes de seguir", **HMM_LISTA_NAMED)
+    if vendedor is not None:
+        _hmm_comprobar_la_unica(page, reg, unica=vendedor, cuando="antes de seguir", **HMM_LISTA_SALES)
 
     # Paso 4: Additional Information
     reg.paso("Paso 4 · Avanzando a Additional Information...")

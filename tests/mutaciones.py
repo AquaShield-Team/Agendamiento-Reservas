@@ -10488,7 +10488,7 @@ MUTACIONES += [
          viejo="    leido = lista.evaluate(_JS_HMM_LISTA, timeout=5000) or {}\n",
          nuevo="    leido = page.evaluate(_JS_HMM_LISTA, sel) or {}\n"),
     dict(id="e92-reservar-sin-sales-person", pruebas=[SP_RESERVAR],
-         viejo="    _hmm_sales_person(page, reg)\n", nuevo="    pass\n"),
+         viejo="    vendedor = _hmm_sales_person(page, reg)\n", nuevo="    vendedor = None\n"),
 ]
 
 # --- Encargo 92 (CICLO-hyundai-sales-person-y-residual-91.md), frente 2, el residual del encargo 91: los pasos 2 y 3
@@ -10574,8 +10574,8 @@ NC_SIN = NC + "test_sin_direct_input_no_envia"
 NC_VALOR = '    return _mayusculas_ascii(" ".join(str(texto).split())) == _mayusculas_ascii(HMM_NAMED_CUSTOMER)\n'
 MUTACIONES += [
     dict(id="e93-nc-por-posicion", pruebas=[NC_ELIGE],
-         viejo="                                lambda pares: [p for p in pares if _hmm_es_direct_input(p[0])],\n",
-         nuevo="                                lambda pares: _hmm_reales(pares)[:1],\n"),
+         viejo="                       cuales=lambda pares: [p for p in pares if _hmm_es_direct_input(p[0])],\n",
+         nuevo="                       cuales=lambda pares: _hmm_reales(pares)[:1],\n"),
     dict(id="e93-nc-lo-contiene", pruebas=[NC_SIN],
          viejo=NC_VALOR,
          nuevo='    return _mayusculas_ascii(HMM_NAMED_CUSTOMER) in _mayusculas_ascii(" ".join(str(texto).split()))\n'),
@@ -10584,11 +10584,11 @@ MUTACIONES += [
     dict(id="e93-nc-distingue-mayusculas", pruebas=[NC_ELIGE],
          viejo=NC_VALOR, nuevo='    return " ".join(str(texto).split()) == HMM_NAMED_CUSTOMER\n'),
     dict(id="e93-nc-no-obligatoria", pruebas=[NC_SIN],
-         viejo="                                lecturas=HMM_LECTURAS_NAMED, obligatoria=True)\n",
-         nuevo="                                lecturas=HMM_LECTURAS_NAMED, obligatoria=False)\n"),
+         viejo="                                obligatoria=True, **HMM_LISTA_NAMED)\n",
+         nuevo="                                obligatoria=False, **HMM_LISTA_NAMED)\n"),
     dict(id="e93-nc-una-sola-lectura", pruebas=[NC_TARDA],
-         viejo="                                lecturas=HMM_LECTURAS_NAMED, obligatoria=True)\n",
-         nuevo="                                lecturas=1, obligatoria=True)\n"),
+         viejo='»", lecturas=HMM_LECTURAS_NAMED,\n',
+         nuevo='»", lecturas=1,\n'),
     dict(id="e93-unica-sin-esperar-entre-lecturas", pruebas=[NC_TARDA],
          viejo="        if k:\n            esperar(page, 0.4)\n", nuevo=""),
     dict(id="e93-unica-sigue-sin-la-lista", pruebas=[NC_SIN],
@@ -10598,7 +10598,7 @@ MUTACIONES += [
          viejo='        if obligatoria:\n            raise ObjetivoNoEncontrado(paso, f"{la} entre las',
          nuevo='        if False:\n            raise ObjetivoNoEncontrado(paso, f"{la} entre las'),
     dict(id="e93-reservar-sin-named-customer", pruebas=[SP_RESERVAR],
-         viejo="    _hmm_named_customer(page, reg)\n", nuevo="    pass\n"),
+         viejo="    cliente = _hmm_named_customer(page, reg)\n", nuevo="    cliente = ('', '', '')\n"),
 ]
 
 # --- Encargo 93, frente 2: la lectura de rutas de CMA-CGM no sube a un bloque con los detalles de otra ruta (el 02-11,
@@ -10631,4 +10631,41 @@ MUTACIONES += [
          nuevo='    en_las = "en la única ruta que deja elegir" if False else'),
     dict(id="e93-cma-motivo-sin-el-caso-sin-rutas", pruebas=[CMA_ILEGIBLES],
          viejo="    elif rutas:\n", nuevo="    elif True:\n"),
+]
+
+# --- Encargo 93, frente 4 (el residual del 92): «Named Customer» y «HMM Sales Person» se vuelven a mirar antes de
+# seguir (_hmm_comprobar_la_unica), y _hmm_select_por_texto y la lectura de «Size» leen y eligen con el mismo
+# localizador, con las mayúsculas solo de a-z. Eligiendo con page, con dos listas, sin la primera palabra, con upper(),
+# leyendo «Size» con document, sin decir cuándo, o sin mirar antes de seguir.
+SPT93 = "test_ayudantes.TestSelectPorTextoDeHyundai."
+ADS = "test_ayudantes.TestAntesDeSeguirDeHyundai."
+MUTACIONES += [
+    dict(id="e93-select-por-texto-elige-con-page", pruebas=[SPT93 + "test_lee_y_elige_con_el_mismo_localizador"],
+         viejo="        lista.select_option(value=val, timeout=5000)\n        reg.info(f\"{etiqueta}:",
+         nuevo="        page.select_option(sel, value=val, timeout=5000)\n        reg.info(f\"{etiqueta}:"),
+    dict(id="e93-select-por-texto-con-dos-listas", pruebas=[SPT93 + "test_lee_y_elige_con_el_mismo_localizador"],
+         viejo="    if n > 1:\n        reg.info(f\"{etiqueta}: no hay una sola lista",
+         nuevo="    if False:\n        reg.info(f\"{etiqueta}: no hay una sola lista"),
+    dict(id="e93-select-por-texto-sin-la-primera-palabra", pruebas=[SPT93 + "test_lee_y_elige_con_el_mismo_localizador"],
+         viejo="    if val is None and T:\n        val = next((v for t, v in textos if T[0] in t), None)\n", nuevo=""),
+    dict(id="e93-select-por-texto-con-upper", pruebas=[SPT93 + "test_las_mayusculas_solo_de_a_z"],
+         viejo="    textos = [(_mayusculas_ascii(t), v) for t, v, _ in pares]\n",
+         nuevo="    textos = [(t.upper(), v) for t, v, _ in pares]\n"),
+    dict(id="e93-size-con-document", pruebas=[SPT93 + "test_size_opciones_va_saneado"],
+         viejo='            opciones = [t for t, *_ in _hmm_una_lista(page, "#containerSize0")[2]]\n',
+         nuevo='            opciones = page.evaluate("document.querySelector(\'#containerSize0\')") or []\n'),
+    dict(id="e93-comprobar-dice-siempre-despues", pruebas=[ADS + "test_si_cambio_corta"],
+         viejo='        raise ObjetivoNoEncontrado(paso, f"{la} de «{nombre}» elegida en la lista: {cuando}, "\n',
+         nuevo='        raise ObjetivoNoEncontrado(paso, f"{la} de «{nombre}» elegida en la lista: después de elegirla, "\n'),
+    dict(id="e93-comprobar-log-sin-cuando", pruebas=[ADS + "test_si_sigue_elegida_sigue"],
+         viejo='    reg.info(f"{nombre}: la lista quedó con {quedo} ({cuando})")\n',
+         nuevo='    reg.info(f"{nombre}: la lista quedó con {quedo}")\n'),
+    dict(id="e93-reservar-sin-mirar-named-antes", pruebas=[ADS + "test_reservar_hyundai_las_mira_antes_de_seguir"],
+         viejo='    _hmm_comprobar_la_unica(page, reg, unica=cliente, cuando="antes de seguir", **HMM_LISTA_NAMED)\n',
+         nuevo="    pass\n"),
+    dict(id="e93-reservar-sin-mirar-sales-antes", pruebas=[ADS + "test_reservar_hyundai_las_mira_antes_de_seguir"],
+         viejo='        _hmm_comprobar_la_unica(page, reg, unica=vendedor, cuando="antes de seguir", **HMM_LISTA_SALES)\n',
+         nuevo="        pass\n"),
+    dict(id="e93-reservar-mira-sales-sin-elegida", pruebas=[ADS + "test_reservar_hyundai_las_mira_antes_de_seguir"],
+         viejo="    if vendedor is not None:\n", nuevo="    if True:\n"),
 ]
