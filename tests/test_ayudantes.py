@@ -2422,6 +2422,70 @@ class TestAntesDeSeguirDeHyundai(soporte.CasoAQ):
         self.assertEqual(en_try, [])
 
 
+class TestVersionDeGit(soporte.CasoAQ):
+    """La rama y el commit que muestra el panel (pedido de Marcelo, encargo 93), leídos de los archivos de .git sin lanzar
+    git (_version_de_git), en un .git falso armado en la sandbox. Valores inventados."""
+    H1, H2 = "1" * 40, "abcdef0" + "2" * 33
+
+    def git(self, nombre, archivos):
+        """Una carpeta de programa en la sandbox, con los archivos dados (rutas relativas a ella, y su texto)."""
+        raiz = self.sb / "version" / nombre
+        for ruta, texto in archivos.items():
+            p = raiz / ruta
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(texto, encoding="utf-8")
+        raiz.mkdir(parents=True, exist_ok=True)
+        return raiz
+
+    def test_la_rama_y_su_commit(self):
+        raiz = self.git("rama", {".git/HEAD": "ref: refs/heads/main\n", ".git/refs/heads/main": self.H2 + "\n"})
+        self.assertEqual(self.mod._version_de_git(raiz), {"rama": "main", "commit": "abcdef0"})
+
+    def test_de_packed_refs(self):
+        raiz = self.git("empaquetada", {".git/HEAD": "ref: refs/heads/estable\n",
+                                        ".git/packed-refs": "# pack-refs with: peeled fully-peeled sorted\n"
+                                                            f"{self.H1} refs/heads/main\n{self.H2} refs/heads/estable\n"})
+        self.assertEqual(self.mod._version_de_git(raiz), {"rama": "estable", "commit": "abcdef0"})
+
+    def test_un_commit_suelto(self):
+        raiz = self.git("suelto", {".git/HEAD": self.H2 + "\n"})
+        self.assertEqual(self.mod._version_de_git(raiz), {"rama": "sin rama", "commit": "abcdef0"})
+
+    def test_un_worktree(self):
+        # .git es un archivo que lleva a su carpeta, y su «commondir», a la común, donde están las ramas.
+        raiz = self.git("worktree", {".git": "gitdir: ../comun/.git/worktrees/wt\n",
+                                     "../comun/.git/worktrees/wt/HEAD": "ref: refs/heads/rama-prueba\n",
+                                     "../comun/.git/worktrees/wt/commondir": "../..\n",
+                                     "../comun/.git/refs/heads/rama-prueba": self.H2 + "\n"})
+        self.assertEqual(self.mod._version_de_git(raiz), {"rama": "rama-prueba", "commit": "abcdef0"})
+
+    def test_lo_que_no_se_lee(self):
+        # Sin .git, una referencia que no es de «refs/» o que sube de carpeta, o un commit sin su forma: None.
+        afuera = self.git("afuera", {"x": self.H2 + "\n"})
+        casos = {
+            "sin_git": {"leeme.txt": "x"},
+            "no_es_refs": {".git/HEAD": "ref: ORIG_HEAD\n", ".git/ORIG_HEAD": self.H2 + "\n"},
+            "sube": {".git/HEAD": "ref: refs/../../../afuera/x\n"},
+            "sin_forma": {".git/HEAD": "ref: refs/heads/main\n", ".git/refs/heads/main": "no es un commit\n"},
+            "corto": {".git/HEAD": "abcdef0\n"},
+        }
+        self.assertTrue((afuera / "x").exists())
+        for nombre, archivos in casos.items():
+            with self.subTest(nombre=nombre):
+                self.assertIsNone(self.mod._version_de_git(self.git(nombre, archivos)))
+
+    def test_la_rama_se_muestra_saneada(self):
+        raiz = self.git("rara", {".git/HEAD": "ref: refs/heads/r" + chr(0x202E) + "x\n",
+                                 ".git/refs/heads/r" + chr(0x202E) + "x": self.H2 + "\n"})
+        self.assertEqual(self.mod._version_de_git(raiz), {"rama": "r?x", "commit": "abcdef0"})
+
+    def test_el_panel_la_pinta_como_texto(self):
+        # En la barra de contexto, y como textContent (viene de .git: nunca como HTML).
+        self.assertIn('<span class="context-version" id="version-git"', self.mod.HTML_INDEX)
+        self.assertIn('vg.textContent = d.git ? `versión ${d.git.rama} · ${d.git.commit}` : "versión: sin datos de git";',
+                      self.mod.JS_INDEX)
+
+
 class TestPlantilla(soporte.CasoAQ):
     def test_la_plantilla_no_trae_nombres(self):
         # Marcadores neutros en vez de personas: hasta 9710ae2, el primer operador llevaba un nombre

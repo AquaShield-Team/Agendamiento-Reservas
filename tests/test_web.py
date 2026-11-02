@@ -88,6 +88,16 @@ class TestPanelRutas(PanelBase):
         self.assertEqual(st, 200)
         self.assertIs(cfg["modo_emision"], False)
         self.assertEqual(cfg["version"], self.mod.VERSION)
+        # La rama y el commit (encargo 93): la sandbox no trae .git, y lo dice con None; con uno inventado, los suyos.
+        self.assertIsNone(cfg["git"])
+        git = self.mod.BASE / ".git"
+        (git / "refs" / "heads").mkdir(parents=True)
+        try:
+            (git / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+            (git / "refs" / "heads" / "main").write_text("abcdef0" + "2" * 33 + "\n", encoding="utf-8")
+            self.assertEqual(self.srv.json("/api/config")[1]["git"], {"rama": "main", "commit": "abcdef0"})
+        finally:
+            shutil.rmtree(git)
         self.assertEqual(cfg["usuarios"], ["op_prueba", "op_vacio"])
         self.assertEqual([(n["clave"], n["reserva"]) for n in cfg["navieras"]],
                          [(k, True) for k in sinteticos.NAVIERAS])

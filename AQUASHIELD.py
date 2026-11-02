@@ -15399,6 +15399,48 @@ class ConfigDelPanel(Exception):
     """Lo que el panel web no puede leer de config.json, dicho para quien lo usa: qué falta y cómo resolverlo."""
 
 
+def _version_de_git(carpeta=None):
+    """La rama y el commit (sus 7 primeras cifras) que tiene la carpeta del programa, leídos de los archivos de su .git,
+    para que el panel los muestre (pedido de Marcelo, encargo 93, CICLO-named-customer-rutas-cma-y-version.md: que él y
+    el colega vean de un vistazo que corren lo mismo). Sin lanzar git: el panel no depende de que esté en el PATH, y el
+    arnés de las pruebas frena los procesos. Lee HEAD («ref: refs/heads/<rama>», o un commit suelto) y el commit de esa
+    rama, de su archivo o de packed-refs; un .git que es un archivo («gitdir: …», un worktree) lleva a su carpeta, y su
+    «commondir», a la común. Devuelve {"rama", "commit"}, con la rama como se muestra (_destino_a_la_vista, hasta 40
+    caracteres; «sin rama» con un commit suelto), o None si no hay un .git que se pueda leer o el commit no tiene la
+    forma de uno (40 cifras hexadecimales). Una referencia que no empieza con «refs/» o que sube de carpeta («..») no se
+    lee."""
+    raiz = Path(carpeta or BASE)
+    try:
+        git = raiz / ".git"
+        if git.is_file():
+            m = _re_mk.match(r"gitdir:\s*(.+)", git.read_text(encoding="utf-8").strip())
+            if not m:
+                return None
+            git = raiz / m.group(1).strip()
+        comun = git
+        if (git / "commondir").is_file():
+            comun = git / (git / "commondir").read_text(encoding="utf-8").strip()
+        head = (git / "HEAD").read_text(encoding="utf-8").strip()
+        if head.startswith("ref:"):
+            ref = head[4:].strip()
+            if not ref.startswith("refs/") or ".." in ref.split("/"):
+                return None
+            rama = ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
+            archivo = comun / ref
+            if archivo.is_file():
+                commit = archivo.read_text(encoding="utf-8").strip()
+            else:
+                empaquetadas = (comun / "packed-refs").read_text(encoding="utf-8").splitlines()
+                commit = next((l.split(" ", 1)[0] for l in empaquetadas if l.endswith(" " + ref)), "")
+        else:
+            rama, commit = "", head
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+    if not _re_mk.fullmatch(r"[0-9a-f]{40}", commit):
+        return None
+    return {"rama": _destino_a_la_vista(rama)[:40] or "sin rama", "commit": commit[:7]}
+
+
 def _config_del_panel():
     """config.json para el panel web (decisión de Marcelo, encargo 61, CICLO-clon-nuevo-y-config.md). Si falta, lo crea
     desde config.example.json, sin credenciales, y lo dice en el registro del panel: es lo que LEEME.md pedía hacer a
@@ -15839,6 +15881,7 @@ def lanzar_web(puerto=8765, abrir=True):
                     cfg = _config_del_panel()
                     return self._json({
                         "version": VERSION,
+                        "git": _version_de_git(),
                         "modo_emision": es_modo_emision(),
                         "aviso": _CONFIG["creada"] or "",
                         "usuarios": list(cfg.get("usuarios", {}).keys()),
@@ -16282,6 +16325,7 @@ HTML_INDEX = r"""<!doctype html>
        estándar NO provee. Franja PROPIA, fuera de los 64px del header: no toca el bloque y no pierde nada. Los id se
        conservan a propósito: el cableado de app.js (abrirCred y /api/apagar) no cambia. -->
   <div class="context-bar" id="context-bar">
+    <span class="context-version" id="version-git" title="La rama y el commit que corre este panel">versión: leyendo…</span>
     <span class="context-spacer"></span>
     <button class="rs-btn plano" id="btn-cred" type="button" title="Credenciales de los portales" aria-label="Credenciales de los portales">
       <svg class="ash-ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg><span>Credenciales</span>
@@ -17075,6 +17119,9 @@ function chip(fila, tipo, txt) {
   try {
     const d = await api("/api/config");
     if ($("#ver")) $("#ver").textContent = d.version;
+    // La rama y el commit que corre el panel (encargo 93), como texto: vienen de .git.
+    const vg = $("#version-git");
+    if (vg) vg.textContent = d.git ? `versión ${d.git.rama} · ${d.git.commit}` : "versión: sin datos de git";
     MODO_PAGINA = Boolean(d.modo_emision);
     const nm = $("#nota-modo");
     if (nm) {
@@ -18561,6 +18608,8 @@ body {
     border-bottom: 1px solid var(--border-main);
 }
 .context-bar .context-spacer { flex: 1 1 auto; }
+/* La rama y el commit que corre el panel (encargo 93): texto chico en --text-primary, como los botones de la barra. */
+.context-bar .context-version { font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); }
 .context-bar .rs-btn { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; font-size: 12px; }
 .context-bar .rs-btn .ash-ico { width: 16px; height: 16px; flex: 0 0 auto; }
 /* Cerrar AQUASHIELD apaga el servidor: el color de peligro de la paleta (--danger) va en el borde y en el ícono, no en

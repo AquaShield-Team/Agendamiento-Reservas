@@ -122,6 +122,10 @@ actualiza, el panel abre igual, con la versión que tiene el equipo. No se actua
 - si la carpeta no está en la rama `estable`. Así, el equipo de desarrollo de Marcelo, en `main`, nunca se actualiza
   solo.
 
+**Qué versión corres:** el panel la muestra bajo el título, en la barra de Credenciales, como «versión estable ·
+1a2b3c4»: la rama y el comienzo del commit. Si tu equipo y el de Marcelo muestran el mismo commit, corren lo mismo
+(la rama puede ser otra: Marcelo trabaja en `main`).
+
 Tu `config.json`, tus perfiles de Chrome, tus registros (`logs\`) y tus planillas no se tocan. Si la ventana negra dice
 que la actualización quedó a medias y no abre el panel, cierra el programa que tenga abierto un archivo de la carpeta
 (un editor, por ejemplo) y vuelve a abrirlo.

@@ -1194,6 +1194,29 @@ python -m playwright show-trace "logs\<carpeta>\traza.zip"
     - Hasta el encargo 66 atendía a cualquiera que le hablara: una página de otro sitio abierta en el mismo navegador
       podía subir una planilla, cambiar credenciales, armar una corrida o apagarlo (residual de la revisión de
       seguridad del encargo 65).
+- **El panel dice qué versión corre** (pedido de Marcelo, encargo 93, `CICLO-named-customer-rutas-cma-y-version.md`):
+  la barra de contexto, bajo el header, muestra «versión <rama> · <commit>», con las 7 primeras cifras del commit de
+  la carpeta del programa. Así Marcelo y el colega ven de un vistazo si corren lo mismo.
+  - Se lee de los archivos de `.git`, sin lanzar git (`_version_de_git`; `/api/config` la trae en `git`). Lee HEAD y
+    el commit de su rama, de su archivo o de `packed-refs`; un `.git` que es un archivo (un worktree) lleva a su carpeta
+    y a la común.
+  - Sin `.git`, o si no se puede leer, dice «versión: sin datos de git». Una referencia que no es de `refs/` o que sube
+    de carpeta no se lee. La rama va saneada, como el destino final (`_destino_a_la_vista`), y la página la pinta como
+    texto.
+  - Es la del momento en que se cargó la página: los `.bat` actualizan antes de abrir el panel. Si la carpeta cambia
+    con el panel abierto, la versión nueva aparece al recargar (F5).
+- **¿Corre este equipo lo mismo que GitHub?** (mismo pedido) `python tests/igual_que_github.py [--rama RAMA]
+  [--sin-suite] [--dejar]`, con el Python que corre la suite (en este equipo, el de la Tienda de Microsoft).
+  - Clona la rama desde `origin` sin clave y sin preguntas, dentro de la carpeta del programa, en
+    `.trabajo/igual-que-github/<rama>-<fecha>/`. Nada va fuera, y la rama tiene que tener la forma de una.
+  - Compara el commit de GitHub con el de la rama local y con el que tiene la carpeta, y sus árboles. Compara también
+    cada archivo versionado, byte a byte, contra la carpeta, y cuenta los cambios sin commitear: del árbol y del índice.
+  - Después corre la suite en el clon. El temporal va junto al clon, por su nombre corto (sin espacios), y el techo
+    de git queda ahí. El plazo de la suite entera es de 7.200 s.
+  - Sale con 0 si todo es igual y la suite pasa, con 1 si algo difiere o la suite falla, y con 2 si no pudo comparar.
+  - Si todo es igual, borra el clon; si no, lo deja y dice dónde, junto con la salida de la suite (`suite-<fecha>.txt`).
+  - Imprime hashes cortos, cuentas y rutas del repo. Lo vigila `tests/test_igual_que_github.py`, con un remoto
+    inventado en el temporal: sin red, con git de verdad y con la suite del clon reemplazada.
 - Para depurar un portal sin correr toda la planilla: `AQUASHIELD_SOLO_PRIMERA=1` (solo en el modo
   consola `reservas`) y `AQUASHIELD_TRAZA=1`.
 
