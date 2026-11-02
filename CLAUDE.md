@@ -1568,7 +1568,8 @@ línea cambian). De arriba hacia abajo:
    misma justo antes del clic (encargo 67), o MSC no puede dejar el destino final aparte del puerto de descarga
    (encargo 86), o «Contract No» de HYUNDAI no trae una sola opción cuyo código o cuyo texto completo es el contrato
    configurado, o su valor lo comparte otra, o no queda elegida, o no hay un contrato (encargos 44, 89, 90 y 91), o
-   «HMM Sales Person» trae más de una opción real, o su valor lo comparte otra, o no queda elegida (encargo 92).
+   «HMM Sales Person» trae más de una opción real, o su valor lo comparte otra, o no queda elegida (encargo 92), o
+   «Named Customer» no trae una sola «Direct Input», o su valor lo comparte otra, o no queda elegida (encargo 93).
    `DETENIDO`, con «Detener»: en COSCO y, desde el encargo 56, en la espera del deslizador de CMA-CGM. `REVISAR`,
    entre otros (en MAERSK y en COSCO, solo ese), cuando la nave no apareció ni ampliando la búsqueda: el motivo dice
    hasta qué fecha buscó (ver «Ampliar la búsqueda»). Después: `EMITIDA`,
@@ -2020,7 +2021,8 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
     por su código ni por su texto completo), si calzan dos, si el valor de la que calza lo comparte otra opción, si la
     lista no acepta la elección, si queda con otra opción o si no se puede leer cuál quedó, si después de elegir ya no es
     la única que se distingue, si antes de seguir ya no está elegida, o si la página trae dos listas «Contract No» (las
-    tres últimas, desde el encargo 92), NO ENVIADA
+    tres últimas, desde el encargo 92), NO ENVIADA (que dos que calzan, con el mismo código, den NO ENVIADA lo
+    confirmó Marcelo en el encargo 93; hasta ahí lo había decidido el ciclo)
     (`ObjetivoNoEncontrado`, `hmm_f<fila>_sin_objetivo`, con el contrato que buscó). El paso 2 y el paso 3 le quitan los
     espacios de los extremos al contrato de las credenciales, como ONE, MSC y CMA-CGM, y uno de solo espacios cuenta
     como ninguno.
@@ -2075,13 +2077,22 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
     y `medir_nc_codigo.py`): en los 7 HTML del paso 3 del colega, «Select» sin valor y una sola opción real; en las 20
     filas de este equipo que llegaron a la guarda, siempre el mismo valor, el de esa opción. **Cuántas trae con el
     contrato ya elegido no está medido** (los 7 HTML son de cortes sin contrato): lo dice su línea de log.txt, `HMM Sales
-    Person opciones: …`. Lo de sus opciones y su valor va a log.txt saneado y con un tope de 60 caracteres.
-  - **«Named Customer» (`#actualShipperCode`) es un FRENO** (encargo 92): qué opción elegir lo decide Marcelo. Sigue
-    eligiendo como siempre, la primera opción con un valor que no es «select», y en las 20 filas medidas esa fue «Direct
-    Input», un texto fijo del portal, no un cliente (ni el código de Shipper ni el contrato de `config.json`). Su lista se
-    llena después de elegir el contrato: en los 7 HTML del colega, sin contrato, trae solo «Select». Desde el encargo 92,
-    log.txt dice sus opciones (`_hmm_named_customer_opciones`, `Named Customer opciones: …`), saneadas y con su tope, sin
-    elegir nada: es el dato para decidir.
+    Person opciones: …`. Lo de sus opciones y su valor va a log.txt saneado y con un tope de 60 caracteres. El 02-11, con
+    el contrato elegido, trajo «Select» y una sola opción real. Desde el encargo 93 lo hace el ayudante que comparte con
+    «Named Customer» (`_hmm_elegir_la_unica`), y no cambió lo que hace.
+  - **«Named Customer» (`#actualShipperCode`) elige «Direct Input», por su texto, y si no está, NO ENVIADA** (decisión de
+    Marcelo, encargo 93, la opción (a) del freno del 92, `CICLO-named-customer-rutas-cma-y-version.md`;
+    `_hmm_named_customer`, `HMM_NAMED_CUSTOMER`). Con el mismo ayudante que «HMM Sales Person» (`_hmm_elegir_la_unica`):
+    la opción cuyo texto entero es «Direct Input», con los espacios de a uno y sin distinguir mayúsculas de a-z
+    (`_hmm_es_direct_input`; nunca «lo contiene»), leída y elegida con el mismo localizador (`_hmm_una_lista`), por su
+    valor y solo si es una sola y ninguna otra responde a ese valor, y comprobando después que quedó esa. Su lista se
+    llena después de elegir el contrato: la lee hasta que la traiga, `HMM_LECTURAS_NAMED` veces cada 0,4 s (6 s). Si no
+    la trae, si trae dos, si otra responde a su valor, si la página no trae una sola lista, si no se puede leer, si no la
+    acepta o si no queda, NO ENVIADA (hasta el encargo 92, sin la lista seguía). Hasta ahí elegía la primera opción con un
+    valor que no era «select», por su posición, con `document.querySelector`, y si algo fallaba seguía. Medido: en las
+    20 filas de este equipo que llegaron a la guarda, esa fue «Direct Input», un texto fijo del portal, no un cliente (ni
+    el código de Shipper ni el contrato de `config.json`); el 02-11, con el contrato elegido, la lista trajo «Select» y
+    «Direct Input» (la corrida de las 14:30). En los 7 HTML del colega, sin contrato, trae solo «Select».
   - **Los motivos de «Contract No» dicen dónde se escribe y muestran el contrato saneado** (misma decisión). El lugar es
     «panel → Credenciales → HYUNDAI → columna Contrato» (`HMM_DONDE_VA_EL_CONTRATO`), en vez de config.json:
     - sin contrato: «no encontré un contrato (se escribe en el panel → Credenciales → HYUNDAI → columna Contrato)»;
@@ -2140,21 +2151,19 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
     ningún valor se repite; «Select» trae el valor vacío, y «Dummy» y «Direct Input», valores distintos del de la real.
     Lo demás de la lista sale de la línea «Contract No opciones» de log.txt, que trae hasta 6.
   - **Lo que queda residual:**
-    - Que dos opciones con el mismo código den NO ENVIADA lo decidió el ciclo, no Marcelo. En lo medido, la lista trajo
-      siempre una sola opción real.
-    - «Named Customer» sigue eligiendo la primera opción con valor, por su posición: es el FRENO del encargo 92 (arriba).
-    - `_hmm_select_por_texto` (Contract Holder, el tipo, el tamaño, la unidad y la ventilación del reefer) y la elección de
-      «Named Customer» leen con `document.querySelector` y eligen con `page.select_option`, que entra a las raíces shadow:
-      con una copia de la lista en una raíz shadow, leerían una y elegirían otra. Las listas de contrato y de «HMM Sales
-      Person» ya no (revisión de código del encargo 92; en lo medido, ninguna raíz shadow).
+    - `_hmm_select_por_texto` (Contract Holder, el tipo, el tamaño, la unidad y la ventilación del reefer) lee con
+      `document.querySelector` y elige con `page.select_option`, que entra a las raíces shadow: con una copia de la lista
+      en una raíz shadow, leería una y elegiría otra. Las listas de contrato, de «HMM Sales Person» y, desde el encargo
+      93, de «Named Customer» ya no (revisión de código del encargo 92; en lo medido, ninguna raíz shadow).
     - La comprobación de «HMM Sales Person» mira un solo instante: una opción real que el portal sume después de la
       lectura de después no se ve (revisión de seguridad del encargo 92; no se vio, y lo medido es una lista fija).
   - Lo vigilan `test_ayudantes.TestContratoDeHyundai` (los casos sobre una página falsa, que lee y elige con un
     localizador y anota cada lectura, cada elección y cada comprobación; los motivos, leídos del código; y, desde el
     encargo 92, que los pasos 2 y 3 lean y elijan con `_hmm_una_lista`), `test_ayudantes.TestContratoPaso2DeHyundai` (el
     paso 2), `test_ayudantes.TestSelectPorTextoDeHyundai` (lo saneado de `_hmm_select_por_texto`) y
-    `TestContratosPorDefecto.test_hyundai_sin_contrato_no_elige_a_ciegas`; «HMM Sales Person» y las opciones de «Named
-    Customer», `test_ayudantes.TestSalesPersonDeHyundai` (con `PaginaLista`, que lee y elige con un localizador).
+    `TestContratosPorDefecto.test_hyundai_sin_contrato_no_elige_a_ciegas`; «HMM Sales Person»,
+    `test_ayudantes.TestSalesPersonDeHyundai`, y «Named Customer», `test_ayudantes.TestNamedCustomerDeHyundai` (con
+    `PaginaLista`, que lee y elige con un localizador).
 - `codigo_shipper_hyundai` (`_codigo_shipper_hyundai`): el código con que HYUNDAI identifica a la empresa como
   Shipper. Sin él, el modal busca el Shipper solo por el nombre y el respaldo en JavaScript no escribe el código.
 

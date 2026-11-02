@@ -8830,89 +8830,137 @@ def _hmm_reales(pares):
     return [(t, v, e) for t, v, e in pares if v.strip() and t.strip().lower() not in HMM_NO_SON_CONTRATO]
 
 
-def _hmm_named_customer_opciones(page, reg):
-    """Anota en log.txt, saneadas y con su tope, las opciones de «Named Customer» (#actualShipperCode) del paso 3 de
-    HYUNDAI, sin elegir nada: qué opción elegir lo decide Marcelo (FRENO del encargo 92; en las 20 filas de este equipo
-    que llegaron a la guarda, la regla de siempre eligió «Direct Input»), y esta línea es el dato para decidirlo. Si la
-    lectura falla, o no hay una sola lista, lo dice y sigue: solo escribe en log.txt (revisiones del encargo 92)."""
-    try:
-        n, _, pares, _ = _hmm_una_lista(page, "#actualShipperCode")
-    except Exception as e:
-        reg.info(f"Named Customer: err al leer sus opciones ({_destino_a_la_vista(str(e))[:50]})")
-        return
-    if n != 1:
-        reg.info(f"Named Customer: no hay una sola lista (hay {n})")
-        return
-    reg.info("Named Customer opciones: " + " | ".join([_destino_a_la_vista(t)[:60] for t, *_ in pares if t][:6]))
+# «Named Customer» del paso 3 de HYUNDAI (#actualShipperCode; decisión de Marcelo, encargo 93, la opción (a) del freno
+# del 92): la opción cuyo texto es HMM_NAMED_CUSTOMER, sin distinguir mayúsculas de a-z ni los espacios. Su lista se
+# llena después de elegir el contrato: se lee hasta que la traiga, HMM_LECTURAS_NAMED veces cada 0,4 s (6 s, como el
+# contrato).
+HMM_NAMED_CUSTOMER = "Direct Input"
+HMM_LECTURAS_NAMED = 15
 
 
-def _hmm_sales_person(page, reg):
-    """Elige en «HMM Sales Person» (#hmmSalesmanCd) del paso 3 de HYUNDAI su única opción real (_hmm_reales), por su
-    valor y solo si ninguna otra responde a él (_hmm_responden), y comprueba en una sola lectura de la lista que quedó
-    elegida esa misma, todavía la única. Sin la lista, sin ninguna opción real o si no se puede leer, no elige y sigue,
-    como antes. Con más de una lista (también si aparece otra al leer), con más de una opción real (elegir una sería por
-    su posición), si la lista no acepta la elección o si no queda, corta (ObjetivoNoEncontrado: NO ENVIADA, con su
-    evidencia). Lo que lee del portal va a log.txt saneado y con su tope.
-    Encargo 92 (CICLO-hyundai-sales-person-y-residual-91.md): hasta ahí elegía la primera opción con un valor que no era
-    «select», por su posición (residual de la revisión de seguridad del encargo 89), y si algo fallaba seguía. Medido
-    antes del cambio: en los 7 HTML del paso 3 de las corridas de un colega (sin contrato elegido), «Select» sin valor y
-    una sola opción real; en las 20 filas de este equipo que llegaron a la guarda, el programa eligió siempre el mismo
-    valor, el de esa opción. Cuántas trae con el contrato ya elegido no está medido: lo dice su línea de log.txt."""
-    sel, paso, nombre = "#hmmSalesmanCd", "HMM Sales Person de HYUNDAI", "HMM Sales Person"
-    try:
-        n, lista, pares, _ = _hmm_una_lista(page, sel)
-    except Exception as e:
+def _hmm_es_direct_input(texto):
+    """Si el texto de una opción de «Named Customer» es HMM_NAMED_CUSTOMER: entero, con los espacios de a uno y sin
+    distinguir mayúsculas de a-z (_mayusculas_ascii); nunca «lo contiene»."""
+    return _mayusculas_ascii(" ".join(str(texto).split())) == _mayusculas_ascii(HMM_NAMED_CUSTOMER)
+
+
+def _hmm_elegir_la_unica(page, reg, sel, paso, nombre, cuales, que, la, contadas, quedo, lecturas=1,
+                         obligatoria=False):
+    """Elige en la lista 'sel' del paso 3 de HYUNDAI la única opción de 'cuales(pares)' (las que sirven, de las que lee
+    _hmm_una_lista), por su valor y solo si ninguna otra opción responde a él (_hmm_responden); la lee y la elige con el
+    mismo localizador, y comprueba, en una sola lectura de la lista, que quedó elegida esa misma, todavía la única. Lo
+    usan «HMM Sales Person» (encargo 92) y «Named Customer» (encargo 93), con sus textos: 'que' y 'la' nombran la
+    opción en los motivos, 'contadas' y 'quedo' en log.txt. Lee la lista hasta 'lecturas' veces, cada 0,4 s, hasta que
+    traiga una que sirva. Con más de una lista (también si aparece otra al leer), con más de una que sirve (elegir una
+    sería por su posición), si otra responde a su valor, si la lista no acepta la elección o si no queda, corta
+    (ObjetivoNoEncontrado: NO ENVIADA, con su evidencia). Sin la lista, sin poder leerla o sin ninguna que sirva: si es
+    'obligatoria', corta también; si no, no elige y sigue. Devuelve la opción elegida (texto, valor y etiqueta), o None.
+    Lo que lee del portal va a log.txt saneado y con su tope."""
+    n, lista, pares, error = 0, None, [], None
+    for k in range(lecturas):
+        if k:
+            esperar(page, 0.4)
+        try:
+            n, lista, pares, _ = _hmm_una_lista(page, sel)
+            error = None
+        except Exception as e:
+            n, lista, pares, error = 0, None, [], e
+        if n > 1 or cuales(pares):
+            break
+    if error is not None:
         # Si entre la cuenta y la lectura apareció otra lista, la lectura falla (el modo estricto del localizador): se
         # vuelve a contar (revisión de seguridad del encargo 92).
-        reg.info(f"{nombre}: err lectura ({_destino_a_la_vista(str(e))[:50]})")
+        reg.info(f"{nombre}: err lectura ({_destino_a_la_vista(str(error))[:50]})")
         try:
             n = page.locator(sel).count()
         except Exception:
             n = 0
-        lista, pares = None, []
     if n > 1:
         raise ObjetivoNoEncontrado(paso, f"una sola lista «{nombre}»: la página trae {n}, y elegir en una sería por su "
                                          "posición")
     if lista is None:
+        if obligatoria:
+            raise ObjetivoNoEncontrado(paso, f"{la} en «{nombre}»: "
+                                             + ("no pude leer sus opciones" if n else "la página no trae la lista"))
         reg.info(f"{nombre}: {'no pude leer sus opciones' if n else 'sin la lista'}; no elegí ninguna")
-        return
+        return None
     reg.info(f"{nombre} opciones: " + " | ".join([_destino_a_la_vista(t)[:60] for t, *_ in pares if t][:6]))
-    reales = _hmm_reales(pares)
-    if not reales:
+    candidatas = cuales(pares)
+    if not candidatas:
+        if obligatoria:
+            raise ObjetivoNoEncontrado(paso, f"{la} entre las {len(pares)} de «{nombre}» que ofrece el portal (no la "
+                                             f"mostró en {round(lecturas * 0.4)} s)")
         reg.info(f"{nombre}: el portal no ofrece ninguna opción; no elegí ninguna")
-        return
-    if len(reales) > 1:
-        raise ObjetivoNoEncontrado(paso, f"una sola opción en «{nombre}»: el portal ofrece {len(reales)}, y elegir una "
-                                         "sería por su posición")
-    [unica] = reales
+        return None
+    if len(candidatas) > 1:
+        raise ObjetivoNoEncontrado(paso, f"una sola {que} en «{nombre}»: el portal ofrece {len(candidatas)}, y elegir "
+                                         "una sería por su posición")
+    [unica] = candidatas
     valor = unica[1]
     comparten = _hmm_responden(pares, valor)
     if comparten > 1:
-        raise ObjetivoNoEncontrado(paso, f"una sola opción en «{nombre}» que se distinga: el portal da el mismo valor a "
+        raise ObjetivoNoEncontrado(paso, f"una sola {que} en «{nombre}» que se distinga: el portal da el mismo valor a "
                                          f"{comparten} opciones")
     try:
         lista.select_option(value=valor, timeout=5000)
     except Exception as e:
         reg.info(f"{nombre}: err select ({_destino_a_la_vista(str(e))[:50]})")
-        raise ObjetivoNoEncontrado(paso, f"cómo dejar elegida la única opción de «{nombre}»: la lista no la aceptó")
+        raise ObjetivoNoEncontrado(paso, f"cómo dejar elegida {la} de «{nombre}»: la lista no la aceptó")
     reg.info(f"{nombre}: '{_destino_a_la_vista(valor)[:60]}'")
     # Lo que quedó, en una sola lectura de la lista: la misma opción que se leyó (su texto, su valor y su etiqueta), y
-    # que siga siendo la única real y la única que responde a su valor. Si el portal cambia la lista entre la lectura y
-    # la elección, Playwright puede elegir otra con ese valor (revisión de seguridad del encargo 92).
+    # que siga siendo la única que sirve y la única que responde a su valor. Si el portal cambia la lista entre la
+    # lectura y la elección, Playwright puede elegir otra con ese valor (revisión de seguridad del encargo 92).
     try:
         _, _, despues, elegida = _hmm_una_lista(page, sel)
     except Exception as e:
         reg.info(f"{nombre}: err al leer la opción elegida ({_destino_a_la_vista(str(e))[:50]})")
         despues, elegida = [], None
     if elegida is None:
-        raise ObjetivoNoEncontrado(paso, f"la única opción de «{nombre}» elegida en la lista: después de elegirla, no "
-                                         "pude leer qué opción quedó")
-    if elegida != unica or _hmm_reales(despues) != [elegida] or _hmm_responden(despues, valor) > 1:
-        reg.info(f"{nombre}: la lista quedó con «{_destino_a_la_vista(elegida[0])[:40]}» (opciones reales: "
-                 f"{len(_hmm_reales(despues))}; con su valor: {_hmm_responden(despues, valor)})")
-        raise ObjetivoNoEncontrado(paso, f"la única opción de «{nombre}» elegida en la lista: después de elegirla, "
+        raise ObjetivoNoEncontrado(paso, f"{la} de «{nombre}» elegida en la lista: después de elegirla, no pude leer qué "
+                                         "opción quedó")
+    if elegida != unica or cuales(despues) != [elegida] or _hmm_responden(despues, valor) > 1:
+        reg.info(f"{nombre}: la lista quedó con «{_destino_a_la_vista(elegida[0])[:40]}» ({contadas}: "
+                 f"{len(cuales(despues))}; con su valor: {_hmm_responden(despues, valor)})")
+        raise ObjetivoNoEncontrado(paso, f"{la} de «{nombre}» elegida en la lista: después de elegirla, "
                                          + ("quedó otra opción" if elegida != unica else "ya no es la única"))
-    reg.info(f"{nombre}: la lista quedó con su única opción")
+    reg.info(f"{nombre}: la lista quedó con {quedo}")
+    return unica
+
+
+def _hmm_named_customer(page, reg):
+    """Elige en «Named Customer» (#actualShipperCode) del paso 3 de HYUNDAI la opción «Direct Input», por su texto
+    (_hmm_es_direct_input), con _hmm_elegir_la_unica: con el mismo localizador para leer y elegir, por su valor y solo si
+    es una sola y ninguna otra responde a ese valor, y comprobando después que quedó esa. Lee la lista hasta que la
+    traiga (HMM_LECTURAS_NAMED). Si no la trae, si la página no trae una sola lista o si no se puede leer, también
+    corta (NO ENVIADA). Devuelve la opción elegida.
+    Decisión de Marcelo, encargo 93 (CICLO-named-customer-rutas-cma-y-version.md): la opción (a) del freno del 92. Hasta
+    ahí elegía la primera opción con un valor que no era «select», por su posición, con document.querySelector, y si
+    algo fallaba seguía. Medido en el encargo 92: en las 20 filas de este equipo que llegaron a la guarda esa fue «Direct
+    Input», un texto fijo del portal, no un cliente; el 02-11, con el contrato ya elegido, la lista trajo «Select» y
+    «Direct Input»."""
+    return _hmm_elegir_la_unica(page, reg, "#actualShipperCode", "Named Customer de HYUNDAI", "Named Customer",
+                                lambda pares: [p for p in pares if _hmm_es_direct_input(p[0])],
+                                que=f"opción «{HMM_NAMED_CUSTOMER}»", la=f"la opción «{HMM_NAMED_CUSTOMER}»",
+                                contadas="con ese texto", quedo=f"«{HMM_NAMED_CUSTOMER}»",
+                                lecturas=HMM_LECTURAS_NAMED, obligatoria=True)
+
+
+def _hmm_sales_person(page, reg):
+    """Elige en «HMM Sales Person» (#hmmSalesmanCd) del paso 3 de HYUNDAI su única opción real (_hmm_reales), con
+    _hmm_elegir_la_unica: por su valor y solo si ninguna otra responde a él, y comprobando en una sola lectura de la lista
+    que quedó elegida esa misma, todavía la única. Sin la lista, sin ninguna opción real o si no se puede leer, no elige y
+    sigue, como antes. Con más de una lista (también si aparece otra al leer), con más de una opción real (elegir una
+    sería por su posición), si la lista no acepta la elección o si no queda, corta (ObjetivoNoEncontrado: NO ENVIADA,
+    con su evidencia). Devuelve la opción elegida, o None.
+    Encargo 92 (CICLO-hyundai-sales-person-y-residual-91.md): hasta ahí elegía la primera opción con un valor que no era
+    «select», por su posición (residual de la revisión de seguridad del encargo 89), y si algo fallaba seguía. Medido
+    antes del cambio: en los 7 HTML del paso 3 de las corridas de un colega (sin contrato elegido), «Select» sin valor y
+    una sola opción real; en las 20 filas de este equipo que llegaron a la guarda, el programa eligió siempre el mismo
+    valor, el de esa opción. El 02-11, con el contrato elegido, la lista trajo «Select» y una sola opción real. Desde el
+    encargo 93, con el ayudante que comparte con «Named Customer»."""
+    return _hmm_elegir_la_unica(page, reg, "#hmmSalesmanCd", "HMM Sales Person de HYUNDAI", "HMM Sales Person",
+                                _hmm_reales, que="opción", la="la única opción", contadas="opciones reales",
+                                quedo="su única opción")
 
 
 def _hmm_llenar_detalles(page, reserva, reg):
@@ -9506,20 +9554,10 @@ def reservar_hyundai(page, reserva, creds, reg, on_pausa=None):
     elegido = _hmm_elegir_contrato(page, ctto, reg)
     esperar(page, 0.3)
 
-    # 2b. Named Customer (si tiene opciones cargadas). Qué opción elegir lo decide Marcelo (FRENO del encargo 92): en las
-    # 20 filas de este equipo que llegaron a la guarda, esta regla eligió «Direct Input», la primera opción con valor.
-    # Mientras tanto elige como antes, y log.txt dice, saneadas, las opciones que ofrece el portal.
-    _hmm_named_customer_opciones(page, reg)
-    try:
-        actual_shippers = page.evaluate("""()=>{
-            const s = document.querySelector('#actualShipperCode');
-            return s ? [...s.options].map(o=>o.value).filter(v=>v && v.toLowerCase()!=='select') : [];
-        }""")
-        if actual_shippers:
-            page.select_option("#actualShipperCode", value=actual_shippers[0], timeout=3000)
-            reg.info(f"Named Customer: '{_destino_a_la_vista(actual_shippers[0])[:60]}'")
-    except Exception:
-        pass
+    # 2b. Named Customer: «Direct Input», por su texto, y si no está, NO ENVIADA (decisión de Marcelo, encargo 93, la
+    # opción (a) del freno del 92; _hmm_named_customer). Hasta ahí, la primera opción con valor, por su posición, y si
+    # algo fallaba seguía; en las 20 filas medidas, esa fue «Direct Input».
+    _hmm_named_customer(page, reg)
 
     # 3. HMM Sales Person: solo su única opción real, y si hay más de una, NO ENVIADA (encargo 92, _hmm_sales_person).
     # Hasta ahí, la primera opción con valor, por su posición.

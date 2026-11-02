@@ -1885,9 +1885,9 @@ class PaginaLista:
     selector que no conoce lo anota en 'inesperado' (la prueba exige esa lista vacía)."""
 
     def __init__(self, sel, opciones, cuantas=1, lee=True, acepta=True, despues=None, queda=None, relee=True,
-                 aparece_otra=False, antes=None):
+                 aparece_otra=False, antes=None, tarda=0):
         self.sel, self.cuantas, self.lee, self.acepta, self.relee = sel, cuantas, lee, acepta, relee
-        self.aparece_otra = aparece_otra
+        self.aparece_otra, self.tarda = aparece_otra, tarda
         self.opciones = [PaginaContrato.opcion(o) for o in opciones]
         self.despues = None if despues is None else [PaginaContrato.opcion(o) for o in despues]
         self.antes = None if antes is None else [PaginaContrato.opcion(o) for o in antes]
@@ -1898,6 +1898,10 @@ class PaginaLista:
         if sel != self.sel:
             self.inesperado.append(sel)
         return LocalizadorLista(self)
+
+    def wait_for_timeout(self, ms):
+        # Las esperas entre lecturas (desde el encargo 93, «Named Customer» lee hasta que la lista traiga su opción).
+        self.hechos.append(("espera",))
 
 
 class LocalizadorLista:
@@ -1924,6 +1928,10 @@ class LocalizadorLista:
         i = p.elegida
         if p.eligio and p.queda is not None:
             i = next(k for k, o in enumerate(p.opciones) if o[0] == p.queda)
+        if p.tarda:
+            # Con 'tarda', las primeras lecturas traen solo la primera opción: la lista todavía se está llenando.
+            p.tarda -= 1
+            return {"opciones": [list(o) for o in p.opciones[:1]], "elegida": 0}
         return {"opciones": [list(o) for o in p.opciones], "elegida": i}
 
     def select_option(self, value=None, timeout=None):
@@ -2085,26 +2093,6 @@ class TestSalesPersonDeHyundai(soporte.CasoAQ):
         self.assertIn("HMM Sales Person opciones: Select | " + "P" * 60 + chr(10), log)
         self.assertIn("HMM Sales Person: '" + "V" * 60 + "'" + chr(10), log)
 
-    def test_named_customer_solo_anota_sus_opciones(self):
-        # «Named Customer» es un FRENO (qué opción elegir lo decide Marcelo): _hmm_named_customer_opciones solo anota sus
-        # opciones, saneadas y con su tope, y si no puede, lo dice y la reserva sigue (revisión de código del encargo 92).
-        sel = "#actualShipperCode"
-        for k, (pagina, dice) in enumerate((
-                (PaginaLista(sel, [("Select", ""), ("Direct" + chr(10) + "Input", "Direct Input"), ("C" * 80, "C1")]),
-                 "Named Customer opciones: Select | Direct Input | " + "C" * 60),
-                (PaginaLista(sel, self.LISTA, lee="no contestó" + chr(10) + "LINEA FALSA"),
-                 "Named Customer: err al leer sus opciones (no contestó LINEA FALSA)"),
-                (PaginaLista(sel, self.LISTA, cuantas=2), "Named Customer: no hay una sola lista (hay 2)"))):
-            with self.subTest(dice=dice):
-                log = self.sb / f"nc_{k}" / "log.txt"
-                reg = self.mod.Registro(log)
-                self.addCleanup(reg.cerrar)
-                self.assertIsNone(self.mod._hmm_named_customer_opciones(pagina, reg))
-                texto = log.read_text(encoding="utf-8")
-                self.assertIn(dice + chr(10), texto)
-                self.assertNotIn("elige", [h[0] for h in pagina.hechos])
-                self.assertEqual(pagina.inesperado, [])
-
     def test_js_lee_las_opciones_y_la_elegida(self):
         # El JavaScript de _hmm_una_lista, corrido en Node sobre una lista falsa: recibe el elemento (el del
         # localizador), y da de cada opción su texto sin los espacios de sus extremos, su valor y su etiqueta, y el
@@ -2132,23 +2120,157 @@ console.log(JSON.stringify([lee(s(1)), lee(s(-1)), lee({options: [], selectedInd
             self.assertEqual(p.hechos, [("cuenta",)])
 
     def test_reservar_hyundai_la_llama_despues_del_contrato(self):
-        # Una sola vez, después de «Contract No» y fuera de un try: su corte no se traga. «Named Customer» sigue
-        # eligiendo como antes (FRENO del encargo 92: qué opción elegir lo decide Marcelo), pero log.txt dice, saneadas,
-        # las opciones que ofrece el portal, y el valor que eligió.
+        # Una sola vez, después de «Contract No» y fuera de un try: su corte no se traga. Desde el encargo 93,
+        # «Named Customer» también (_hmm_named_customer, entre las dos), y reservar_hyundai ya no lee ni elige esa lista
+        # por su cuenta.
         fuente = Path(self.mod.__file__).read_text(encoding="utf-8")
         tree = ast.parse(fuente)
         f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_hyundai")
         llamadas = [getattr(n.func, "id", "") for n in ast.walk(f) if isinstance(n, ast.Call)]
         self.assertEqual(llamadas.count("_hmm_sales_person"), 1)
-        # Como sentencia suelta o, desde el frente 2, asignada (el paso 3 guarda lo que eligió).
+        self.assertEqual(llamadas.count("_hmm_named_customer"), 1)
+        # Como sentencia suelta o asignada (el paso 3 guarda lo que eligió).
         orden = [n.value.func.id for n in f.body if isinstance(n, (ast.Expr, ast.Assign))
                  and isinstance(n.value, ast.Call)
-                 and getattr(n.value.func, "id", "") in ("_hmm_elegir_contrato", "_hmm_named_customer_opciones",
+                 and getattr(n.value.func, "id", "") in ("_hmm_elegir_contrato", "_hmm_named_customer",
                                                           "_hmm_sales_person")]
-        self.assertEqual(orden, ["_hmm_elegir_contrato", "_hmm_named_customer_opciones", "_hmm_sales_person"])
-        self.assertNotIn("#hmmSalesmanCd", ast.get_source_segment(fuente, f))
+        self.assertEqual(orden, ["_hmm_elegir_contrato", "_hmm_named_customer", "_hmm_sales_person"])
         cuerpo = ast.get_source_segment(fuente, f)
-        self.assertIn("reg.info(f\"Named Customer: '{_destino_a_la_vista(actual_shippers[0])[:60]}'\")", cuerpo)
+        self.assertNotIn("#hmmSalesmanCd", cuerpo)
+        self.assertNotIn("#actualShipperCode", cuerpo)
+
+
+class TestNamedCustomerDeHyundai(soporte.CasoAQ):
+    """«Named Customer» del paso 3 de HYUNDAI (decisión de Marcelo, encargo 93, la opción (a) del freno del 92): la opción
+    «Direct Input», por su texto, y si no está, NO ENVIADA; con el mismo localizador para leer y elegir, por su valor y
+    solo si ninguna otra responde a él, y después se lee la lista para ver que quedó esa. Hasta ahí elegía la primera
+    opción con valor, por su posición, y si algo fallaba seguía. Medido: en las 20 filas que llegaron a la guarda, esa
+    fue «Direct Input»; el 02-11, con el contrato elegido, la lista trajo «Select» y «Direct Input»."""
+    SEL = "#actualShipperCode"
+    FIN = ", así que no pulsé nada. La reserva no se envió; revisa ese paso en el portal."
+    LISTA = [("Select", ""), ("Direct Input", "DI-1")]
+
+    def correr(self, pagina, nombre):
+        """Corre _hmm_named_customer dentro de un reservador decorado como reservar_hyundai (_sin_clic_a_ciegas), con la
+        evidencia del corte reemplazada. Devuelve (resultado, log.txt), y exige que la página no viera nada
+        inesperado."""
+        log = self.sb / nombre / "log.txt"
+        reg = self.mod.Registro(log)
+        self.addCleanup(reg.cerrar)
+        elegida = []
+
+        @self.mod._sin_clic_a_ciegas("hmm")
+        def reservar(page, reserva, creds, reg, on_pausa=None):
+            elegida.append(self.mod._hmm_named_customer(page, reg))
+            return ("SIGUE", "")
+        with mock.patch.object(self.mod, "_evidencia_antes_de_la_guarda", lambda *a, **k: None):
+            r = reservar(pagina, {"fila": 9}, {}, reg)
+        self.assertEqual(pagina.inesperado, [])
+        self.elegida = elegida[0] if elegida else None
+        return r, log.read_text(encoding="utf-8")
+
+    def motivo(self, que):
+        return ("NO ENVIADA", f"Named Customer de HYUNDAI: no encontré {que}" + self.FIN)
+
+    def test_elige_direct_input_por_su_texto(self):
+        # Aunque la lista traiga antes un cliente con valor (lo que elegía la regla de posición), «Dummy», o el texto con
+        # otras mayúsculas y otros espacios: la de ese texto, entero, por su valor.
+        for k, lista in enumerate((self.LISTA,
+                                   [("Select", ""), ("CLIENTE PRUEBA", "C-1"), ("Dummy", "DUMMY"),
+                                    ("Direct Input", "DI-1")],
+                                   [("Select", ""), ("DIRECT" + chr(10) + "  input", "DI-1")])):
+            with self.subTest(lista=lista):
+                p = PaginaLista(self.SEL, lista)
+                r, log = self.correr(p, f"nc_elige_{k}")
+                self.assertEqual(r, ("SIGUE", ""))
+                self.assertEqual(p.hechos, [("cuenta",), ("lee",), ("elige", "DI-1"), ("cuenta",), ("lee",)])
+                self.assertEqual(self.elegida[1], "DI-1")
+                self.assertIn("Named Customer: 'DI-1'", log)
+                self.assertIn("Named Customer: la lista quedó con «Direct Input»", log)
+        self.assertIn("Named Customer opciones: Select | DIRECT input", log)
+
+    def test_lee_hasta_que_la_lista_la_traiga(self):
+        # Su lista se llena después de elegir el contrato: la lee, cada 0,4 s, hasta que traiga «Direct Input».
+        p = PaginaLista(self.SEL, self.LISTA, tarda=2)
+        r, _ = self.correr(p, "nc_tarda")
+        self.assertEqual(r, ("SIGUE", ""))
+        self.assertEqual(p.hechos[:8], [("cuenta",), ("lee",), ("espera",), ("cuenta",), ("lee",), ("espera",),
+                                        ("cuenta",), ("lee",)])
+        self.assertEqual(p.hechos[8], ("elige", "DI-1"))
+
+    def test_sin_direct_input_no_envia(self):
+        # Sin la opción (la lista sin ella, solo con un cliente, o con un texto que la contiene sin serlo), sin la lista,
+        # o sin poder leerla: NO ENVIADA, sin elegir nada (hasta el encargo 93 seguía, con lo que hubiera).
+        n = self.mod.HMM_LECTURAS_NAMED
+        for k, (pagina, que) in enumerate((
+                (PaginaLista(self.SEL, [("Select", "")]),
+                 "la opción «Direct Input» entre las 1 de «Named Customer» que ofrece el portal (no la mostró en 6 s)"),
+                (PaginaLista(self.SEL, [("Select", ""), ("CLIENTE PRUEBA", "C-1")]),
+                 "la opción «Direct Input» entre las 2 de «Named Customer» que ofrece el portal (no la mostró en 6 s)"),
+                (PaginaLista(self.SEL, [("Select", ""), ("Direct Input X", "DI-1")]),
+                 "la opción «Direct Input» entre las 2 de «Named Customer» que ofrece el portal (no la mostró en 6 s)"),
+                (PaginaLista(self.SEL, self.LISTA, cuantas=0),
+                 "la opción «Direct Input» en «Named Customer»: la página no trae la lista"),
+                (PaginaLista(self.SEL, self.LISTA, lee="no contestó" + chr(10) + "LINEA FALSA"),
+                 "la opción «Direct Input» en «Named Customer»: no pude leer sus opciones"))):
+            with self.subTest(que=que, k=k):
+                r, log = self.correr(pagina, f"nc_sin_{k}")
+                self.assertEqual(r, self.motivo(que))
+                self.assertNotIn("elige", [h[0] for h in pagina.hechos])
+                self.assertEqual(sum(h == ("espera",) for h in pagina.hechos), n - 1)
+        self.assertIn("Named Customer: err lectura (no contestó LINEA FALSA)", log)
+
+    def test_con_dos_o_con_su_valor_compartido_no_elige(self):
+        # Dos «Direct Input», dos listas (también si aparece otra al leer), u otra opción que responde a su valor, como
+        # valor o como etiqueta: elegir sería por su posición, y NO ENVIADA sin elegir nada.
+        for k, (pagina, que) in enumerate((
+                (PaginaLista(self.SEL, self.LISTA + [("direct input", "DI-2")]),
+                 "una sola opción «Direct Input» en «Named Customer»: el portal ofrece 2, y elegir una sería por su "
+                 "posición"),
+                (PaginaLista(self.SEL, self.LISTA, cuantas=2),
+                 "una sola lista «Named Customer»: la página trae 2, y elegir en una sería por su posición"),
+                (PaginaLista(self.SEL, self.LISTA, aparece_otra=True),
+                 "una sola lista «Named Customer»: la página trae 2, y elegir en una sería por su posición"),
+                (PaginaLista(self.SEL, [("Select", "DI-1"), ("Direct Input", "DI-1")]),
+                 "una sola opción «Direct Input» en «Named Customer» que se distinga: el portal da el mismo valor a 2 "
+                 "opciones"),
+                (PaginaLista(self.SEL, [("Select", ""), ("DI-1", ""), ("Direct Input", "DI-1")]),
+                 "una sola opción «Direct Input» en «Named Customer» que se distinga: el portal da el mismo valor a 2 "
+                 "opciones"))):
+            with self.subTest(que=que, k=k):
+                r, _ = self.correr(pagina, f"nc_dos_{k}")
+                self.assertEqual(r, self.motivo(que))
+                self.assertNotIn("elige", [h[0] for h in pagina.hechos])
+
+    def test_si_no_queda_elegida_corta(self):
+        quedo = "la opción «Direct Input» de «Named Customer» elegida en la lista: después de elegirla, "
+        for k, (pagina, que, dice) in enumerate((
+                (PaginaLista(self.SEL, self.LISTA, acepta=False),
+                 "cómo dejar elegida la opción «Direct Input» de «Named Customer»: la lista no la aceptó", None),
+                (PaginaLista(self.SEL, self.LISTA, queda="Select"), quedo + "quedó otra opción",
+                 "la lista quedó con «Select» (con ese texto: 1; con su valor: 1)"),
+                (PaginaLista(self.SEL, self.LISTA, despues=self.LISTA + [("Direct Input", "DI-2")]),
+                 quedo + "ya no es la única", "la lista quedó con «Direct Input» (con ese texto: 2; con su valor: 1)"),
+                (PaginaLista(self.SEL, self.LISTA, antes=[("Select", "DI-1"), ("Direct Input", "DI-2")]),
+                 quedo + "quedó otra opción", "la lista quedó con «Select» (con ese texto: 1; con su valor: 1)"),
+                (PaginaLista(self.SEL, self.LISTA, relee=False), quedo + "no pude leer qué opción quedó", None))):
+            with self.subTest(que=que, k=k):
+                r, log = self.correr(pagina, f"nc_no_queda_{k}")
+                self.assertEqual(r, self.motivo(que))
+                self.assertEqual([h for h in pagina.hechos if h[0] == "elige"], [("elige", "DI-1")])
+                self.assertNotIn(chr(10) + "LINEA FALSA", log)
+                if dice:
+                    self.assertIn(f"Named Customer: {dice}", log)
+
+    def test_lo_del_portal_va_saneado(self):
+        valor = "DI" + chr(0) + "1"
+        p = PaginaLista(self.SEL, [("Select", ""), ("Direct Input", valor), ("C" * 80 + chr(0x202E), "C1")])
+        r, log = self.correr(p, "nc_saneado")
+        self.assertEqual(r, ("SIGUE", ""))
+        self.assertIn("Named Customer opciones: Select | Direct Input | " + "C" * 60 + chr(10), log)
+        self.assertIn("Named Customer: 'DI?1'", log)
+        self.assertNotIn(chr(0), log)
+        self.assertNotIn(chr(0x202E), log)
 
 
 class PaginaSelectPorTexto:
