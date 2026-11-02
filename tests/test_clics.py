@@ -4102,6 +4102,8 @@ console.log(JSON.stringify(f()));
     GUARDAR = ".el-drawer button, [class*='drawer'] button"
     TEMP = "/^temperature$/i"
     DEL_PANEL = "paneles[0].contains(boton)"
+    # La espera del panel (_JS_CMA_PANEL_CON_TEMPERATURA, encargo 93, frente 3): el panel está a la vista.
+    PANEL = "=== 'temperature'"
     I_AGREE = "label:has-text('I Agree')"
 
     def errores(self):
@@ -4157,7 +4159,7 @@ console.log(JSON.stringify(f()));
         casos = [(PaginaCmaQueFalla(error, marca=self.TEMP, visibles={self.ABRE}), m._texto_error(error), False)
                  for error in self.errores()]
         casos.append((PaginaCmaQueNoPulsa(self.GUARDAR, visibles={self.ABRE, self.GUARDAR},
-                                          js={self.TEMP: "ok", self.DEL_PANEL: True}),
+                                          js={self.TEMP: "ok", self.DEL_PANEL: True, self.PANEL: True}),
                       "RuntimeError: el botón no se deja pulsar", True))
         for k, (pagina, falla, escribio) in enumerate(casos):
             with self.subTest(caso=k):
@@ -4176,7 +4178,7 @@ console.log(JSON.stringify(f()));
         # comprobación, que también fallaría (el censo del encargo 58 lo vio: el caso estaba incompleto).
         m = self.mod
         pagina = PaginaCmaQueGuarda([self.GUARDADA], visibles={self.ABRE, self.GUARDAR},
-                                    js={self.TEMP: "ok", self.DEL_PANEL: True})
+                                    js={self.TEMP: "ok", self.DEL_PANEL: True, self.PANEL: True})
         espera_que_falla_tras(pagina, self.GUARDAR)
         e, log = self.corta(m._cma_ajustes_reefer, pagina, {"fila": 5}, nombre="e58_reefer_guardado")
         self.assertEqual((e.paso, e.buscaba, pagina.clics),
@@ -4370,14 +4372,14 @@ console.log(JSON.stringify(f()));
         for k, (leido, falta) in enumerate(casos):
             with self.subTest(falta=falta):
                 pagina = PaginaCmaQueGuarda([leido], visibles={self.ABRE, self.GUARDAR},
-                                            js={self.TEMP: "ok", self.DEL_PANEL: True})
+                                            js={self.TEMP: "ok", self.DEL_PANEL: True, self.PANEL: True})
                 e, log = self.corta(m._cma_ajustes_reefer, pagina, {"fila": 5}, nombre=f"e58_reefer_{k}")
                 self.assertEqual((e.paso, e.buscaba),
                                  ("Temperatura guardada de CMA", f"{m.CMA_TEMPERATURA_GUARDADA}: {falta} (la leí 20 "
                                                                  f"veces, cada 0,5 s, después de pulsar su «Guardar»)"))
                 self.assertEqual((pagina.leidas, pagina.clics, pagina.teclas, pagina.esperas_ms),
                                  (20, [self.ABRE, self.GUARDAR], ["Control+A", "Backspace", "-20"],
-                                  [2000, 800, 1500] + [500] * 19))
+                                  [500, 800, 1500] + [500] * 19))
                 self.assertIn("    ajustes reefer guardados", log)
                 self.assertNotIn("temperatura guardada:", log)
 
@@ -4389,17 +4391,17 @@ console.log(JSON.stringify(f()));
             n = len(lecturas)
             with self.subTest(lecturas=n):
                 pagina = PaginaCmaQueGuarda(lecturas, visibles={self.ABRE, self.GUARDAR},
-                                            js={self.TEMP: "ok", self.DEL_PANEL: True})
+                                            js={self.TEMP: "ok", self.DEL_PANEL: True, self.PANEL: True})
                 reg, _, log = self.corrida(f"e58_guardada_{n}")
                 self.assertIs(m._cma_ajustes_reefer(pagina, {"fila": 5}, reg), True)
                 self.assertEqual((pagina.leidas, pagina.clics, pagina.teclas, pagina.esperas_ms),
                                  (n, [self.ABRE, self.GUARDAR], ["Control+A", "Backspace", "-20", "Escape"],
-                                  [2000, 800, 1500] + [500] * (n - 1) + [400]))
+                                  [500, 800, 1500] + [500] * (n - 1) + [400]))
                 self.assertIn(f"    temperatura guardada: la página muestra -20 °C en «Operando en», sin el panel "
                               f"ni «to complete» (lectura {n})", log.read_text(encoding="utf-8"))
         # Después de comprobarla, la tecla Escape que falla no corta, como antes.
         pagina = PaginaCmaQueGuarda([self.GUARDADA], visibles={self.ABRE, self.GUARDAR},
-                                    js={self.TEMP: "ok", self.DEL_PANEL: True})
+                                    js={self.TEMP: "ok", self.DEL_PANEL: True, self.PANEL: True})
 
         def tecla(k):
             if k == "Escape":
@@ -4416,7 +4418,7 @@ console.log(JSON.stringify(f()));
         for error in self.errores():
             with self.subTest(error=type(error).__name__):
                 pagina = PaginaCmaQueFalla(error, marca="Operando en", visibles={self.ABRE, self.GUARDAR},
-                                           js={self.TEMP: "ok", self.DEL_PANEL: True})
+                                           js={self.TEMP: "ok", self.DEL_PANEL: True, self.PANEL: True})
                 e, log = self.corta(m._cma_ajustes_reefer, pagina, {"fila": 5}, nombre="e58_comprobacion")
                 self.assertEqual((e.paso, e.buscaba, pagina.clics),
                                  ("Ajustes Reefer de CMA", f"{m.CMA_REEFER_GUARDADO}, porque el programa falló al "
@@ -4450,7 +4452,7 @@ console.log(JSON.stringify(f()));
         html = {"html": "<!DOCTYPE html>\n<html><body>Click &amp; Book inventado</body></html>", "sombras": 0}
         sigue = ", así que no pulsé nada. La reserva no se envió; revisa ese paso en el portal."
         temperatura = PaginaCmaQueGuarda([self.ABIERTO], visibles={self.ABRE, self.GUARDAR},
-                                         js={self.TEMP: "ok", self.DEL_PANEL: True, "getHTML": html})
+                                         js={self.TEMP: "ok", self.DEL_PANEL: True, self.PANEL: True, "getHTML": html})
         mercancia = PaginaCmaQueNoPulsa(self.HS, visibles={self.SELECCIONAR, self.OPCION, self.HS},
                                         js={"peso por contenedor": True, "getHTML": html})
         casos = ((temperatura, lambda p, reg: m._cma_ajustes_reefer(p, {"fila": 9}, reg),
@@ -10045,3 +10047,160 @@ class PaginaCmaPortal(soporte.PaginaFalsa):
         super().__init__(texto=texto)
         self.visitas = []
         self.goto = lambda url, **k: self.visitas.append(url)
+
+
+class TestEsperasConCondicion(ConRegistro):
+    """Las esperas fijas del camino de cada fila cambiadas por esperar su condición, con el mismo tope (pedido de
+    Marcelo, encargo 93, frente 3, CICLO-named-customer-rutas-cma-y-version.md): el ayudante (_esperar_que) con un reloj
+    falso, cada condición en Node frente a la búsqueda del paso que la sigue, y el lugar de cada una. Valores inventados."""
+
+    class Pagina:
+        """Para _esperar_que: cada lectura da el valor que sigue de 'valores' (False si se acabaron; si es una excepción,
+        la levanta), y cada espera corre un reloj falso y la anota en milisegundos."""
+
+        def __init__(self, valores):
+            self.valores, self.lecturas, self.esperas, self.t = list(valores), [], [], 0.0
+
+        def evaluate(self, js, arg=None):
+            self.lecturas.append((js, arg))
+            v = self.valores.pop(0) if self.valores else False
+            if isinstance(v, Exception):
+                raise v
+            return v
+
+        def wait_for_timeout(self, ms):
+            self.esperas.append(ms)
+            self.t += ms / 1000
+
+    def esperar(self, pagina, *args, **kw):
+        with mock.patch("time.monotonic", lambda: pagina.t):
+            return self.mod._esperar_que(pagina, *args, **kw)
+
+    def test_sigue_apenas_se_cumple(self):
+        p = self.Pagina([False, None, True])
+        self.assertIs(self.esperar(p, "js", 1.3, ["x"]), True)
+        self.assertEqual(p.lecturas, [("js", ["x"])] * 3)
+        self.assertEqual(p.esperas, [250, 250])
+
+    def test_sin_la_condicion_espera_lo_de_antes(self):
+        p = self.Pagina([])
+        self.assertIs(self.esperar(p, "js", 1.3), False)
+        self.assertEqual(sum(p.esperas), 1300)
+        self.assertEqual(len(p.lecturas), 6)
+
+    def test_una_lectura_que_falla_no_cuenta(self):
+        p = self.Pagina([RuntimeError("se cerró"), True])
+        self.assertIs(self.esperar(p, "js", 1.0), True)
+        self.assertEqual(p.esperas, [250])
+
+    def test_asienta_con_lo_que_queda_del_tope(self):
+        for valores, esperas in (([True], [500]), ([False] * 13 + [True], [250] * 14), ([False] * 14 + [True], [250] * 14)):
+            p = self.Pagina(valores)
+            with self.subTest(lecturas=len(valores)):
+                self.assertIs(self.esperar(p, "js", 3.5, asentar=0.5), True)
+                self.assertEqual(p.esperas, esperas)
+
+    def test_lee_con_el_lector_dado(self):
+        p, leidas = self.Pagina([True]), []
+        self.assertIs(self.esperar(p, "js", 2.0, leer=lambda js, arg: leidas.append(js) or True), True)
+        self.assertEqual((leidas, p.lecturas), (["js"], []))
+
+    def test_js_hay_opcion_exacta_es_la_busqueda_del_clic(self):
+        # ONE: la espera de _one_dropdown busca lo mismo que _JS_CLICK_OPTION_EXACT pulsaría, sin pulsar nada.
+        guion = (
+            "const el = (t, vis, hijos) => ({textContent: t, offsetParent: vis ? {} : null, children: {length: hijos},\n"
+            "  clics: 0, closest() { return null; }, scrollIntoView() {}, click() { this.clics++; }});\n"
+            "const correr = (els, textos) => { global.document = {querySelectorAll: () => els};\n"
+            "  const hay = (" + self.mod._JS_HAY_OPCION_EXACTA + ")(textos);\n"
+            "  const sinClics = els.every(e => e.clics === 0);\n"
+            "  const pulsa = textos.some(t => (" + self.mod._JS_CLICK_OPTION_EXACT + ")(t));\n"
+            "  return [hay, sinClics, pulsa]; };\n"
+            "console.log(JSON.stringify([\n"
+            "  correr([el('40FT High Cube', true, 0)], ['40FT High Cube']),\n"
+            "  correr([el(' 40ft  high cube ', true, 0)], ['40FT High Cube']),\n"
+            "  correr([el('40FT High Cube', false, 0)], ['40FT High Cube']),\n"
+            "  correr([el('40FT High Cube', true, 2)], ['40FT High Cube']),\n"
+            "  correr([el('40FT High Cube Plus', true, 0)], ['40FT High Cube']),\n"
+            "  correr([el('REEFER', true, 0)], ['DRY', 'REEFER']),\n"
+            "  correr([], ['REEFER'])]));\n")
+        self.assertEqual(correr_node(self, guion), [[True, True, True], [True, True, True], [False, True, False],
+                                                    [False, True, False], [False, True, False], [True, True, True],
+                                                    [False, True, False]])
+
+    def test_js_modal_de_otra_nave_a_la_vista(self):
+        # HYUNDAI: el OK del modal «Alternate Vessel Option» con caja y sin visibility:hidden, como lo ve is_visible.
+        guion = (
+            "const boton = (w, h, vis) => ({getBoundingClientRect: () => ({width: w, height: h}), vis});\n"
+            "const correr = (b) => { global.document = {querySelector: (s) => (s === '#vesselOptionSubmit' ? b : null)};\n"
+            "  global.getComputedStyle = (e) => ({visibility: e.vis || 'visible'});\n"
+            "  return (" + self.mod._JS_HMM_MODAL_OTRA_NAVE + ")(); };\n"
+            "console.log(JSON.stringify([correr(boton(80, 30)), correr(boton(0, 0)), correr(boton(80, 30, 'hidden')),\n"
+            "  correr(null)]));\n")
+        self.assertEqual(correr_node(self, guion), [True, False, False, False])
+
+    def test_js_hay_contrato_como_lo_cuenta_el_paso_que_sigue(self):
+        # HYUNDAI: «Contract No» con una opción con valor que no es «Select», «Dummy» ni «Direct Input» (_hmm_reales).
+        guion = (
+            "const correr = (ops) => { global.document = {querySelector: (s) => (s === '#selContractNo' && ops\n"
+            "    ? {options: ops.map(([t, v]) => ({textContent: t, value: v}))} : null)};\n"
+            "  return (" + self.mod._JS_HMM_HAY_CONTRATO + ")(" + json.dumps(list(self.mod.HMM_NO_SON_CONTRATO)) + "); };\n"
+            "console.log(JSON.stringify([correr([['Select', '']]), correr([['Select', ''], ['Dummy', 'D'],\n"
+            "  [' Direct Input ', 'DI']]), correr([['Select', ''], ['CT-1 - (GA)', 'CT-1']]), correr([['CT-1', ' ']]),\n"
+            "  correr(null)]));\n")
+        self.assertEqual(correr_node(self, guion), [False, False, True, False, False])
+
+    def test_js_panel_reefer_es_la_busqueda_de_la_temperatura(self):
+        # CMA-CGM: un solo panel a la vista con su «Temperature» y su campo a la vista, lo que busca
+        # _JS_CMA_REEFER_TEMPERATURA, sin enfocar ni pulsar nada. Con dos campos, la espera sigue y el paso corta,
+        # como antes.
+        v, d, h = "visible", "display:none", "visibility:hidden"
+        t = [["Temperature", ""]]
+        casos = [([[v, None, [["Modo Reefer", ""], ["Temperature", ""]]]], True),
+                 ([[v, None, [["Humedad", ""], ["Pre-cooling temperature", ""]]]], False),
+                 ([[d, None, t], [v, None, [["Humedad", ""]] + t]], True),
+                 ([[d, None, t], [h, None, t]], False),
+                 ([[v, None, t], [v, None, t]], False),
+                 ([[v, None, []], [v, 0, t]], True),
+                 ([[v, None, t + [[" Temperature ", ""]]]], True)]
+        for paneles, esperado in casos:
+            guion = (TestCma.PANELES_FALSOS + f"const paneles = armar({json.dumps(paneles)});\n"
+                     + "conectar(paneles, []);\n"
+                     + "const f = " + self.mod._JS_CMA_PANEL_CON_TEMPERATURA + ";\n"
+                     + "console.log(JSON.stringify([f(), paneles.every(p => p.bloques.every(b => b.inp.clics === 0))]));\n")
+            with self.subTest(paneles=paneles):
+                self.assertEqual(correr_node(self, guion), [esperado, True])
+
+    def fuentes(self):
+        texto = (soporte.FUENTES / "AQUASHIELD.py").read_text(encoding="utf-8")
+        arbol = ast.parse(texto)
+        return {n.name: ast.get_source_segment(texto, n) for n in arbol.body if isinstance(n, ast.FunctionDef)}
+
+    def test_cada_espera_en_su_lugar(self):
+        f = self.fuentes()
+        # ONE: cada desplegable, antes de su clic.
+        uno = f["_one_dropdown"]
+        self.assertIn("    _esperar_que(page, _JS_HAY_OPCION_EXACTA, 1.3, list(opciones_candidatas))\n", uno)
+        self.assertNotIn("esperar(page, 1.3)", uno)
+        self.assertLess(uno.index("_esperar_que("), uno.index("_JS_CLICK_OPTION_EXACT"))
+        # MSC: el «Next», cada 0,3 s y con el tope de antes, 12 s.
+        self.assertIn("for _ in range(MSC_VUELTAS_NEXT):", f["_msc_next"])
+        self.assertIn("esperar(page, MSC_CADA_NEXT)", f["_msc_next"])
+        self.assertEqual((self.mod.MSC_CADA_NEXT, round(self.mod.MSC_CADA_NEXT * self.mod.MSC_VUELTAS_NEXT, 6)),
+                         (0.3, 12.0))
+        # HYUNDAI: el modal de otra nave, el Shipper y su «Apply».
+        hmm = f["reservar_hyundai"]
+        self.assertIn("    _esperar_que(page, _JS_HMM_MODAL_OTRA_NAVE, 3.5 if tipo_sel == \"book_now\" else 1.5, "
+                      "asentar=0.5)\n    modal = _hmm_mantener_nave(page, reg, f)\n", hmm)
+        self.assertNotIn("Book Now presionado: {modo}\")\n        esperar(page, 2.0)", hmm)
+        self.assertIn("_esperar_que(page, _JS_HMM_HAY_CONTRATO, 2.5, list(HMM_NO_SON_CONTRATO))", hmm)
+        self.assertNotIn("esperar(page, 2.5)", hmm[:hmm.index("_hmm_elegir_contrato(")])
+        abre = hmm.index('reg.info("Abriendo modal Booking Shipper Selection...")')
+        self.assertNotIn("esperar(", hmm[abre:hmm.index("opt_aqua.wait_for(", abre)])
+        # MAERSK: la lista reefer la espera _mk_elegir_unica.
+        mk = f["_mk_elegir_reefer"]
+        self.assertNotIn("esperar(", mk[:mk.index("_mk_elegir_unica(")])
+        # CMA-CGM: el panel Reefer, leído con plazo.
+        cma = f["_cma_ajustes_reefer"]
+        self.assertIn("_esperar_que(page, _JS_CMA_PANEL_CON_TEMPERATURA, 2.0, asentar=0.5, "
+                      "leer=lambda js, _: _cma_js(page, js))", cma)
+        self.assertNotIn("esperar(page, 2.0)", cma)

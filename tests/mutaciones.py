@@ -3057,7 +3057,10 @@ ON3 = "test_evidencia.TestModalHyundai."
 EV_OTRA = ('    _evidencia_antes_de_la_guarda(page, reg, f"hmm_f{f}_otra_nave", "con el modal «Alternate Vessel Option»",\n'
            '                                  completa=False)\n')
 MIRA_OTRA = '        visible = page.locator("#vesselOptionSubmit").first.is_visible(timeout=3000)\n'
-CORTE_ELEGIR = "    esperar(page, 1.5)\n    modal = _hmm_mantener_nave(page, reg, f)\n    if isinstance(modal, tuple):\n        return modal\n"
+# Desde el encargo 93 (frente 3), antes del modal va la espera de su condición (_esperar_que), no 1,5 s fijos.
+ESPERA_MODAL = ('    _esperar_que(page, _JS_HMM_MODAL_OTRA_NAVE, 3.5 if tipo_sel == "book_now" else 1.5, '
+                'asentar=0.5)\n')
+CORTE_ELEGIR = ESPERA_MODAL + "    modal = _hmm_mantener_nave(page, reg, f)\n    if isinstance(modal, tuple):\n        return modal\n"
 MARCA_HMM = ON3 + "test_marca_mantener_la_nave_y_pulsa_ok"
 
 MUTACIONES += [
@@ -3108,9 +3111,9 @@ MUTACIONES += [
     dict(id="hmm-modal-mira-antes-de-esperar", pruebas=[ON3 + "test_los_lugares_en_el_reservador"],
          viejo=CORTE_ELEGIR,
          nuevo="    modal = _hmm_mantener_nave(page, reg, f)\n    if isinstance(modal, tuple):\n        return modal\n"
-               "    esperar(page, 1.5)\n"),
+               + ESPERA_MODAL),
     dict(id="hmm-modal-sigue-tras-elegir", pruebas=[ON3 + "test_los_lugares_en_el_reservador"],
-         viejo=CORTE_ELEGIR, nuevo="    esperar(page, 1.5)\n    modal = _hmm_mantener_nave(page, reg, f)\n"),
+         viejo=CORTE_ELEGIR, nuevo=ESPERA_MODAL + "    modal = _hmm_mantener_nave(page, reg, f)\n"),
     dict(id="hmm-modal-segunda-sin-saber", pruebas=[ON3 + "test_los_lugares_en_el_reservador"],
          viejo='        modal = _hmm_mantener_nave(page, reg, f, ya=modal == "marcada")\n',
          nuevo="        modal = _hmm_mantener_nave(page, reg, f)\n"),
@@ -10782,4 +10785,72 @@ MUTACIONES += [
     dict(id="e93-igual-sin-argumentos", archivo=IGUAL, pruebas=[IG + "test_main_lee_sus_argumentos"],
          viejo="    return comparar(RAIZ, args.rama, sin_suite=args.sin_suite, dejar=args.dejar)\n",
          nuevo="    return comparar(RAIZ, args.rama, sin_suite=False, dejar=args.dejar)\n"),
+]
+
+
+# --- Encargo 93, frente 3: las esperas fijas del camino de cada fila cambiadas por esperar su condición, con el mismo
+# tope (_esperar_que). El ayudante sin la condición, sin recortar la última espera, asentando entero, leyendo siempre
+# con page o dejando escapar una lectura que falla; las condiciones de ONE, HYUNDAI y CMA-CGM, más anchas que el paso que
+# sigue; y cada espera vuelta a la fija, sin asentar o sin el plazo de CMA-CGM.
+EQ = "test_clics.TestEsperasConCondicion."
+EQ_LUGAR = EQ + "test_cada_espera_en_su_lugar"
+MUTACIONES += [
+    dict(id="e93-esperar-que-sin-condicion", pruebas=[EQ + "test_sigue_apenas_se_cumple"],
+         viejo="            listo = bool((leer or page.evaluate)(js, arg))\n", nuevo="            listo = False\n"),
+    dict(id="e93-esperar-que-sin-recortar", pruebas=[EQ + "test_sin_la_condicion_espera_lo_de_antes"],
+         viejo="        page.wait_for_timeout(int(min(ESPERA_CADA, resta) * 1000))\n    return False\n",
+         nuevo="        page.wait_for_timeout(int(ESPERA_CADA * 1000))\n    return False\n"),
+    dict(id="e93-esperar-que-asienta-entero", pruebas=[EQ + "test_asienta_con_lo_que_queda_del_tope"],
+         viejo="                page.wait_for_timeout(int(min(asentar, resta) * 1000))\n",
+         nuevo="                page.wait_for_timeout(int(asentar * 1000))\n"),
+    dict(id="e93-esperar-que-lee-con-page", pruebas=[EQ + "test_lee_con_el_lector_dado"],
+         viejo="            listo = bool((leer or page.evaluate)(js, arg))\n",
+         nuevo="            listo = bool(page.evaluate(js, arg))\n"),
+    dict(id="e93-esperar-que-revienta", pruebas=[EQ + "test_una_lectura_que_falla_no_cuenta"],
+         viejo="            listo = bool((leer or page.evaluate)(js, arg))\n        except Exception:\n            listo = False\n",
+         nuevo="            listo = bool((leer or page.evaluate)(js, arg))\n        except ZeroDivisionError:\n            listo = False\n"),
+    dict(id="e93-one-opcion-oculta", pruebas=[EQ + "test_js_hay_opcion_exacta_es_la_busqueda_del_clic"],
+         viejo="        .some(e => e.offsetParent && e.children.length===0\n",
+         nuevo="        .some(e => e.children.length===0\n"),
+    dict(id="e93-one-opcion-que-contiene", pruebas=[EQ + "test_js_hay_opcion_exacta_es_la_busqueda_del_clic"],
+         viejo="                   && (e.textContent||'').replace(/\\\\s+/g,' ').trim().toUpperCase() === T);\n})",
+         nuevo="                   && (e.textContent||'').replace(/\\\\s+/g,' ').trim().toUpperCase().includes(T));\n})"),
+    dict(id="e93-one-espera-fija", pruebas=[EQ_LUGAR],
+         viejo="    _esperar_que(page, _JS_HAY_OPCION_EXACTA, 1.3, list(opciones_candidatas))\n",
+         nuevo="    esperar(page, 1.3)\n"),
+    dict(id="e93-msc-next-cada-1-2", pruebas=[EQ_LUGAR],
+         viejo="MSC_CADA_NEXT = 0.3 ", nuevo="MSC_CADA_NEXT = 1.2 "),
+    dict(id="e93-msc-next-otro-tope", pruebas=[EQ_LUGAR],
+         viejo="MSC_VUELTAS_NEXT = 40 ", nuevo="MSC_VUELTAS_NEXT = 10 "),
+    dict(id="e93-hmm-modal-espera-fija", pruebas=[EQ_LUGAR],
+         viejo='    _esperar_que(page, _JS_HMM_MODAL_OTRA_NAVE, 3.5 if tipo_sel == "book_now" else 1.5, asentar=0.5)\n',
+         nuevo="    esperar(page, 1.5)\n"),
+    dict(id="e93-hmm-modal-sin-asentar", pruebas=[EQ_LUGAR],
+         viejo='3.5 if tipo_sel == "book_now" else 1.5, asentar=0.5)\n', nuevo='3.5 if tipo_sel == "book_now" else 1.5)\n'),
+    dict(id="e93-hmm-modal-sin-visibilidad", pruebas=[EQ + "test_js_modal_de_otra_nave_a_la_vista"],
+         viejo="    return r.width > 0 && r.height > 0 && getComputedStyle(b).visibility !== 'hidden';\n",
+         nuevo="    return r.width > 0 && r.height > 0;\n"),
+    dict(id="e93-hmm-contrato-espera-fija", pruebas=[EQ_LUGAR],
+         viejo="                    _esperar_que(page, _JS_HMM_HAY_CONTRATO, 2.5, list(HMM_NO_SON_CONTRATO))\n",
+         nuevo="                    esperar(page, 2.5)\n"),
+    dict(id="e93-hmm-contrato-cuenta-el-relleno", pruebas=[EQ + "test_js_hay_contrato_como_lo_cuenta_el_paso_que_sigue"],
+         viejo="    return !!s && [...s.options].some(o => (o.value || '').trim()\n        && !no.includes(",
+         nuevo="    return !!s && [...s.options].some(o => (o.value || '').trim()\n        || !no.includes("),
+    dict(id="e93-hmm-shipper-vuelve-la-espera", pruebas=[EQ_LUGAR],
+         viejo='            reg.info("Abriendo modal Booking Shipper Selection...")\n',
+         nuevo='            reg.info("Abriendo modal Booking Shipper Selection...")\n            esperar(page, 1.2)\n'),
+    dict(id="e93-mk-reefer-vuelve-la-espera", pruebas=[EQ_LUGAR],
+         viejo="    # seguidas traigan las mismas opciones.\n    _mk_elegir_unica(",
+         nuevo="    # seguidas traigan las mismas opciones.\n    esperar(page, 1.5)\n    _mk_elegir_unica("),
+    dict(id="e93-cma-reefer-espera-fija", pruebas=[EQ_LUGAR],
+         viejo="        _esperar_que(page, _JS_CMA_PANEL_CON_TEMPERATURA, 2.0, asentar=0.5, leer=lambda js, _: _cma_js(page, js))\n",
+         nuevo="        esperar(page, 2.0)\n"),
+    dict(id="e93-cma-reefer-sin-plazo", pruebas=[EQ_LUGAR],
+         viejo="2.0, asentar=0.5, leer=lambda js, _: _cma_js(page, js))\n", nuevo="2.0, asentar=0.5)\n"),
+    dict(id="e93-cma-panel-sin-campo-a-la-vista", pruebas=[EQ + "test_js_panel_reefer_es_la_busqueda_de_la_temperatura"],
+         viejo="        return !!etq && (etq.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase() === 'temperature'\n            && [",
+         nuevo="        return !!etq && (etq.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase() === 'temperature'\n            || ["),
+    dict(id="e93-cma-panel-varios", pruebas=[EQ + "test_js_panel_reefer_es_la_busqueda_de_la_temperatura"],
+         viejo="    if (paneles.length !== 1) return false;\n    return [...paneles[0]",
+         nuevo="    if (paneles.length === 0) return false;\n    return [...paneles[0]"),
 ]

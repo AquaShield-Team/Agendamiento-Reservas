@@ -1369,6 +1369,27 @@ línea cambian). De arriba hacia abajo:
    misma carpeta. Usa `reg.paso()` / `reg.info()`, no `print`.
 3. **Utilidades**: `esperar_hasta` (espera condicional; prefiérela a `esperar`, que duerme fijo),
    `click_si_existe`, `rellenar`, `pausa_manual` (pide intervención humana vía `on_pausa`).
+   - **Una espera fija se cambia por esperar su condición, con el mismo tope** (pedido de Marcelo, encargo 93, frente
+     3, `CICLO-named-customer-rutas-cma-y-version.md`; `_esperar_que`). Lee la condición cada 0,25 s (`ESPERA_CADA`)
+     hasta que se cumple o hasta el tiempo de la espera fija de antes. Si se cumple antes, sigue antes; si no, espera
+     lo mismo de siempre y el programa sigue igual. Con `asentar`, medio segundo más (lo que quede del tope) para que
+     una ventana termine de abrirse. Una lectura que falla cuenta como que no se cumple.
+     - Se cambiaron las del camino de cada fila que tienen una condición clara, la misma que busca el paso que
+       sigue:
+       - ONE: cada desplegable (`_one_dropdown`), hasta que esté a la vista una de sus opciones candidatas
+         (`_JS_HAY_OPCION_EXACTA`, la búsqueda de `_JS_CLICK_OPTION_EXACT` sin el clic); antes, 1,3 s.
+       - MSC: el «Next» se mira cada 0,3 s (`MSC_CADA_NEXT`), con el mismo tope de 12 s; antes, cada 1,2 s.
+       - HYUNDAI: tras «Book Now», el OK del modal «Alternate Vessel Option» a la vista (`_JS_HMM_MODAL_OTRA_NAVE`;
+         antes, 2 + 1,5 s); al abrir la ventana del Shipper, nada (la fila de AQUACHILE ya se esperaba a la vista;
+         antes, 1,2 s más); y tras su «Apply», «Contract No» con un contrato (`_JS_HMM_HAY_CONTRATO`; antes, 2,5 s).
+       - MAERSK: la lista reefer, que ya espera `_mk_elegir_unica` (antes, 1,5 s más).
+       - CMA-CGM: el panel Reefer, un solo panel a la vista con su «Temperature» (`_JS_CMA_PANEL_CON_TEMPERATURA`,
+         leída con plazo; antes, 2 s).
+     - No se tocaron: las esperas después de la guarda, las confirmaciones del portal, las del login, y COSCO, porque
+       su inicio de sesión necesita al operador y el modo prueba no se puede correr solo. Tampoco las que no tienen
+       una condición medida, como la de MSC tras el tipo de contenedor.
+     - Lo vigila `test_clics.TestEsperasConCondicion`: el ayudante con un reloj falso, cada condición en Node frente
+       a la búsqueda del paso que sigue, y el lugar de cada una.
    - **Con el panel, la pausa queda en log.txt** (decisión de Marcelo, encargo 55, `CICLO-pausa-plazos-y-datadome.md`;
      `_pausa_del_panel`, que usan `pausa_manual` y el deslizador de CMA): cuándo empieza y por qué (el mensaje que ve
      el operador), y cuándo termina y cómo, o si se cortó, con los segundos. La hora la pone el Registro en cada línea.

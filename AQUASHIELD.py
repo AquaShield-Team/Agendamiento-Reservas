@@ -1150,6 +1150,36 @@ def esperar(page, seg, reg=None, motivo=""):
     page.wait_for_timeout(int(seg * 1000))
 
 
+ESPERA_CADA = 0.25       # s entre una lectura y otra de _esperar_que
+
+
+def _esperar_que(page, js, tope, arg=None, asentar=0.0, leer=None):
+    """Una espera fija cambiada por esperar su condición (pedido de Marcelo, encargo 93, frente 3,
+    CICLO-named-customer-rutas-cma-y-version.md: «una espera fija se cambia por esperar la condición»). Lee 'js' (con
+    'arg', como page.evaluate) cada ESPERA_CADA s hasta que dé verdadero, o hasta 'tope' s, el tiempo de la espera fija
+    de antes: nunca espera más que ella, salvo lo que tarde cada lectura. Con la condición, espera además 'asentar' s, lo
+    que quede del tope, y devuelve True; sin ella, devuelve False y el programa sigue como seguía después de la espera
+    fija. Una lectura que falla cuenta como que no se cumple. 'leer' cambia cómo se lee (CMA-CGM lee con plazo,
+    _cma_js); por omisión, page.evaluate. Las vueltas también tienen tope (tope / ESPERA_CADA): una página falsa de las
+    pruebas, cuya espera no corre el reloj, no la deja girando."""
+    import time as _t
+    fin = _t.monotonic() + tope
+    for _ in range(max(1, round(tope / ESPERA_CADA)) + 1):
+        try:
+            listo = bool((leer or page.evaluate)(js, arg))
+        except Exception:
+            listo = False
+        resta = fin - _t.monotonic()
+        if listo:
+            if asentar and resta > 0:
+                page.wait_for_timeout(int(min(asentar, resta) * 1000))
+            return True
+        if resta <= 0:
+            return False
+        page.wait_for_timeout(int(min(ESPERA_CADA, resta) * 1000))
+    return False
+
+
 def esperar_hasta(page, selector, seg=8, reg=None, motivo="", minimo=0.4, asentar=0.0):
     """Espera hasta que aparezca 'selector' (o hasta 'seg'), en vez de dormir un
     tiempo fijo. 'asentar' agrega un margen DESPUES de encontrarlo: en portales
@@ -4371,6 +4401,16 @@ _JS_CLICK_OPTION_EXACT = """(txt) => {
 }"""
 
 
+# ¿Ya está a la vista alguna de las opciones que _JS_CLICK_OPTION_EXACT pulsaría? La misma búsqueda, sin el clic: la
+# espera de _one_dropdown (encargo 93, frente 3).
+_JS_HAY_OPCION_EXACTA = """(textos) => textos.some(txt => {
+    const T = txt.replace(/\\s+/g,' ').trim().toUpperCase();
+    return [...document.querySelectorAll('[role=option],li,[class*=option i],[class*=item i],[class*=dropdown i] *,div,span,p')]
+        .some(e => e.offsetParent && e.children.length===0
+                   && (e.textContent||'').replace(/\\s+/g,' ').trim().toUpperCase() === T);
+})"""
+
+
 # Conjunto de textos-hoja cortos visibles (para descubrir opciones por diferencia)
 _JS_LEAF_SET = """() => {
     const set = new Set();
@@ -4444,7 +4484,9 @@ def _one_dropdown(page, etiqueta_exacta, opciones_candidatas, reg, nombre):
     if not estado.startswith("opened"):
         reg.info(f"{nombre}: no abrí el desplegable ({estado})")
         return False
-    esperar(page, 1.3)
+    # Hasta el encargo 93 esperaba 1,3 s fijos; ahora, a que la página traiga una de las opciones candidatas, con el
+    # mismo tope (frente 3). Solo lee: el clic es el de siempre, abajo.
+    _esperar_que(page, _JS_HAY_OPCION_EXACTA, 1.3, list(opciones_candidatas))
     if os.environ.get("AQUASHIELD_DESCUBRIR"):
         try:
             reg.info(f"{nombre}: opciones=[{page.evaluate(_JS_DD_OPCIONES)}]")
@@ -5645,10 +5687,14 @@ def _msc_fill_id(page, wid, valor, reg, etiqueta):
         return False
 
 
+MSC_CADA_NEXT = 0.3      # s entre una mirada y otra al «Next»; hasta el encargo 93, 1,2 (frente 3)
+MSC_VUELTAS_NEXT = 40    # el mismo tope de antes: 12 s
+
+
 def _msc_next(page, reg, motivo=""):
     """Pulsa el botón Next del asistente MSC (#nextBtn); espera a que se habilite."""
     habilitado = False
-    for _ in range(10):
+    for _ in range(MSC_VUELTAS_NEXT):
         try:
             habilitado = bool(page.evaluate("""()=>{
                 const b=document.querySelector('#nextBtn');
@@ -5658,7 +5704,7 @@ def _msc_next(page, reg, motivo=""):
             habilitado = False
         if habilitado:
             break
-        esperar(page, 1.2)
+        esperar(page, MSC_CADA_NEXT)
     if not habilitado:
         reg.info(f"Next DESHABILITADO {motivo}")
         return False
@@ -8437,6 +8483,21 @@ HMM_NO_AVANZO = ("HYUNDAI siguió mostrando el modal «Alternate Vessel Option»
                  "choose an alternate vessel» y pulsar OK; no pulsé nada más y la reserva no se envió")
 
 
+# El OK del modal «Alternate Vessel Option» a la vista (lo que mira _hmm_mantener_nave), y «Contract No» con una opción
+# que es un contrato (lo que espera _hmm_elegir_contrato): las esperas de reservar_hyundai (encargo 93, frente 3).
+_JS_HMM_MODAL_OTRA_NAVE = """() => {
+    const b = document.querySelector('#vesselOptionSubmit');
+    if (!b) return false;
+    const r = b.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && getComputedStyle(b).visibility !== 'hidden';
+}"""
+_JS_HMM_HAY_CONTRATO = """(no) => {
+    const s = document.querySelector('#selContractNo');
+    return !!s && [...s.options].some(o => (o.value || '').trim()
+        && !no.includes((o.textContent || '').trim().toLowerCase()));
+}"""
+
+
 def _hmm_mantener_nave(page, reg, f, ya=False):
     """El modal «Alternate Vessel Option», si está a la vista (su OK, #vesselOptionSubmit): deja su evidencia
     (hmm_f<fila>_otra_nave), marca HMM_OPCION_MANTENER por su texto y pulsa OK (decisión de Marcelo,
@@ -9424,7 +9485,6 @@ def reservar_hyundai(page, reserva, creds, reg, on_pausa=None):
     if tipo_sel == "book_now":
         modo = res_nave.get("texto") or "botón Book Now"
         reg.info(f"nave elegida y botón Book Now presionado: {modo}")
-        esperar(page, 2.0)
     else:
         nave_txt = ""
         try:
@@ -9466,7 +9526,10 @@ def reservar_hyundai(page, reserva, creds, reg, on_pausa=None):
         if not avanzo:
             _hmm_realclick(page, "NEXT - Booking Details", reg, "-> Booking Details")
 
-    esperar(page, 1.5)
+    # Hasta el encargo 93, 2 s fijos tras «Book Now» y 1,5 s más; ahora, el OK del modal «Alternate Vessel Option» a
+    # la vista y medio segundo para que termine de abrirse, con el mismo tope (frente 3). Sin el modal, la misma espera
+    # de antes, y se mira igual.
+    _esperar_que(page, _JS_HMM_MODAL_OTRA_NAVE, 3.5 if tipo_sel == "book_now" else 1.5, asentar=0.5)
     modal = _hmm_mantener_nave(page, reg, f)
     if isinstance(modal, tuple):
         return modal
@@ -9525,7 +9588,7 @@ def reservar_hyundai(page, reserva, creds, reg, on_pausa=None):
             btn_s.scroll_into_view_if_needed(timeout=2500)
             btn_s.click(timeout=3000)
             reg.info("Abriendo modal Booking Shipper Selection...")
-            esperar(page, 1.2)
+            # Sin los 1,2 s fijos de antes (encargo 93, frente 3): la fila de AQUACHILE se espera aquí abajo, a la vista.
             try:
                 # En el modal 'Booking shipper Selection', seleccionar AQUACHILE S.A. o su código de cliente, si
                 # config.json lo trae (con un texto vacío, «has-text» calzaría con cualquier fila).
@@ -9542,7 +9605,9 @@ def reservar_hyundai(page, reserva, creds, reg, on_pausa=None):
                 if btn_app_s.count() and btn_app_s.is_visible():
                     btn_app_s.click(timeout=3000)
                     reg.info("Booking Shipper 'AQUACHILE S.A.' seleccionado desde modal")
-                    esperar(page, 2.5)
+                    # Hasta el encargo 93, 2,5 s fijos; ahora, a que «Contract No» traiga un contrato, que es lo que
+                    # espera el paso siguiente, con el mismo tope (frente 3).
+                    _esperar_que(page, _JS_HMM_HAY_CONTRATO, 2.5, list(HMM_NO_SON_CONTRATO))
             except Exception as e:
                 reg.info(f"modal shipper select err: {str(e)[:50]}")
         # Inyección JS como respaldo si sigue vacío
@@ -12130,7 +12195,8 @@ def _mk_elegir_reefer(page, reg, det, fila):
         reg.info(f"reefer cont err: {str(e)[:45]}")
         raise ObjetivoNoEncontrado(MK_TIPO_REEFER, f"el campo «Select reefer container type and size» para abrir su "
                                                   f"lista ({_texto_error(e)})")
-    esperar(page, 1.5)
+    # Sin los 1,5 s fijos de antes (encargo 93, frente 3): _mk_elegir_unica lee la lista hasta que dos lecturas
+    # seguidas traigan las mismas opciones.
     _mk_elegir_unica(page, reg, MK_REEFER, MK_TIPO_REEFER, "lista de tipos de contenedor reefer", f"mk_f{fila}_reefer")
     reg.info(f"reefer cont: {MK_REEFER}")
     det.append("reeferCont=" + MK_REEFER)
@@ -13334,6 +13400,20 @@ _JS_CMA_PANELES_VISIBLES = r"""
     const vis = [...document.querySelectorAll('.el-drawer, [class*="drawer"], [role="dialog"]')].filter(visible);
     const paneles = vis.filter(p => !vis.some(q => q !== p && q.contains(p)));"""
 
+# ¿Hay un solo panel a la vista, y trae el campo «Temperature» a la vista? Lo que espera el panel Reefer (encargo 93,
+# frente 3), con la misma búsqueda que _JS_CMA_REEFER_TEMPERATURA, sin enfocar nada.
+_JS_CMA_PANEL_CON_TEMPERATURA = r"""()=>{""" + _JS_CMA_PANELES_VISIBLES + r"""
+    if (paneles.length !== 1) return false;
+    return [...paneles[0].querySelectorAll('.el-form-item')].some(b => {
+        const etq = b.querySelector('.el-form-item__label');
+        return !!etq && (etq.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase() === 'temperature'
+            && [...b.querySelectorAll('input')].some(e => {
+                const r = e.getBoundingClientRect();
+                return e.offsetParent !== null && r.width > 0 && r.height > 0;
+            });
+    });
+}"""
+
 # Enfoca el campo de la temperatura del panel Reefer de CMA por su etiqueta: el bloque .el-form-item cuya
 # .el-form-item__label dice «Temperature», dentro del panel visible. Medido en la corrida del 2026-09-25
 # (CICLO-pendientes-con-evidencia.md): el panel trae otros 7 campos y un textarea, y ninguna otra etiqueta dice eso.
@@ -13486,7 +13566,9 @@ def _cma_ajustes_reefer(page, reserva, reg):
         if not abierto:
             raise ObjetivoNoEncontrado("Sección Reefer de CMA", "el botón «Modifique el reefer» de la fila Reefer")
 
-        esperar(page, 2.0)
+        # Hasta el encargo 93, 2 s fijos; ahora, a que haya un solo panel a la vista con su «Temperature», que es lo que
+        # busca el paso siguiente, y medio segundo para que termine de abrirse, con el mismo tope (frente 3).
+        _esperar_que(page, _JS_CMA_PANEL_CON_TEMPERATURA, 2.0, asentar=0.5, leer=lambda js, _: _cma_js(page, js))
         try:
             reg.captura(page, f"cma_f{f}_4b_reefer_drawer", full=True)
         except Exception:

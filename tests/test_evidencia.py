@@ -560,6 +560,9 @@ class PanelReefer(Pantalla):
         if js == self.mod._JS_HTML_COMPLETO:
             self.eventos.append(("html",))
             return {"html": "<body>panel sintetico</body>", "sombras": 0}
+        if js == self.mod._JS_CMA_PANEL_CON_TEMPERATURA:          # la espera del panel (encargo 93, frente 3)
+            self.eventos.append(("js", "panel"))
+            return True
         if js == self.mod._JS_CMA_REEFER_TEMPERATURA:
             self.eventos.append(("js", "temperatura"))
             return "ok"
@@ -573,7 +576,8 @@ class PanelReefer(Pantalla):
 class TestEvidenciaReefer(ConRegistro):
     """Con el panel Reefer abierto y tras guardarlo, la captura de la ventana y el HTML; sin clics, teclas ni
     esperas nuevas, y si la evidencia falla, el panel se configura igual."""
-    ABRIR = [("clic", ABRE_REEFER), ("espera", 2000), ("captura", "cma_f5_4b_reefer_drawer.png", False)]
+    ABRIR = [("clic", ABRE_REEFER), ("js", "panel"), ("espera", 500),
+             ("captura", "cma_f5_4b_reefer_drawer.png", False)]
     PANEL = [("captura", "cma_f5_reefer_panel.png", False), ("html",)]
     TEMPERATURA = [("js", "temperatura"), ("tecla", "Control+A"), ("tecla", "Backspace"), ("escribe", "-20"),
                    ("espera", 800)]
@@ -629,7 +633,8 @@ class TestEvidenciaReefer(ConRegistro):
         pagina = PanelReefer(self.mod, rota=True)
         r, _, lugares = self.configurar(pagina)
         self.assertIs(r, True)
-        self.assertEqual(pagina.eventos, [("clic", ABRE_REEFER), ("espera", 2000)] + self.TEMPERATURA + self.GUARDAR
+        self.assertEqual(pagina.eventos, [("clic", ABRE_REEFER), ("js", "panel"), ("espera", 500)]
+                         + self.TEMPERATURA + self.GUARDAR
                          + self.COMPROBADA + self.CIERRE)
         for donde in lugares:
             for momento, nombre in (("en el panel Reefer", "cma_f5_reefer_panel"),
@@ -998,7 +1003,8 @@ class TestModalHyundai(ConRegistro):
                           f"RuntimeError: página cerrada. {SIGUE}", donde)
 
     def test_los_lugares_en_el_reservador(self):
-        # En el mismo momento que antes: 1,5 s después de elegir la nave, antes de esperar Booking Details; y, si no
+        # En el mismo momento que antes: después de elegir la nave y de esperar el modal (desde el encargo 93, su
+        # condición, _esperar_que; hasta ahí, 1,5 s fijos), antes de esperar Booking Details; y, si no
         # aparece en 12 s, lo primero, antes de esperarlo 5 s más. La segunda vez sabe si ya marcó la opción. Si la
         # marcó recién esa segunda vez (el modal apareció tarde) y Booking Details sigue sin aparecer, una tercera, que
         # ya la marcó: si el modal sigue, es el FRENO. Hasta e8b027b quedaba REVISAR sin mirarlo (revisión del encargo 32).
@@ -1020,19 +1026,22 @@ class TestModalHyundai(ConRegistro):
             self.assertEqual(ast.unparse(cuerpo[i + 1]), "if isinstance(modal, tuple):\n    return modal")
             self.assertLess(cuerpo[i].lineno, guarda)
         self.assertEqual(ast.unparse(cuerpo1[i1 - 2].test), "tipo_sel == 'book_now'")
-        self.assertEqual(ast.unparse(cuerpo1[i1 - 1]), "esperar(page, 1.5)")
+        self.assertEqual(ast.unparse(cuerpo1[i1 - 1]), "_esperar_que(page, _JS_HMM_MODAL_OTRA_NAVE, 3.5 if "
+                                                       "tipo_sel == 'book_now' else 1.5, asentar=0.5)")
         self.assertEqual(ast.unparse(cuerpo1[i1 + 2]), "ok_step3 = False")
         self.assertEqual((ast.unparse(padre2.test), i2), ("not ok_step3", 0))
         self.assertTrue(ast.unparse(cuerpo2[i2 + 2]).startswith("for _ in range(5):"))
         # La tercera, justo después de esa espera, solo si la segunda la marcó, y nada más en su if.
         self.assertIs(cuerpo2[i2 + 3], padre3)
         self.assertEqual((ast.unparse(padre3.test), i3, len(cuerpo3)), ("not ok_step3 and modal == 'marcada'", 0, 2))
-        # Nada más en el módulo nombra su botón: ni otra función ni una constante de JavaScript.
+        # Nada más en el módulo nombra su botón: ni otra función ni una constante de JavaScript, salvo la condición
+        # que espera reservar_hyundai (encargo 93, frente 3), que solo lo mira: no pulsa nada.
         arbol = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
         nombran = {n.name if isinstance(n, ast.FunctionDef) else ast.unparse(n.targets[0])
                    for n in arbol.body if isinstance(n, (ast.FunctionDef, ast.Assign))
                    for c in ast.walk(n) if isinstance(c, ast.Constant) and "vesselOption" in str(c.value)}
-        self.assertEqual(nombran, {"_hmm_mantener_nave"})
+        self.assertEqual(nombran, {"_hmm_mantener_nave", "_JS_HMM_MODAL_OTRA_NAVE"})
+        self.assertNotIn("click", self.mod._JS_HMM_MODAL_OTRA_NAVE)
 
 
 class PaginaRutasCma(PaginaRemark):
