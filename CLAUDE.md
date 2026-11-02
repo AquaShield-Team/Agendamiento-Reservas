@@ -209,9 +209,13 @@ mismo botón de antes con `_pulsar_boton` (que dice si pulsó), guarda en `error
     esa iba a la columna del número, que usa la agencia de aduana. El número de las navieras con forma medida
     (`FORMA_BOOKING`) no mira ninguna de las dos cosas.
 
-  Cada frase se midió en la única emisión de su naviera que guardó su HTML, la del 22-10 (1 de 1; COSCO, en el marco del
-  formulario). En `logs/` de este equipo no aparece ninguna (medido sin red con el JavaScript del programa: la de COSCO,
-  en 1.347 HTML; la de CMA-CGM, en los 409 de CMA-CGM). Con cualquier duda queda ENVIADA – REVISAR EN PORTAL.
+  Cada frase se midió en la emisión del 22-10 (1 de 1; COSCO, en el marco del formulario) y, desde el encargo 92, en los
+  22 envíos de la corrida del 23-10 en el equipo de un colega (11 de CMA-CGM y 11 de COSCO;
+  `.trabajo/e92/medir_frase_23_10.py`, sin red y con la lectura del programa): en cada uno, la frase en un documento,
+  una sola referencia, y distinta en cada fila. Esa corrida usó una versión anterior al encargo 77 y las dejó ENVIADA –
+  REVISAR EN PORTAL; con el código de hoy habrían salido EMITIDA – CONFIRMAR POR CORREO. En `logs/` de este equipo no
+  aparece ninguna (medido sin red con el JavaScript del programa: la de COSCO, en 1.347 HTML; la de CMA-CGM, en los 409
+  de CMA-CGM). Con cualquier duda queda ENVIADA – REVISAR EN PORTAL.
   **Sin la frase, nunca EMITIDA – CONFIRMAR POR CORREO** (decisión de Marcelo, encargo 81, ítem 2): ni por la etiqueta
   «Booking confirmation sent to» del formulario de COSCO, que da `_JS_COSCO_EXITO` (la señal con que su espera deja de
   esperar) también antes del clic, ni por ninguna otra señal de la espera. Medido: ya era así, porque esa salida de
@@ -1202,7 +1206,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 1025 pruebas al 2026-10-29 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 1043 pruebas al 2026-10-30 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -1217,7 +1221,13 @@ cd tests && python -m unittest test_planilla.TestLectorWeb.test_web_one    # una
 (`preparar_fuentes`). Desde el encargo 86 fallaba así: la copia de la elección de MAERSK que hizo MSC (`_msc_opciones` y
 su elección) repetía las anclas de 4 mutaciones de MAERSK. Desde el encargo 92 llevan las líneas de MAERSK de alrededor,
 y `.trabajo/e92/anclas.py` cuenta todas las anclas sin correr el censo (con `--compilar`, también que cada mutación
-compile).
+compile). El censo completo del encargo 92 (del 2026-10-30 al 2026-11-02): 2.913
+mutaciones y 3.676 pares, todos muerden, y la foto de los originales sin cambios. El equipo pasó en espera y dormido de
+las 17:18 del viernes a las 08:36 del lunes (Kernel-Power 105, 506, 42 y 507), y 8 pares de MAERSK mordieron por «tiempo
+agotado» con su prueba abierta en ese tramo: un plazo de reloj vence también con el equipo dormido, así que ese «tiempo
+agotado» no dice si la mutación muerde. Repetidos con el equipo despierto, los 8 muerden por su aserción, en 18 o 19 s
+(`.trabajo/e92/censo_8_despierto.out`). Con el equipo cargado, el control del censo y la suite pasan los 1.200 s que les
+da el corredor: `.trabajo/e92/con_mas_plazo.py` lo corre con 7.200, sin cambiar nada más.
 
 El censo completo del 2026-10-06 (1.848 mutaciones, 2.252 pares) tardó unos 120 minutos, con otros programas cargando
 el equipo. En segundo plano, la herramienta Bash de Claude Code lo corta a las 2 horas: el primero se cortó ahí, y el
