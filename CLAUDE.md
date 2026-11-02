@@ -1788,6 +1788,22 @@ línea cambian). De arriba hacia abajo:
        ruta sin ese tramo legible no calza, y el motivo de la nave que no está dice cuántas no pudo leer
        (`ilegibles`). Hasta ahí, el texto de toda la tarjeta, que trae también la nave y el viaje del segundo tramo.
        El 15-10, en el portal, las 6 rutas traían su primer tramo legible (encargo 68, `CICLO-corrida-15-10.md`).
+       **La tarjeta de cada «Seleccionar» no sube a un bloque con los detalles de otra ruta** (encargo 93,
+       `CICLO-named-customer-rutas-cma-y-version.md`): cada ruta es un `li` de `ul.travel-list`, y desde el botón su
+       `ul.route` queda 4 niveles arriba y el de otra ruta, 6 (medido en las 7 listas guardadas, del 08-10 al 02-11). La
+       tarjeta subía hasta encontrar otro botón; el 02-11, la lista traía dos rutas con la nave en su primer tramo y una
+       sola con su «Seleccionar», así que la tarjeta de ese botón subía hasta la lista entera, con las dos, no leía su
+       primer tramo, y la fila quedaba REVISAR, «no disponible» y «Sin nombre» (las 13:34 y las 14:30, en modo prueba).
+       Medido sin red con las dos lecturas, de antes y de ahora (`.trabajo/e93/medir_cma_antes_despues.py`): en las 5
+       listas con varias rutas elegibles pulsa el mismo botón, y las 2 del 02-11 pasan a elegir la ruta de la nave. Una
+       ruta sin leer va como «nave sin leer» (hasta ahí, «Sin nombre»), y la lectura cuenta las rutas de la nave sin
+       «Seleccionar» (`sinBoton`). **El motivo de la nave que no está lo dice para el panel** (pedido de Marcelo): «el
+       portal no ofrece la nave … en ninguna de las N rutas que deja elegir» (o «en la única ruta…»), o «el portal
+       muestra la nave … en N ruta(s) que no deja elegir (sin el botón «Seleccionar»)…», con hasta dónde buscó y las
+       rutas que deja elegir, y «No elegí otra nave: revisa la nave de la fila, o elige la ruta en el portal». La regla
+       de qué ruta se elige no cambió: la primera elegible con la nave en su primer tramo (y el viaje, si la fila lo
+       trae). Lo vigilan `test_clics.TestCma` (`test_js_rutas_una_sola_con_su_seleccionar`,
+       `test_js_rutas_la_ilegible_dice_nave_sin_leer` y `test_itinerario_dice_las_rutas_que_no_pudo_leer`).
    - Hasta `9051f43`: HYUNDAI aceptaba la primera palabra, que en la planilla es el prefijo de la naviera (así armó
      reservas con otro buque); ONE, la nave sin su última palabra o esa palabra sola; CMA, la nave sin sus prefijos;
      y MSC, COSCO y ONE calzaban con todas las tarjetas si la fila no traía palabras de nave.

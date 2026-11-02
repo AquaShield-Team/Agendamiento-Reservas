@@ -12982,6 +12982,12 @@ _JS_CMA_RUTAS = r"""(args)=>{""" + _JS_TRAE_LA_NAVE + r"""
                 card = curr;
                 break;
             }
+            // Tampoco sube a un bloque con los detalles de otra ruta (encargo 93): el 02-11, la lista traía dos rutas y
+            // una sola con su «Seleccionar», y la tarjeta de ese botón subía hasta la lista entera, con las dos.
+            if (parent.querySelectorAll('.route-wrapper ul.route').length > 1) {
+                card = curr;
+                break;
+            }
             const pTxt = (parent.innerText || parent.textContent || '');
             if (/Detalle\s+las\s+partes|Booking\s+Party|Nuestros\s+servicios|Descubra\s+CMA/i.test(pTxt)) {
                 card = curr;
@@ -13005,8 +13011,10 @@ _JS_CMA_RUTAS = r"""(args)=>{""" + _JS_TRAE_LA_NAVE + r"""
                      return n ? limpio(n) : null; });
     function primerTramo(card) {
         const rutas = [...card.querySelectorAll('.route-wrapper ul.route')];
-        if (rutas.length !== 1) return null;
-        const lis = [...rutas[0].children];
+        return rutas.length === 1 ? tramoDe(rutas[0]) : null;
+    }
+    function tramoDe(ul) {
+        const lis = [...ul.children];
         const pols = lis.filter(esPol);
         if (pols.length !== 1) return null;
         const tramo = lis[lis.indexOf(pols[0]) + 1];
@@ -13016,10 +13024,11 @@ _JS_CMA_RUTAS = r"""(args)=>{""" + _JS_TRAE_LA_NAVE + r"""
         return {buque: buque[0], ref: ref[0]};
     }
 
-    const cards = [];
+    const cards = [], tarjetas = [];
     for (let i = 0; i < allBtns.length; i++) {
         const btn = allBtns[i];
         const card = getCard(btn);
+        tarjetas.push(card);
         const txt = (card.innerText || card.textContent || '').replace(/\s+/g, ' ').trim();
         const isSelected = /^\s*(deseleccionar|deselect)\s*$/i.test((btn.textContent || '').trim());
 
@@ -13058,17 +13067,25 @@ _JS_CMA_RUTAS = r"""(args)=>{""" + _JS_TRAE_LA_NAVE + r"""
         return {ok: true, match: true, vessel: m.vessel, cutoff: m.cutoff, voyage: m.voyage, msg: 'nave seleccionada: ' + (m.vessel || toks.join(' '))};
     }
 
-    // Sin coincidencia: registrar lo ofrecido
+    // Sin coincidencia: registrar lo ofrecido. Una ruta cuyo primer tramo no se pudo leer va como «nave sin leer»
+    // (hasta el encargo 93, «Sin nombre», que se leía como una ruta sin nave).
     const ofrecidas = cards.map(c => {
-        let s = c.vessel || 'Sin nombre';
+        let s = c.vessel || 'nave sin leer';
         if (c.voyage) s += ` (Viaje ${c.voyage})`;
         if (c.cutoff) s += ` [Cut-off: ${c.cutoff}]`;
         return s;
     });
+    // Las rutas que el portal muestra sin un «Seleccionar» a la vista (ninguna tarjeta las trae) y cuyo primer tramo
+    // trae la nave: el portal la muestra, pero no deja elegirla (encargo 93, para el motivo).
+    const sinBoton = [...document.querySelectorAll('.route-wrapper ul.route')].filter(ul => {
+        if (tarjetas.some(t => t.contains(ul))) return false;
+        const t = tramoDe(ul);
+        return !!t && toks.length > 0 && _traeLaNave(t.buque.toUpperCase(), toks);
+    }).length;
 
     return {ok: false, match: false, cardsCount: cards.length, ofrecidas: ofrecidas,
             deLaNave: cards.filter(c => c.matched).length, ilegibles: cards.filter(c => !c.legible).length,
-            msg: 'nave no encontrada en este bloque'};
+            sinBoton: sinBoton, msg: 'nave no encontrada en este bloque'};
 }"""
 
 
@@ -13265,8 +13282,20 @@ def _cma_seleccionar_itinerario(page, reserva, reg):
     ilegibles = int(ultimo_resultado.get("ilegibles") or 0)
     sin_leer = (f"; no pude leer el primer tramo (la nave que sale de Chile) de {ilegibles} de las "
                 f"{int(ultimo_resultado.get('cardsCount') or ilegibles)} rutas" if ilegibles else "")
-    return False, (f"CMA: nave '{nave_pedida}' no disponible en el portal: {donde}{sin_leer} (rutas ofrecidas: "
-                   f"{ofrecidas_txt}). No se seleccionó nave errónea.")
+    # El motivo, dicho para quien lo lee en el panel (encargo 93: «Sin nombre» y «no disponible» se leían como una ruta
+    # sin nave). Si el portal muestra la nave en rutas que no deja elegir (sin «Seleccionar»), lo dice.
+    rutas = int(ultimo_resultado.get("cardsCount") or 0)
+    sin_boton = int(ultimo_resultado.get("sinBoton") or 0)
+    en_las = "en la única ruta que deja elegir" if rutas == 1 else f"en ninguna de las {rutas} rutas que deja elegir"
+    if sin_boton:
+        que = (f"el portal muestra la nave '{nave_pedida}' en {sin_boton} ruta(s) que no deja elegir (sin el botón "
+               f"«Seleccionar»), y no la ofrece {en_las}")
+    elif rutas:
+        que = f"el portal no ofrece la nave '{nave_pedida}' {en_las}"
+    else:
+        que = f"el portal no mostró ninguna ruta que se pueda elegir para la nave '{nave_pedida}'"
+    return False, (f"CMA: {que}: {donde}{sin_leer} (rutas que deja elegir: {ofrecidas_txt}). No elegí otra nave: revisa "
+                   f"la nave de la fila, o elige la ruta en el portal.")
 
 
 # El panel Reefer de CMA es el único cajón o diálogo a la vista (si hay uno dentro de otro, cuenta el de afuera). Lo

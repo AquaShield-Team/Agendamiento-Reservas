@@ -3416,11 +3416,13 @@ const ruta = ([nave1, viaje1, nave2, viaje2], resumen, sin = []) => {
   const tramos = sin.includes('tramos') ? [] : [nodo('div', 'route-wrapper', '', [nodo('div', 'simple-route', '', [
     nodo('ul', 'route', '', [...(sin.includes('pol') ? [] : [pol()]), tramo('main-leg', nave1, viaje1, otra),
                              nodo('li', 'transhipment', 'TRANSBORDO'), tramo('2', nave2, viaje2)])])])];
+  // 'boton' quita su «Seleccionar» (encargo 93: el 02-11, una de las dos rutas no lo traía).
+  const acciones = sin.includes('boton') ? [] : [nodo('div', 'actions', '', [nodo('button', 'o-button primary', 'Seleccionar')])];
   return nodo('li', '', '', [nodo('article', 'card-route-horizontal', '', [
     nodo('div', 'wrap-card', '', [nodo('ul', 'route', '', [pol(), nodo('li', 'more-infos vessel', '', [nodo('ul', '', '', [
         nodo('li', '', '', [dl([['Port Cut-off', '01-oct-2026'], ['Buque principal', rn]])]),
         nodo('li', '', '', [dl([['Primer servicio', 'SERVICIO 1'], ['Ref. de viaje', rv]])])])])]),
-      nodo('div', 'actions', '', [nodo('button', 'o-button primary', 'Seleccionar')])]),
+      ...acciones]),
     ...tramos])]);
 };
 const pagina = (rutas) => {
@@ -3518,6 +3520,55 @@ console.log(JSON.stringify([
             [False, [0, 3], [0, 0, 0]],
         ])
 
+    def test_js_rutas_una_sola_con_su_seleccionar(self):
+        # Encargo 93: el 02-11, la lista traía dos rutas con la nave en su primer tramo, y una sola con su «Seleccionar».
+        # La tarjeta de ese botón subía hasta la lista entera, con las dos rutas, y su primer tramo no se podía leer:
+        # REVISAR, «no disponible», con «Sin nombre». Desde el encargo 93, no sube a un bloque con los detalles de otra
+        # ruta, y la elige. Y si la nave está solo en rutas sin «Seleccionar», lo dice (sinBoton).
+        guion = self.DOM_CMA + "const f = " + self.js_rutas() + r""";
+const correr = (rutas, toks, viaje = []) => {
+  const body = pagina(rutas);
+  const r = f({toks, viaje});
+  return [!!r.ok, r.ok ? r.vessel : [r.cardsCount, r.ilegibles, r.sinBoton, r.ofrecidas],
+          body.querySelectorAll('button').map(b => b.clics)];
+};
+const T = ['NAVE', 'PRUEBA'];
+const con = ['NAVE PRUEBA', 'ZZ001A', 'BUQUE DOS', 'ZZ002A'], otra = ['NAVE OTRA', 'ZZ003A', 'BUQUE DOS', 'ZZ004A'];
+console.log(JSON.stringify([
+  correr([ruta(con, null, ['boton']), ruta(con)], T),
+  correr([ruta(con), ruta(con, null, ['boton'])], T),
+  correr([ruta(con, null, ['boton']), ruta(otra)], T),
+  correr([ruta(otra, null, ['boton']), ruta(otra)], T),
+  correr([ruta(con, null, ['boton', 'tramos']), ruta(otra)], T),
+  correr([ruta(con, null, ['boton', 'pol']), ruta(otra)], T),
+  correr([ruta(con)], T, ['ZZ009Z']),
+]));
+"""
+        self.assertEqual(correr_node(self, guion), [
+            # La nave en las dos, y una sola con «Seleccionar»: esa, sea la primera o la segunda.
+            [True, "NAVE PRUEBA", [1]],
+            [True, "NAVE PRUEBA", [1]],
+            # La nave solo en la que no deja elegir: no elige, y lo cuenta.
+            [False, [1, 0, 1, ["NAVE OTRA (Viaje ZZ003A) [Cut-off: 01-oct-2026]"]], [0]],
+            # Ni en la que no deja elegir: sinBoton 0.
+            [False, [1, 0, 0, ["NAVE OTRA (Viaje ZZ003A) [Cut-off: 01-oct-2026]"]], [0]],
+            # Sin su primer tramo legible no cuenta como de la nave: sin sus detalles, o con ellos y sin el tramo
+            # que sale del POL.
+            [False, [1, 0, 0, ["NAVE OTRA (Viaje ZZ003A) [Cut-off: 01-oct-2026]"]], [0]],
+            [False, [1, 0, 0, ["NAVE OTRA (Viaje ZZ003A) [Cut-off: 01-oct-2026]"]], [0]],
+            # La que deja elegir, con la nave y otro viaje, no cuenta como «sin Seleccionar».
+            [False, [1, 0, 0, ["NAVE PRUEBA (Viaje ZZ001A) [Cut-off: 01-oct-2026]"]], [0]],
+        ])
+
+    def test_js_rutas_la_ilegible_dice_nave_sin_leer(self):
+        # Una ruta cuyo primer tramo no se puede leer va en lo ofrecido como «nave sin leer» (encargo 93): hasta ahí,
+        # «Sin nombre», que se leía como una ruta sin nave.
+        guion = self.DOM_CMA + "const f = " + self.js_rutas() + r""";
+pagina([ruta(['NAVE OTRA', 'ZZ003A', 'BUQUE DOS', 'ZZ004A'], null, ['tramos'])]);
+console.log(JSON.stringify(f({toks: ['NAVE', 'PRUEBA'], viaje: []}).ofrecidas));
+"""
+        self.assertEqual(correr_node(self, guion), ["nave sin leer [Cut-off: 01-oct-2026]"])
+
     def test_itinerario_dice_las_rutas_que_no_pudo_leer(self):
         # Si alguna ruta no traía su primer tramo legible, el motivo de la nave que no está lo dice, porque entonces «no
         # disponible» puede no ser cierto (encargo 67).
@@ -3525,16 +3576,27 @@ console.log(JSON.stringify([
                    "button:has-text('Deselect')")
         reg, _, _ = self.corrida()
         donde = self.mod._hasta_donde_busque([], self.mod.CMA_SIN_ENLACE)
-        for ilegibles, cola in ((2, "; no pude leer el primer tramo (la nave que sale de Chile) de 2 de las 3 rutas"),
-                                (0, "")):
-            with self.subTest(ilegibles=ilegibles):
-                pagina = PaginaCma(visibles={botones}, js={"getCard": {"ok": False, "ofrecidas": ["Sin nombre"],
+        # Desde el encargo 93, el motivo lo dice para quien lo lee en el panel: el portal no ofrece la nave en las rutas
+        # que deja elegir, o la muestra solo en rutas que no deja elegir (sinBoton). Hasta ahí, «nave … no disponible en
+        # el portal … No se seleccionó nave errónea».
+        fin = " No elegí otra nave: revisa la nave de la fila, o elige la ruta en el portal."
+        for ilegibles, rutas, sin_boton, que, cola in (
+                (2, 3, 0, "el portal no ofrece la nave 'NAVE PRUEBA' en ninguna de las 3 rutas que deja elegir",
+                 "; no pude leer el primer tramo (la nave que sale de Chile) de 2 de las 3 rutas"),
+                (0, 3, 0, "el portal no ofrece la nave 'NAVE PRUEBA' en ninguna de las 3 rutas que deja elegir", ""),
+                (0, 1, 0, "el portal no ofrece la nave 'NAVE PRUEBA' en la única ruta que deja elegir", ""),
+                (0, 1, 2, "el portal muestra la nave 'NAVE PRUEBA' en 2 ruta(s) que no deja elegir (sin el botón "
+                          "«Seleccionar»), y no la ofrece en la única ruta que deja elegir", ""),
+                (0, 0, 0, "el portal no mostró ninguna ruta que se pueda elegir para la nave 'NAVE PRUEBA'", "")):
+            with self.subTest(ilegibles=ilegibles, rutas=rutas, sin_boton=sin_boton):
+                ofrecidas = ["nave sin leer"] if rutas else []
+                pagina = PaginaCma(visibles={botones}, js={"getCard": {"ok": False, "ofrecidas": ofrecidas,
                                                                        "deLaNave": 0, "ilegibles": ilegibles,
-                                                                       "cardsCount": 3}})
+                                                                       "cardsCount": rutas, "sinBoton": sin_boton}})
                 self.assertEqual(self.mod._cma_seleccionar_itinerario(pagina, {"fila": 7, "nave": "NAVE PRUEBA",
                                                                                "viaje": ""}, reg),
-                                 (False, f"CMA: nave 'NAVE PRUEBA' no disponible en el portal: {donde}{cola} (rutas "
-                                         "ofrecidas: Sin nombre). No se seleccionó nave errónea."))
+                                 (False, f"CMA: {que}: {donde}{cola} (rutas que deja elegir: "
+                                         f"{'nave sin leer' if rutas else 'ninguna ruta detectada'})." + fin))
 
     def test_itinerario_sin_el_viaje_de_la_fila(self):
         # La nave está y, cargadas todas las rutas, ninguna trae el viaje de la fila: (None, motivo), y reservar_cma la

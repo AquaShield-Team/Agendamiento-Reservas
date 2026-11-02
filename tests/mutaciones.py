@@ -10600,3 +10600,35 @@ MUTACIONES += [
     dict(id="e93-reservar-sin-named-customer", pruebas=[SP_RESERVAR],
          viejo="    _hmm_named_customer(page, reg)\n", nuevo="    pass\n"),
 ]
+
+# --- Encargo 93, frente 2: la lectura de rutas de CMA-CGM no sube a un bloque con los detalles de otra ruta (el 02-11,
+# con una sola ruta elegible, tomaba las dos y no leía su nave), la ruta sin leer va como «nave sin leer», cuenta las
+# rutas de la nave que no se pueden elegir (sinBoton), y el motivo de la nave que no está lo dice para el panel.
+# Subiendo hasta la lista, sin contar las que no se pueden elegir, contando las que sí, contando las ilegibles, con
+# «Sin nombre», sin decir las que no se pueden elegir, en plural con una sola, o sin el caso de ninguna ruta.
+CMA93 = "test_clics.TestCma."
+CMA93_UNA = CMA93 + "test_js_rutas_una_sola_con_su_seleccionar"
+MUTACIONES += [
+    dict(id="e93-cma-sube-a-otra-ruta", pruebas=[CMA93_UNA],
+         viejo=("            if (parent.querySelectorAll('.route-wrapper ul.route').length > 1) {\n"
+                "                card = curr;\n                break;\n            }\n"),
+         nuevo=""),
+    dict(id="e93-cma-sin-contar-las-sin-boton", pruebas=[CMA93_UNA],
+         viejo="            sinBoton: sinBoton, msg: 'nave no encontrada en este bloque'};",
+         nuevo="            sinBoton: 0, msg: 'nave no encontrada en este bloque'};"),
+    dict(id="e93-cma-sin-boton-cuenta-las-que-se-eligen", pruebas=[CMA93_UNA],
+         viejo="        if (tarjetas.some(t => t.contains(ul))) return false;\n", nuevo=""),
+    dict(id="e93-cma-sin-boton-cuenta-las-ilegibles", pruebas=[CMA93_UNA],
+         viejo="        return !!t && toks.length > 0 && _traeLaNave(t.buque.toUpperCase(), toks);\n",
+         nuevo="        return !t || (toks.length > 0 && _traeLaNave(t.buque.toUpperCase(), toks));\n"),
+    dict(id="e93-cma-ilegible-sin-nombre", pruebas=[CMA93 + "test_js_rutas_la_ilegible_dice_nave_sin_leer"],
+         viejo="        let s = c.vessel || 'nave sin leer';\n", nuevo="        let s = c.vessel || 'Sin nombre';\n"),
+    dict(id="e93-cma-motivo-sin-las-sin-boton", pruebas=[CMA_ILEGIBLES],
+         viejo="    if sin_boton:\n        que = (f\"el portal muestra la nave",
+         nuevo="    if False:\n        que = (f\"el portal muestra la nave"),
+    dict(id="e93-cma-motivo-plural-con-una", pruebas=[CMA_ILEGIBLES],
+         viejo='    en_las = "en la única ruta que deja elegir" if rutas == 1 else',
+         nuevo='    en_las = "en la única ruta que deja elegir" if False else'),
+    dict(id="e93-cma-motivo-sin-el-caso-sin-rutas", pruebas=[CMA_ILEGIBLES],
+         viejo="    elif rutas:\n", nuevo="    elif True:\n"),
+]

@@ -1112,9 +1112,10 @@ class TestEvidenciaRutasCma(ConRegistro):
     def test_hasta_que_el_enlace_desaparece(self):
         # Sin el enlace, no hay más: el aviso dice hasta qué fecha buscó, la última salida que mostró la lista.
         r, eventos, _, _ = self.elegir([self.NO])
-        self.assertEqual(r, (False, "CMA: nave 'NAVE PRUEBA' no disponible en el portal: busqué hasta el 10-10-2026, la "
-                                    "última salida que mostró el portal, y ya no vi el enlace «Cargar … siguientes "
-                                    "resultados» (rutas ofrecidas: NAVE OTRA). No se seleccionó nave errónea."))
+        self.assertEqual(r, (False, "CMA: el portal no ofrece la nave 'NAVE PRUEBA' en ninguna de las 2 rutas que deja "
+                                    "elegir: busqué hasta el 10-10-2026, la última salida que mostró el portal, y ya no "
+                                    "vi el enlace «Cargar … siguientes resultados» (rutas que deja elegir: NAVE OTRA). "
+                                    "No elegí otra nave: revisa la nave de la fila, o elige la ruta en el portal."))
         self.assertEqual(eventos[-3:], [("js", "leer"), ("js", "contar"), ("js", "fechas")])
 
 
