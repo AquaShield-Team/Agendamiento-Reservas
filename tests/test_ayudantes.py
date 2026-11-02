@@ -2468,16 +2468,32 @@ class TestVersionDeGit(soporte.CasoAQ):
             "sube": {".git/HEAD": "ref: refs/../../../afuera/x\n"},
             "sin_forma": {".git/HEAD": "ref: refs/heads/main\n", ".git/refs/heads/main": "no es un commit\n"},
             "corto": {".git/HEAD": "abcdef0\n"},
+            # Con barras invertidas, en Windows, subía de carpeta (revisión de seguridad del encargo 93).
+            "barras": {".git/HEAD": "ref: refs\\..\\..\\..\\afuera\\x\n"},
+            "otra_forma": {".git/HEAD": "ref: refs/heads/rama con espacio\n",
+                           ".git/refs/heads/rama con espacio": self.H2 + "\n"},
         }
         self.assertTrue((afuera / "x").exists())
         for nombre, archivos in casos.items():
             with self.subTest(nombre=nombre):
                 self.assertIsNone(self.mod._version_de_git(self.git(nombre, archivos)))
 
-    def test_la_rama_se_muestra_saneada(self):
-        raiz = self.git("rara", {".git/HEAD": "ref: refs/heads/r" + chr(0x202E) + "x\n",
+    def test_las_rutas_de_red_no_se_siguen(self):
+        # Un gitdir o un commondir que es una ruta de red abriría una conexión en cada arranque (revisión de seguridad
+        # del encargo 93): ni se lee.
+        f = self.mod._ruta_de_red
+        self.assertEqual([f("\\\\servidor\\x"), f("//servidor/x"), f("../comun/.git"), f("C:\\comun\\.git"), f("")],
+                         [True, True, False, False, False])
+
+    def test_la_rama_larga_se_recorta(self):
+        # La rama solo trae letras ASCII, cifras y «._/-» (una con un carácter invisible no se lee: test_lo_que_no_se_lee),
+        # y se muestra hasta 40 caracteres.
+        rama = "rama-" + "x" * 60
+        raiz = self.git("larga", {".git/HEAD": f"ref: refs/heads/{rama}\n", f".git/refs/heads/{rama}": self.H2 + "\n"})
+        self.assertEqual(self.mod._version_de_git(raiz), {"rama": rama[:40], "commit": "abcdef0"})
+        rara = self.git("rara", {".git/HEAD": "ref: refs/heads/r" + chr(0x202E) + "x\n",
                                  ".git/refs/heads/r" + chr(0x202E) + "x": self.H2 + "\n"})
-        self.assertEqual(self.mod._version_de_git(raiz), {"rama": "r?x", "commit": "abcdef0"})
+        self.assertIsNone(self.mod._version_de_git(rara))
 
     def test_el_panel_la_pinta_como_texto(self):
         # En la barra de contexto, y como textContent (viene de .git: nunca como HTML).

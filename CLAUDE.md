@@ -1197,18 +1197,24 @@ python -m playwright show-trace "logs\<carpeta>\traza.zip"
 - **El panel dice qué versión corre** (pedido de Marcelo, encargo 93, `CICLO-named-customer-rutas-cma-y-version.md`):
   la barra de contexto, bajo el header, muestra «versión <rama> · <commit>», con las 7 primeras cifras del commit de
   la carpeta del programa. Así Marcelo y el colega ven de un vistazo si corren lo mismo.
-  - Se lee de los archivos de `.git`, sin lanzar git (`_version_de_git`; `/api/config` la trae en `git`). Lee HEAD y
-    el commit de su rama, de su archivo o de `packed-refs`; un `.git` que es un archivo (un worktree) lleva a su carpeta
-    y a la común.
-  - Sin `.git`, o si no se puede leer, dice «versión: sin datos de git». Una referencia que no es de `refs/` o que sube
-    de carpeta no se lee. La rama va saneada, como el destino final (`_destino_a_la_vista`), y la página la pinta como
-    texto.
-  - Es la del momento en que se cargó la página: los `.bat` actualizan antes de abrir el panel. Si la carpeta cambia
-    con el panel abierto, la versión nueva aparece al recargar (F5).
+  - Se lee de los archivos de `.git`, sin lanzar git (`_version_de_git`), **una vez, al cargar el programa**
+    (`VERSION_GIT`; `/api/config` la trae en `git`): es la del código que corre. Hasta su revisión de seguridad se leía
+    en cada pedido, y una actualización con el panel abierto mostraba la versión nueva con el código viejo corriendo.
+    Lee HEAD y el commit de su rama, de su archivo o de `packed-refs`; un `.git` que es un archivo (un worktree) lleva a
+    su carpeta y a la común.
+  - Sin `.git`, o si no se puede leer, dice «versión: sin datos de git». Solo se lee una rama de `refs/` con letras
+    ASCII, cifras y «._/-», sin «..» (con una barra invertida subía de carpeta en Windows), y se muestra hasta 40
+    caracteres; un gitdir o un commondir que es una ruta de red no se sigue (`_ruta_de_red`); de cada archivo lee hasta
+    64 KB (`packed-refs`, 4 MB). La página la pinta como texto.
+  - Los cambios sin commitear no se ven: para eso, la herramienta de abajo.
 - **¿Corre este equipo lo mismo que GitHub?** (mismo pedido) `python tests/igual_que_github.py [--rama RAMA]
   [--sin-suite] [--dejar]`, con el Python que corre la suite (en este equipo, el de la Tienda de Microsoft).
-  - Clona la rama desde `origin` sin clave y sin preguntas, dentro de la carpeta del programa, en
-    `.trabajo/igual-que-github/<rama>-<fecha>/`. Nada va fuera, y la rama tiene que tener la forma de una.
+  - Solo compara `main` o `estable`, y solo si `origin` es el repo del programa (`REMOTO`): la suite del clon corre el
+    código de esa rama, bajado de GitHub, con tu usuario, la misma confianza que la rama estable que se instala en los
+    equipos (revisión de seguridad del encargo 93). Cada proceso va sin las variables `GIT_*` (un `GIT_DIR` heredado
+    mandaba sobre la carpeta de `-C` y sobre el techo) ni las que parecen secretos.
+  - Clona sin clave y sin preguntas, dentro de la carpeta del programa, en
+    `.trabajo/igual-que-github/<rama>-<fecha>-<proceso>/`. Nada va fuera.
   - Compara el commit de GitHub con el de la rama local y con el que tiene la carpeta, y sus árboles. Compara también
     cada archivo versionado, byte a byte, contra la carpeta, y cuenta los cambios sin commitear: del árbol y del índice.
   - Después corre la suite en el clon. El temporal va junto al clon, por su nombre corto (sin espacios), y el techo
@@ -1376,13 +1382,16 @@ línea cambian). De arriba hacia abajo:
      una ventana termine de abrirse. Una lectura que falla cuenta como que no se cumple.
      - Se cambiaron las del camino de cada fila que tienen una condición clara, la misma que busca el paso que
        sigue:
-       - ONE: cada desplegable (`_one_dropdown`), hasta que esté a la vista una de sus opciones candidatas
-         (`_JS_HAY_OPCION_EXACTA`, la búsqueda de `_JS_CLICK_OPTION_EXACT` sin el clic); antes, 1,3 s.
+       - ONE: cada desplegable (`_one_dropdown`), hasta que se vean más opciones candidatas que antes de abrirlo y dos
+         cuentas seguidas den lo mismo (`_JS_CUANTAS_OPCIONES_EXACTAS`, la búsqueda de `_JS_CLICK_OPTION_EXACT` sin el
+         clic, y `_lista_que_crecio`); antes, 1,3 s. Contra lo de antes de abrir (su revisión de seguridad): un «No» de
+         otro campo ya se veía, y la espera seguía antes de que la lista trajera el suyo.
        - MSC: el «Next» se mira cada 0,3 s (`MSC_CADA_NEXT`), con el mismo tope de 12 s; antes, cada 1,2 s.
        - HYUNDAI: tras «Book Now», el OK del modal «Alternate Vessel Option» a la vista (`_JS_HMM_MODAL_OTRA_NAVE`;
-         antes, 2 + 1,5 s); al abrir la ventana del Shipper, nada (la fila de AQUACHILE ya se esperaba a la vista;
-         antes, 1,2 s más); y tras su «Apply», «Contract No» con un contrato (`_JS_HMM_HAY_CONTRATO`; antes, 2,5 s).
-       - MAERSK: la lista reefer, que ya espera `_mk_elegir_unica` (antes, 1,5 s más).
+         antes, 2 + 1,5 s); y tras el «Apply» del Shipper, el Shipper escrito y «Contract No» con un contrato
+         (`_JS_HMM_SHIPPER_Y_CONTRATO`, lo que miran su respaldo y el paso siguiente; antes, 2,5 s). Ante la ventana del
+         Shipper sigue la espera fija de 1,2 s (revisión de seguridad): su fila se busca en toda la página.
+       - MAERSK: la lista reefer, hasta que muestre una opción (antes, 1,5 s); después la lee `_mk_elegir_unica`.
        - CMA-CGM: el panel Reefer, un solo panel a la vista con su «Temperature» (`_JS_CMA_PANEL_CON_TEMPERATURA`,
          leída con plazo; antes, 2 s).
      - No se tocaron: las esperas después de la guarda, las confirmaciones del portal, las del login, y COSCO, porque
@@ -1848,6 +1857,12 @@ línea cambian). De arriba hacia abajo:
        de qué ruta se elige no cambió: la primera elegible con la nave en su primer tramo (y el viaje, si la fila lo
        trae). Lo vigilan `test_clics.TestCma` (`test_js_rutas_una_sola_con_su_seleccionar`,
        `test_js_rutas_la_ilegible_dice_nave_sin_leer` y `test_itinerario_dice_las_rutas_que_no_pudo_leer`).
+       **Y la tarjeta no pasa de su ruta a la lista de rutas** (`ul.travel-list`; revisión de seguridad del encargo 93):
+       una ruta con su botón y sin sus detalles subía hasta los de otra, sin botón, y pulsaba el suyo con la nave de la
+       otra (no se vio en el portal). Por el resumen de cada ruta (`.wrap-card`) no se puede: cada una trae dos, y con
+       esa regla ninguna de las 7 listas elegía (medido); con la de la lista, las 7 dan lo mismo que con la del frente 2.
+       Las rutas ofrecidas van al motivo como se muestran (`_destino_a_la_vista`, hasta 80 caracteres): vienen del
+       portal y llegan al panel y a la planilla (`test_las_rutas_ofrecidas_van_saneadas`).
    - Hasta `9051f43`: HYUNDAI aceptaba la primera palabra, que en la planilla es el prefijo de la naviera (así armó
      reservas con otro buque); ONE, la nave sin su última palabra o esa palabra sola; CMA, la nave sin sus prefijos;
      y MSC, COSCO y ONE calzaban con todas las tarjetas si la fila no traía palabras de nave.

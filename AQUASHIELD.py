@@ -4401,14 +4401,14 @@ _JS_CLICK_OPTION_EXACT = """(txt) => {
 }"""
 
 
-# ¿Ya está a la vista alguna de las opciones que _JS_CLICK_OPTION_EXACT pulsaría? La misma búsqueda, sin el clic: la
-# espera de _one_dropdown (encargo 93, frente 3).
-_JS_HAY_OPCION_EXACTA = """(textos) => textos.some(txt => {
-    const T = txt.replace(/\\s+/g,' ').trim().toUpperCase();
+# Cuántas de las opciones que _JS_CLICK_OPTION_EXACT pulsaría están a la vista: la misma búsqueda, sin el clic. Lo
+# cuenta la espera de _one_dropdown (encargo 93, frente 3, y su revisión de seguridad: antes y después de abrir).
+_JS_CUANTAS_OPCIONES_EXACTAS = """(textos) => {
+    const TS = textos.map(t => t.replace(/\\s+/g,' ').trim().toUpperCase());
     return [...document.querySelectorAll('[role=option],li,[class*=option i],[class*=item i],[class*=dropdown i] *,div,span,p')]
-        .some(e => e.offsetParent && e.children.length===0
-                   && (e.textContent||'').replace(/\\s+/g,' ').trim().toUpperCase() === T);
-})"""
+        .filter(e => e.offsetParent && e.children.length===0
+                     && TS.includes((e.textContent||'').replace(/\\s+/g,' ').trim().toUpperCase())).length;
+}"""
 
 
 # Conjunto de textos-hoja cortos visibles (para descubrir opciones por diferencia)
@@ -4473,9 +4473,30 @@ def _one_descubrir(page, etiqueta_exacta, reg, nombre):
     esperar(page, 0.5)
 
 
+def _lista_que_crecio(page, antes):
+    """El lector de la espera de _one_dropdown (encargo 93, frente 3, y su revisión de seguridad): cuenta las opciones
+    candidatas a la vista (_JS_CUANTAS_OPCIONES_EXACTAS) y da la lista por cargada cuando hay más que 'antes' (las que se
+    veían antes de abrirla) y la cuenta no cambió desde la lectura anterior. Sin 'antes' (no se pudo contar), nunca: la
+    espera dura su tope, como la fija de antes."""
+    vistas = []
+
+    def leer(js, arg):
+        n = int(page.evaluate(js, arg))
+        cargada = antes is not None and n > antes and bool(vistas) and vistas[-1] == n
+        vistas.append(n)
+        return cargada
+    return leer
+
+
 def _one_dropdown(page, etiqueta_exacta, opciones_candidatas, reg, nombre):
     """Abre el desplegable de ONE por etiqueta exacta y clica la 1ª opción candidata que exista.
        'opciones_candidatas' es una lista de textos EXACTOS a probar en orden."""
+    # Cuántas opciones candidatas se ven antes de abrir (el «No» de otro campo, por ejemplo): la espera de abajo sigue
+    # solo cuando aparecen más, las de la lista (revisión de seguridad del encargo 93).
+    try:
+        antes = int(page.evaluate(_JS_CUANTAS_OPCIONES_EXACTAS, list(opciones_candidatas)))
+    except Exception:
+        antes = None
     estado = "?"
     try:
         estado = str(page.evaluate(_JS_ONE_OPEN_DD, etiqueta_exacta))
@@ -4484,9 +4505,11 @@ def _one_dropdown(page, etiqueta_exacta, opciones_candidatas, reg, nombre):
     if not estado.startswith("opened"):
         reg.info(f"{nombre}: no abrí el desplegable ({estado})")
         return False
-    # Hasta el encargo 93 esperaba 1,3 s fijos; ahora, a que la página traiga una de las opciones candidatas, con el
-    # mismo tope (frente 3). Solo lee: el clic es el de siempre, abajo.
-    _esperar_que(page, _JS_HAY_OPCION_EXACTA, 1.3, list(opciones_candidatas))
+    # Hasta el encargo 93 esperaba 1,3 s fijos; ahora, a que la lista traiga sus opciones, con el mismo tope (frente
+    # 3): más opciones candidatas a la vista que antes de abrirla, y dos lecturas seguidas iguales, porque pueden llegar
+    # de a poco. Sin la cuenta de antes, los 1,3 s de siempre. Solo lee: el clic es el de siempre, abajo.
+    _esperar_que(page, _JS_CUANTAS_OPCIONES_EXACTAS, 1.3, list(opciones_candidatas),
+                 leer=_lista_que_crecio(page, antes))
     if os.environ.get("AQUASHIELD_DESCUBRIR"):
         try:
             reg.info(f"{nombre}: opciones=[{page.evaluate(_JS_DD_OPCIONES)}]")
@@ -8483,17 +8506,19 @@ HMM_NO_AVANZO = ("HYUNDAI siguió mostrando el modal «Alternate Vessel Option»
                  "choose an alternate vessel» y pulsar OK; no pulsé nada más y la reserva no se envió")
 
 
-# El OK del modal «Alternate Vessel Option» a la vista (lo que mira _hmm_mantener_nave), y «Contract No» con una opción
-# que es un contrato (lo que espera _hmm_elegir_contrato): las esperas de reservar_hyundai (encargo 93, frente 3).
+# El OK del modal «Alternate Vessel Option» a la vista (lo que mira _hmm_mantener_nave), y el Shipper escrito con
+# «Contract No» con una opción que es un contrato (lo que miran el respaldo del Shipper y _hmm_elegir_contrato): las
+# esperas de reservar_hyundai (encargo 93, frente 3 y su revisión de código).
 _JS_HMM_MODAL_OTRA_NAVE = """() => {
     const b = document.querySelector('#vesselOptionSubmit');
     if (!b) return false;
     const r = b.getBoundingClientRect();
     return r.width > 0 && r.height > 0 && getComputedStyle(b).visibility !== 'hidden';
 }"""
-_JS_HMM_HAY_CONTRATO = """(no) => {
+_JS_HMM_SHIPPER_Y_CONTRATO = """(no) => {
+    const sn = document.querySelector('#shipperName');
     const s = document.querySelector('#selContractNo');
-    return !!s && [...s.options].some(o => (o.value || '').trim()
+    return !!sn && !!(sn.value || '').trim() && !!s && [...s.options].some(o => (o.value || '').trim()
         && !no.includes((o.textContent || '').trim().toLowerCase()));
 }"""
 
@@ -9588,7 +9613,9 @@ def reservar_hyundai(page, reserva, creds, reg, on_pausa=None):
             btn_s.scroll_into_view_if_needed(timeout=2500)
             btn_s.click(timeout=3000)
             reg.info("Abriendo modal Booking Shipper Selection...")
-            # Sin los 1,2 s fijos de antes (encargo 93, frente 3): la fila de AQUACHILE se espera aquí abajo, a la vista.
+            # La espera fija sigue (revisión de seguridad del encargo 93): la fila de AQUACHILE se busca en toda la
+            # página, y sin ella podría tomarse una de fuera de la ventana antes de que la ventana traiga la suya.
+            esperar(page, 1.2)
             try:
                 # En el modal 'Booking shipper Selection', seleccionar AQUACHILE S.A. o su código de cliente, si
                 # config.json lo trae (con un texto vacío, «has-text» calzaría con cualquier fila).
@@ -9605,9 +9632,10 @@ def reservar_hyundai(page, reserva, creds, reg, on_pausa=None):
                 if btn_app_s.count() and btn_app_s.is_visible():
                     btn_app_s.click(timeout=3000)
                     reg.info("Booking Shipper 'AQUACHILE S.A.' seleccionado desde modal")
-                    # Hasta el encargo 93, 2,5 s fijos; ahora, a que «Contract No» traiga un contrato, que es lo que
-                    # espera el paso siguiente, con el mismo tope (frente 3).
-                    _esperar_que(page, _JS_HMM_HAY_CONTRATO, 2.5, list(HMM_NO_SON_CONTRATO))
+                    # Hasta el encargo 93, 2,5 s fijos; ahora, a que el Shipper quede escrito (lo que mira el respaldo
+                    # de abajo) y «Contract No» traiga un contrato (lo que espera el paso siguiente), con el mismo tope
+                    # (frente 3 y su revisión de código).
+                    _esperar_que(page, _JS_HMM_SHIPPER_Y_CONTRATO, 2.5, list(HMM_NO_SON_CONTRATO))
             except Exception as e:
                 reg.info(f"modal shipper select err: {str(e)[:50]}")
         # Inyección JS como respaldo si sigue vacío
@@ -12195,8 +12223,10 @@ def _mk_elegir_reefer(page, reg, det, fila):
         reg.info(f"reefer cont err: {str(e)[:45]}")
         raise ObjetivoNoEncontrado(MK_TIPO_REEFER, f"el campo «Select reefer container type and size» para abrir su "
                                                   f"lista ({_texto_error(e)})")
-    # Sin los 1,5 s fijos de antes (encargo 93, frente 3): _mk_elegir_unica lee la lista hasta que dos lecturas
-    # seguidas traigan las mismas opciones.
+    # Hasta el encargo 93, 1,5 s fijos; ahora, a que la lista muestre una opción, con el mismo tope (frente 3 y su
+    # revisión de código: sin esta espera, el tope de la lista bajaba de 7,5 a 6 s). Después, _mk_elegir_unica la lee
+    # hasta que dos lecturas seguidas traigan las mismas opciones.
+    _esperar_que(page, None, 1.5, leer=lambda js, arg: page.locator("mc-option:visible").count() > 0)
     _mk_elegir_unica(page, reg, MK_REEFER, MK_TIPO_REEFER, "lista de tipos de contenedor reefer", f"mk_f{fila}_reefer")
     reg.info(f"reefer cont: {MK_REEFER}")
     det.append("reeferCont=" + MK_REEFER)
@@ -13073,6 +13103,13 @@ _JS_CMA_RUTAS = r"""(args)=>{""" + _JS_TRAE_LA_NAVE + r"""
                 card = curr;
                 break;
             }
+            // Ni pasa de la ruta a la lista de rutas (ul.travel-list; revisión de seguridad del encargo 93): una ruta con
+            // botón y sin sus detalles subía hasta los de otra, sin botón, y pulsaba el suyo con la nave de la otra. Por
+            // el resumen (.wrap-card) no: cada ruta del portal trae dos, y cortaba dentro de la propia.
+            if (parent.tagName === 'UL' && /(^|\s)travel-list(\s|$)/.test(parent.className || '')) {
+                card = curr;
+                break;
+            }
             // Tampoco sube a un bloque con los detalles de otra ruta (encargo 93): el 02-11, la lista traía dos rutas y
             // una sola con su «Seleccionar», y la tarjeta de ese botón subía hasta la lista entera, con las dos.
             if (parent.querySelectorAll('.route-wrapper ul.route').length > 1) {
@@ -13346,7 +13383,10 @@ def _cma_seleccionar_itinerario(page, reserva, reg):
 
     # No se encontró la nave tras buscar en todos los bloques
     ofrecidas = ultimo_resultado.get("ofrecidas") or []
-    ofrecidas_txt = "; ".join(ofrecidas) if ofrecidas else "ninguna ruta detectada"
+    # Cada ruta como se muestra (_destino_a_la_vista, hasta 80 caracteres): viene del portal, y va a log.txt, al panel y a
+    # la planilla (revisión de seguridad del encargo 93).
+    ofrecidas_txt = ("; ".join(_destino_a_la_vista(str(s))[:80] for s in ofrecidas) if ofrecidas
+                     else "ninguna ruta detectada")
 
     if not nave_especificada:
         # Hasta 83067a1, sin nave en la planilla, pulsaba el primer «Seleccionar» de la lista, fuera el
@@ -15481,38 +15521,53 @@ class ConfigDelPanel(Exception):
     """Lo que el panel web no puede leer de config.json, dicho para quien lo usa: qué falta y cómo resolverlo."""
 
 
+def _ruta_de_red(texto):
+    """¿Es una ruta de red (\\\\servidor\\… o //servidor/…)? Un .git que lleva a una no se sigue (_version_de_git)."""
+    return str(texto).startswith(("\\\\", "//"))
+
+
 def _version_de_git(carpeta=None):
     """La rama y el commit (sus 7 primeras cifras) que tiene la carpeta del programa, leídos de los archivos de su .git,
     para que el panel los muestre (pedido de Marcelo, encargo 93, CICLO-named-customer-rutas-cma-y-version.md: que él y
     el colega vean de un vistazo que corren lo mismo). Sin lanzar git: el panel no depende de que esté en el PATH, y el
     arnés de las pruebas frena los procesos. Lee HEAD («ref: refs/heads/<rama>», o un commit suelto) y el commit de esa
     rama, de su archivo o de packed-refs; un .git que es un archivo («gitdir: …», un worktree) lleva a su carpeta, y su
-    «commondir», a la común. Devuelve {"rama", "commit"}, con la rama como se muestra (_destino_a_la_vista, hasta 40
-    caracteres; «sin rama» con un commit suelto), o None si no hay un .git que se pueda leer o el commit no tiene la
-    forma de uno (40 cifras hexadecimales). Una referencia que no empieza con «refs/» o que sube de carpeta («..») no se
-    lee."""
+    «commondir», a la común. Devuelve {"rama", "commit"}, con la rama hasta 40 caracteres («sin rama» con un commit
+    suelto), o None si no hay un .git que se pueda leer o el commit no tiene la
+    forma de uno (40 cifras hexadecimales). Una referencia que no es «refs/» con letras ASCII, cifras y «._/-», o que sube
+    de carpeta («..»), no se lee, ni un gitdir o un commondir que es una ruta de red (_ruta_de_red); de cada archivo lee
+    hasta 64 KB (packed-refs, 4 MB). Revisión de seguridad del encargo 93: con una barra invertida, la referencia leía un
+    archivo de fuera de .git, y una ruta de red abría una conexión en cada pedido del panel."""
     raiz = Path(carpeta or BASE)
+
+    def leer(ruta, tope=1 << 16):
+        with open(ruta, "rb") as fh:
+            return fh.read(tope).decode("utf-8").strip()
+
     try:
         git = raiz / ".git"
         if git.is_file():
-            m = _re_mk.match(r"gitdir:\s*(.+)", git.read_text(encoding="utf-8").strip())
-            if not m:
+            m = _re_mk.match(r"gitdir:\s*(.+)", leer(git))
+            if not m or _ruta_de_red(m.group(1).strip()):
                 return None
             git = raiz / m.group(1).strip()
         comun = git
         if (git / "commondir").is_file():
-            comun = git / (git / "commondir").read_text(encoding="utf-8").strip()
-        head = (git / "HEAD").read_text(encoding="utf-8").strip()
+            otra = leer(git / "commondir")
+            if _ruta_de_red(otra):
+                return None
+            comun = git / otra
+        head = leer(git / "HEAD")
         if head.startswith("ref:"):
             ref = head[4:].strip()
-            if not ref.startswith("refs/") or ".." in ref.split("/"):
+            if not _re_mk.fullmatch(r"refs/[A-Za-z0-9._/-]+", ref) or ".." in ref.split("/"):
                 return None
             rama = ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
             archivo = comun / ref
             if archivo.is_file():
-                commit = archivo.read_text(encoding="utf-8").strip()
+                commit = leer(archivo)
             else:
-                empaquetadas = (comun / "packed-refs").read_text(encoding="utf-8").splitlines()
+                empaquetadas = leer(comun / "packed-refs", 1 << 22).splitlines()
                 commit = next((l.split(" ", 1)[0] for l in empaquetadas if l.endswith(" " + ref)), "")
         else:
             rama, commit = "", head
@@ -15520,7 +15575,12 @@ def _version_de_git(carpeta=None):
         return None
     if not _re_mk.fullmatch(r"[0-9a-f]{40}", commit):
         return None
-    return {"rama": _destino_a_la_vista(rama)[:40] or "sin rama", "commit": commit[:7]}
+    return {"rama": rama[:40] or "sin rama", "commit": commit[:7]}
+
+
+# La versión del código que corre: la de la carpeta cuando se cargó el programa (revisión de seguridad del encargo 93).
+# Leída en cada pedido, mostraba la de la carpeta, que una actualización pudo cambiar con el panel abierto.
+VERSION_GIT = _version_de_git()
 
 
 def _config_del_panel():
@@ -15963,7 +16023,7 @@ def lanzar_web(puerto=8765, abrir=True):
                     cfg = _config_del_panel()
                     return self._json({
                         "version": VERSION,
-                        "git": _version_de_git(),
+                        "git": VERSION_GIT,
                         "modo_emision": es_modo_emision(),
                         "aviso": _CONFIG["creada"] or "",
                         "usuarios": list(cfg.get("usuarios", {}).keys()),

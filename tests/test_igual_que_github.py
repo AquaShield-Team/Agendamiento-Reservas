@@ -11,6 +11,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import soporte
 
@@ -60,7 +61,7 @@ class TestIgualQueGithub(unittest.TestCase):
         git(armado, "add", "-A")
         git(armado, "commit", "-q", "-m", "primero")
         git(armado, "push", "-q", str(remoto), "main")
-        cls.local = cls.tmp / "carpeta del programa"
+        cls.local, cls.remoto = cls.tmp / "carpeta del programa", remoto
         git(cls.tmp, "clone", "-q", str(remoto), str(cls.local))
 
     @classmethod
@@ -69,7 +70,8 @@ class TestIgualQueGithub(unittest.TestCase):
 
     def comparar(self, *, rama="main", sin_suite=True, dejar=False, raiz=None):
         lineas = []
-        rc = self.mod.comparar(raiz or self.local, rama, sin_suite=sin_suite, dejar=dejar, salida=lineas.append)
+        rc = self.mod.comparar(raiz or self.local, rama, sin_suite=sin_suite, dejar=dejar, salida=lineas.append,
+                               remoto=str(self.remoto))
         return rc, "\n".join(lineas)
 
     def clones(self):
@@ -93,6 +95,7 @@ class TestIgualQueGithub(unittest.TestCase):
         self.assertEqual(rc, 0, texto)
         [clon] = self.clones()
         self.assertTrue(clon.startswith("main-"))
+        self.assertTrue(clon.endswith(f"-{os.getpid()}"))      # dos corridas en el mismo segundo, cada una lo suyo
         self.assertEqual(git(self.local / ".trabajo" / "igual-que-github" / clon, "rev-parse", "HEAD"),
                          git(self.local, "rev-parse", "HEAD"))
 
@@ -107,6 +110,7 @@ class TestIgualQueGithub(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("distintos en bytes: 1 · cambios sin commitear: 1", texto)
         self.assertIn("   distinto: programa.py", texto)
+        self.assertIn("   sin commitear:  M programa.py", texto)      # con el espacio inicial de git status
         self.assertIn("DISTINTO: mira las líneas de arriba", texto)
         self.assertEqual(len(self.clones()), 1)       # algo difiere: deja el clon
 
@@ -134,17 +138,17 @@ class TestIgualQueGithub(unittest.TestCase):
         self.assertLess(time.monotonic() - t0, 30)
 
     def test_main_lee_sus_argumentos(self):
-        original = self.mod.RAIZ
-        self.mod.RAIZ = self.local
+        original = self.mod.RAIZ, self.mod.REMOTO
+        self.mod.RAIZ, self.mod.REMOTO = self.local, str(self.remoto)
         try:
             self.assertEqual(self.mod.main(["--rama", "main", "--sin-suite", "--dejar"]), 0)
             self.assertEqual(len(self.clones()), 1)
             self.mod._borrar(self.local / ".trabajo")
-            self.assertEqual(self.mod.main(["--rama", "no-existe", "--sin-suite"]), 2)
+            self.assertEqual(self.mod.main(["--rama", "estable", "--sin-suite"]), 2)
             self.assertEqual(self.mod.main(["--sin-suite"]), 0)          # sin --rama, la de la carpeta
             self.assertEqual(self.clones(), [])
         finally:
-            self.mod.RAIZ = original
+            self.mod.RAIZ, self.mod.REMOTO = original
 
     def test_un_commit_que_github_no_tiene(self):
         # Un commit vacío: el árbol y los bytes son los mismos, y solo el commit difiere. Con un cambio, también el árbol.
@@ -177,17 +181,6 @@ class TestIgualQueGithub(unittest.TestCase):
         self.assertIn("(la carpeta está en ", texto)
         self.assertIn("DISTINTO: mira las líneas de arriba", texto)
 
-    def test_una_rama_sin_forma_no_clona(self):
-        # Ni subir de carpeta, ni una opción de git, ni otra cosa: no crea nada, ni adentro ni afuera.
-        antes = sorted(p.name for p in self.tmp.iterdir())
-        for rama in ("..\\..\\..\\fuera", "-x", "a..b", "C:\\fuera", "rama con espacio", "ñandú"):
-            with self.subTest(rama=rama):
-                rc, texto = self.comparar(rama=rama)
-                self.assertEqual(rc, 2, texto)
-                self.assertIn("no tiene la forma de una rama", texto)
-                self.assertFalse((self.local / ".trabajo").exists())
-        self.assertEqual(sorted(p.name for p in self.tmp.iterdir()), antes)
-
     def test_la_suite_del_clon_va_con_mas_plazo(self):
         # El modo hijo corre el correr.py del clon tal cual, con 7.200 s en vez de los 1.200 por omisión; los demás
         # plazos (los 240 de cada par del censo) no cambian. Aquí, un correr.py inventado que anota lo que recibe.
@@ -214,9 +207,29 @@ class TestIgualQueGithub(unittest.TestCase):
         rc, texto = self.comparar(raiz=sin)
         self.assertEqual(rc, 2)
         self.assertIn("No pude leer el remoto origin", texto)
-        rc, texto = self.comparar(rama="no-existe")
+        rc, texto = self.comparar(rama="estable")            # el remoto inventado no la tiene
         self.assertEqual(rc, 2)
         self.assertIn("El clon falló", texto)
+
+    def test_otro_remoto_no_compara(self):
+        # La suite del clon corre su código: solo si origin es el repo del programa (revisión de seguridad del encargo
+        # 93). Con otro, ni lo clona.
+        lineas = []
+        rc = self.mod.comparar(self.local, "main", sin_suite=True, salida=lineas.append, remoto=str(self.tmp / "otro.git"))
+        self.assertEqual(rc, 2)
+        self.assertIn("no es " + str(self.tmp / "otro.git"), lineas[-1])
+        self.assertEqual(self.clones(), [])
+
+    def test_una_rama_que_no_publica_no_compara(self):
+        # Solo main o estable: ni subir de carpeta, ni una opción de git, ni otra rama. No crea nada, ni adentro ni afuera.
+        antes = sorted(p.name for p in self.tmp.iterdir())
+        for rama in ("..\\..\\..\\fuera", "-x", "historial-local", "main/otra", "Main"):
+            with self.subTest(rama=rama):
+                rc, texto = self.comparar(rama=rama)
+                self.assertEqual(rc, 2, texto)
+                self.assertIn("Solo comparo main o estable", texto)
+                self.assertFalse((self.local / ".trabajo").exists())
+        self.assertEqual(sorted(p.name for p in self.tmp.iterdir()), antes)
 
     def test_distintos_en_bytes(self):
         a, b = self.tmp / "bytes_a", self.tmp / "bytes_b"
@@ -237,7 +250,9 @@ class TestIgualQueGithub(unittest.TestCase):
             return original(args, cwd=cwd, env=env, plazo=plazo or self.mod.PLAZO_GIT)
         self.mod._correr = espia
         try:
-            rc, texto = self.comparar()
+            # Ni un GIT_DIR heredado (mandaría sobre la carpeta de -C) ni un secreto (revisión de seguridad del encargo 93).
+            with mock.patch.dict(os.environ, {"GIT_DIR": str(self.tmp / "nada"), "GH_TOKEN": "inventado"}):
+                rc, texto = self.comparar()
         finally:
             self.mod._correr = original
         self.assertEqual(rc, 0, texto)
@@ -246,6 +261,11 @@ class TestIgualQueGithub(unittest.TestCase):
         for args, env in de_git:
             self.assertIn("credential.helper=", args)
             self.assertEqual((env["GIT_TERMINAL_PROMPT"], env["GCM_INTERACTIVE"]), ("0", "never"))
+            self.assertNotIn("GIT_DIR", env)
+            self.assertNotIn("GH_TOKEN", env)
+        # git status, sin el candado opcional del índice: no reescribe el de la carpeta del programa.
+        [status] = [a for a, _ in de_git if "status" in a]
+        self.assertLess(status.index("--no-optional-locks"), status.index("status"))
 
     def test_la_suite_corre_en_el_clon(self):
         # La suite del clon se reemplaza: lo que se mira es con qué la lanza (el clon, su temporal sin espacios y dentro
@@ -264,7 +284,8 @@ class TestIgualQueGithub(unittest.TestCase):
                 return original(args, cwd=cwd, env=env, plazo=plazo or self.mod.PLAZO_GIT)
             self.mod._correr = falsa
             try:
-                rc, texto = self.comparar(sin_suite=False)
+                with mock.patch.dict(os.environ, {"GIT_DIR": str(self.tmp / "nada"), "GH_TOKEN": "inventado"}):
+                    rc, texto = self.comparar(sin_suite=False)
             finally:
                 self.mod._correr = original
             with self.subTest(k=k):
@@ -277,6 +298,7 @@ class TestIgualQueGithub(unittest.TestCase):
                 self.assertEqual((env["TMP"], env["TMPDIR"], env["GIT_CEILING_DIRECTORIES"]), (env["TEMP"],) * 3)
                 self.assertEqual(Path(env["TEMP"]).resolve().parent, (self.local / ".trabajo" / "igual-que-github").resolve())
                 self.assertEqual(plazo, self.mod.PLAZO_SUITE)
+                self.assertFalse({"GIT_DIR", "GH_TOKEN"} & set(env))
                 self.assertEqual(len([c for c in self.clones() if c.startswith("main-")]), queda)
             self.mod._borrar(self.local / ".trabajo")
 

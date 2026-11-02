@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """¿Corre este equipo lo mismo que GitHub? (pedido de Marcelo, encargo 93, CICLO-named-customer-rutas-cma-y-version.md)
 
-Clona la rama desde su remoto (origin, el repo público, sin clave: sin ayudante de credenciales y sin preguntas) DENTRO
-de la carpeta del programa, en .trabajo/igual-que-github/<rama>-<fecha>/ (nada fuera), y compara:
+Clona la rama (main o estable) desde su remoto, solo si origin es el repo público del programa (REMOTO), sin clave (sin
+ayudante de credenciales y sin preguntas), DENTRO de la carpeta del programa, en .trabajo/igual-que-github/<rama>-<fecha>/
+(nada fuera), y compara:
   - el commit de la rama en GitHub con el de la rama local, y sus árboles;
   - los archivos versionados, byte a byte, entre el clon y la carpeta del programa (lo que corre de verdad);
   - los cambios sin commitear de la carpeta del programa (en archivos versionados).
@@ -11,6 +12,10 @@ corto (sin espacios: con uno, las pruebas del .venv caen; CLAUDE.md, «Red de ve
 (GIT_CEILING_DIRECTORIES: sin él, git sube al repo del programa desde las carpetas de las pruebas). El plazo de la suite
 entera pasa de 1.200 a 7.200 s, como en .trabajo/e92/con_mas_plazo.py. Si todo es igual y la suite pasa, borra el clon
 y su temporal (salvo con --dejar); si no, los deja y dice dónde.
+
+La suite del clon corre el código de esa rama, bajado de GitHub, con tu usuario: la misma confianza que la rama estable
+que se instala en los equipos. Por eso solo main o estable, solo desde el repo del programa, y con el entorno sin las
+variables de git ni las que parecen secretos (revisión de seguridad del encargo 93).
 
 Sale con 0 si es igual y la suite pasa (o se pidió --sin-suite), 1 si algo difiere o la suite falla, y 2 si no pudo
 comparar (sin el remoto, sin la rama, el clon falló). Imprime hashes cortos, cuentas y rutas del repo: nada de datos.
@@ -33,7 +38,9 @@ POPEN = subprocess.Popen          # las pruebas ponen aquí el Popen verdadero (
 RAIZ = Path(__file__).resolve().parent.parent
 PLAZO_GIT = 600                   # s: clonar el repo público tardó 1,4 s el 2026-10-13 (encargo 61)
 PLAZO_SUITE = 3 * 3600            # s: la suite tardó de 40 a 60 minutos con el equipo cargado (encargos 92 y 93)
-RAMA = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]*")
+RAMAS = ("main", "estable")       # las que publica el programa (CLAUDE.md, «Git y GitHub»)
+REMOTO = "https://github.com/AquaShield-Team/Agendamiento-Reservas"
+SECRETO = re.compile(r"^GIT_|TOKEN|SECRET|PASSW|API_?KEY", re.I)
 TASKKILL = str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "taskkill.exe")
 
 
@@ -50,15 +57,25 @@ def _correr(args, cwd=None, env=None, plazo=PLAZO_GIT):
     return p.returncode, out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
 
 
+def _entorno(**extra):
+    """El entorno de cada proceso: el de esta consola sin las variables de git (un GIT_DIR heredado manda sobre la carpeta
+    de -C y sobre el techo) ni las que parecen secretos, más 'extra' (revisión de seguridad del encargo 93)."""
+    env = {k: v for k, v in os.environ.items() if not SECRETO.search(k)}
+    env.update(extra)
+    return env
+
+
 def _entorno_git():
     """Sin clave y sin preguntas: el remoto es público, y uno que pida clave falla enseguida (como actualizar.py)."""
-    return dict(os.environ, GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="never")
+    return _entorno(GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="never")
 
 
 def git(carpeta, *args):
-    """git en 'carpeta', sin ayudante de credenciales. Devuelve (código, salida sin espacios en los extremos)."""
+    """git en 'carpeta', sin ayudante de credenciales. Devuelve (código, salida sin los espacios del final): los del
+    principio quedan, porque la primera línea de git status empieza con uno (« M x» no es «M x»; revisión de código del
+    encargo 93)."""
     rc, out, _ = _correr(["git", "-C", str(carpeta), "-c", "credential.helper=", *args], env=_entorno_git())
-    return rc, out.strip()
+    return rc, out.rstrip()
 
 
 def corto(ruta):
@@ -91,28 +108,40 @@ def _borrar(ruta):
         os.chmod(p, stat.S_IWRITE)
         func(p)
     if Path(ruta).exists():
-        shutil.rmtree(ruta, onexc=solo_escritura)
+        if sys.version_info >= (3, 12):
+            shutil.rmtree(ruta, onexc=solo_escritura)
+        else:                                       # Python 3.11, que el programa admite, no tiene onexc
+            shutil.rmtree(ruta, onerror=solo_escritura)
 
 
-def comparar(raiz, rama, sin_suite=False, dejar=False, salida=print):
-    """Lo que hace la herramienta (main la llama con los argumentos). Devuelve el código de salida."""
+def comparar(raiz, rama, sin_suite=False, dejar=False, salida=print, remoto=None):
+    """Lo que hace la herramienta (main la llama con los argumentos). Devuelve el código de salida. 'remoto' es el repo
+    que tiene que ser origin (por omisión, REMOTO; las pruebas dan uno inventado)."""
     raiz = Path(raiz).resolve()
+    remoto = remoto or REMOTO
     rc, url = git(raiz, "remote", "get-url", "origin")
     if rc or not url:
         salida("No pude leer el remoto origin de la carpeta del programa: no comparo.")
+        return 2
+
+    def sin_git(u):
+        return u.strip().rstrip("/").removesuffix(".git").lower()
+    if sin_git(url) != sin_git(remoto):
+        salida(f"El remoto origin de la carpeta del programa no es {remoto}: no comparo (correría su código).")
         return 2
     if not rama:
         rc, rama = git(raiz, "rev-parse", "--abbrev-ref", "HEAD")
         if rc or rama == "HEAD":
             salida("La carpeta del programa no está en una rama: dime cuál con --rama.")
             return 2
-    # Solo un nombre de rama: letras ASCII, cifras y «._/-», sin empezar con «-» (git la tomaría por una opción) y sin
-    # «..». Así la carpeta del clon, con «/» como «_», queda siempre dentro de .trabajo/igual-que-github/.
-    if not RAMA.fullmatch(rama) or ".." in rama:
-        salida(f"«{rama[:60]}» no tiene la forma de una rama (letras, cifras y «._/-»): no comparo.")
+    # Solo las ramas que publica el programa: la suite del clon corre su código, con tu usuario, la misma confianza que
+    # la rama estable que se instala en los equipos (revisión de seguridad del encargo 93). Así, además, la carpeta del
+    # clon queda siempre dentro de .trabajo/igual-que-github/.
+    if rama not in RAMAS:
+        salida(f"Solo comparo {' o '.join(RAMAS)}, las ramas que publica el programa: no «{rama[:60]}».")
         return 2
     trabajo = raiz / ".trabajo" / "igual-que-github"
-    sello = time.strftime("%Y%m%d-%H%M%S")
+    sello = f"{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}"     # dos corridas en el mismo segundo, cada una lo suyo
     clon, tmp = trabajo / f"{rama.replace('/', '_')}-{sello}", trabajo / f"tmp-{sello}"
     trabajo.mkdir(parents=True, exist_ok=True)
     salida(f"Clono «{rama}» desde {url} en {clon.relative_to(raiz)} …")
@@ -126,7 +155,7 @@ def comparar(raiz, rama, sin_suite=False, dejar=False, salida=print):
     rc_local, local = git(raiz, "rev-parse", "--verify", "--quiet", rama)
     _, local_arbol = git(raiz, "rev-parse", "--verify", "--quiet", rama + "^{tree}")
     _, cabeza = git(raiz, "rev-parse", "HEAD")
-    _, cambios = git(raiz, "status", "--porcelain", "--untracked-files=no")
+    _, cambios = git(raiz, "--no-optional-locks", "status", "--porcelain", "--untracked-files=no")
     _, listado = git(clon, "ls-files", "-z")
     archivos = [a for a in listado.split("\0") if a]
     faltan, distintos = distintos_en_bytes(clon, raiz, archivos)
@@ -148,7 +177,7 @@ def comparar(raiz, rama, sin_suite=False, dejar=False, salida=print):
     if not sin_suite:
         tmp.mkdir(parents=True, exist_ok=True)
         t = corto(tmp)
-        env = dict(os.environ, TEMP=t, TMP=t, TMPDIR=t, GIT_CEILING_DIRECTORIES=t, PYTHONIOENCODING="utf-8")
+        env = _entorno(TEMP=t, TMP=t, TMPDIR=t, GIT_CEILING_DIRECTORIES=t, PYTHONIOENCODING="utf-8")
         salida(f"Corro la suite en el clon (de 40 a 60 minutos; el temporal, en {tmp.relative_to(raiz)}) …")
         rc, out, err = _correr([sys.executable, str(Path(__file__).resolve()), "--correr-suite", str(clon / "tests")],
                                cwd=str(clon), env=env, plazo=PLAZO_SUITE)
@@ -187,7 +216,7 @@ def _correr_suite(tests):
 
 def main(argv=None):
     a = argparse.ArgumentParser(description="¿Corre este equipo lo mismo que GitHub?")
-    a.add_argument("--rama", default="", help="la rama a comparar (por omisión, la de la carpeta del programa)")
+    a.add_argument("--rama", default="", help="main o estable (por omisión, la de la carpeta del programa)")
     a.add_argument("--sin-suite", action="store_true", help="solo compara, sin correr la suite en el clon")
     a.add_argument("--dejar", action="store_true", help="no borra el clon aunque todo sea igual")
     a.add_argument("--correr-suite", default="", help=argparse.SUPPRESS)

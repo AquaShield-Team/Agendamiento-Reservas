@@ -3425,8 +3425,8 @@ const ruta = ([nave1, viaje1, nave2, viaje2], resumen, sin = []) => {
       ...acciones]),
     ...tramos])]);
 };
-const pagina = (rutas) => {
-  const body = nodo('body', '', '', [nodo('main', '', '', [nodo('ul', '', '', rutas)])]);
+const pagina = (rutas, lista = '') => {
+  const body = nodo('body', '', '', [nodo('main', '', '', [nodo('ul', lista, '', rutas)])]);
   global.document = {querySelectorAll: (s) => body.querySelectorAll(s)};
   return body;
 };
@@ -3526,8 +3526,8 @@ console.log(JSON.stringify([
         # REVISAR, «no disponible», con «Sin nombre». Desde el encargo 93, no sube a un bloque con los detalles de otra
         # ruta, y la elige. Y si la nave está solo en rutas sin «Seleccionar», lo dice (sinBoton).
         guion = self.DOM_CMA + "const f = " + self.js_rutas() + r""";
-const correr = (rutas, toks, viaje = []) => {
-  const body = pagina(rutas);
+const correr = (rutas, toks, viaje = [], lista = '') => {
+  const body = pagina(rutas, lista);
   const r = f({toks, viaje});
   return [!!r.ok, r.ok ? r.vessel : [r.cardsCount, r.ilegibles, r.sinBoton, r.ofrecidas],
           body.querySelectorAll('button').map(b => b.clics)];
@@ -3541,6 +3541,7 @@ console.log(JSON.stringify([
   correr([ruta(otra, null, ['boton']), ruta(otra)], T),
   correr([ruta(con, null, ['boton', 'tramos']), ruta(otra)], T),
   correr([ruta(con, null, ['boton', 'pol']), ruta(otra)], T),
+  correr([ruta(otra, null, ['tramos']), ruta(con, null, ['boton'])], T, [], 'travel-list'),
   correr([ruta(con)], T, ['ZZ009Z']),
 ]));
 """
@@ -3556,6 +3557,10 @@ console.log(JSON.stringify([
             # que sale del POL.
             [False, [1, 0, 0, ["NAVE OTRA (Viaje ZZ003A) [Cut-off: 01-oct-2026]"]], [0]],
             [False, [1, 0, 0, ["NAVE OTRA (Viaje ZZ003A) [Cut-off: 01-oct-2026]"]], [0]],
+            # Una ruta con su «Seleccionar» y sin sus detalles no pasa de su ruta a la lista (ul.travel-list), donde
+            # están los de otra, sin botón: no se lee, y la otra cuenta como la nave en una ruta que no deja elegir
+            # (revisión de seguridad del encargo 93; hasta ahí tomaba la nave de la otra y pulsaba su botón).
+            [False, [1, 1, 1, ["nave sin leer [Cut-off: 01-oct-2026]"]], [0]],
             # La que deja elegir, con la nave y otro viaje, no cuenta como «sin Seleccionar».
             [False, [1, 0, 0, ["NAVE PRUEBA (Viaje ZZ001A) [Cut-off: 01-oct-2026]"]], [0]],
         ])
@@ -3597,6 +3602,22 @@ console.log(JSON.stringify(f({toks: ['NAVE', 'PRUEBA'], viaje: []}).ofrecidas));
                                                                                "viaje": ""}, reg),
                                  (False, f"CMA: {que}: {donde}{cola} (rutas que deja elegir: "
                                          f"{'nave sin leer' if rutas else 'ninguna ruta detectada'})." + fin))
+
+    def test_las_rutas_ofrecidas_van_saneadas(self):
+        # Lo que el portal dice de cada ruta va a log.txt, al panel y a la planilla: con un carácter de control o de
+        # dirección del texto como «?», y hasta 80 caracteres (revisión de seguridad del encargo 93).
+        botones = ("button:has-text('Seleccionar'), button:has-text('Select'), button:has-text('Deseleccionar'), "
+                   "button:has-text('Deselect')")
+        reg, _, log = self.corrida("ofrecidas_saneadas")
+        ofrecidas = ["NAVE" + chr(0x202E) + "UNO" + chr(0) + " [Cut-off: x]", "B" * 100]
+        pagina = PaginaCma(visibles={botones}, js={"getCard": {"ok": False, "ofrecidas": ofrecidas, "deLaNave": 0,
+                                                               "ilegibles": 0, "cardsCount": 2, "sinBoton": 0}})
+        ok, motivo = self.mod._cma_seleccionar_itinerario(pagina, {"fila": 7, "nave": "NAVE PRUEBA", "viaje": ""}, reg)
+        self.assertIs(ok, False)
+        self.assertIn("(rutas que deja elegir: NAVE?UNO? [Cut-off: x]; " + "B" * 80 + ").", motivo)
+        texto = log.read_text(encoding="utf-8")
+        self.assertNotIn(chr(0x202E), motivo + texto)
+        self.assertNotIn(chr(0), motivo + texto)
 
     def test_itinerario_sin_el_viaje_de_la_fila(self):
         # La nave está y, cargadas todas las rutas, ninguna trae el viaje de la fila: (None, motivo), y reservar_cma la
@@ -10105,27 +10126,66 @@ class TestEsperasConCondicion(ConRegistro):
         self.assertIs(self.esperar(p, "js", 2.0, leer=lambda js, arg: leidas.append(js) or True), True)
         self.assertEqual((leidas, p.lecturas), (["js"], []))
 
-    def test_js_hay_opcion_exacta_es_la_busqueda_del_clic(self):
-        # ONE: la espera de _one_dropdown busca lo mismo que _JS_CLICK_OPTION_EXACT pulsaría, sin pulsar nada.
+    def test_js_cuenta_lo_que_buscaria_el_clic(self):
+        # ONE: la espera de _one_dropdown cuenta lo que _JS_CLICK_OPTION_EXACT pulsaría, sin pulsar nada: las hojas a la
+        # vista con el texto entero de una de las candidatas, sin distinguir mayúsculas ni espacios de más.
         guion = (
             "const el = (t, vis, hijos) => ({textContent: t, offsetParent: vis ? {} : null, children: {length: hijos},\n"
             "  clics: 0, closest() { return null; }, scrollIntoView() {}, click() { this.clics++; }});\n"
             "const correr = (els, textos) => { global.document = {querySelectorAll: () => els};\n"
-            "  const hay = (" + self.mod._JS_HAY_OPCION_EXACTA + ")(textos);\n"
+            "  const n = (" + self.mod._JS_CUANTAS_OPCIONES_EXACTAS + ")(textos);\n"
             "  const sinClics = els.every(e => e.clics === 0);\n"
             "  const pulsa = textos.some(t => (" + self.mod._JS_CLICK_OPTION_EXACT + ")(t));\n"
-            "  return [hay, sinClics, pulsa]; };\n"
+            "  return [n, sinClics, pulsa]; };\n"
             "console.log(JSON.stringify([\n"
             "  correr([el('40FT High Cube', true, 0)], ['40FT High Cube']),\n"
-            "  correr([el(' 40ft  high cube ', true, 0)], ['40FT High Cube']),\n"
+            "  correr([el(' 40ft  high cube ', true, 0), el('40FT HIGH CUBE', true, 0)], ['40FT High Cube']),\n"
             "  correr([el('40FT High Cube', false, 0)], ['40FT High Cube']),\n"
             "  correr([el('40FT High Cube', true, 2)], ['40FT High Cube']),\n"
             "  correr([el('40FT High Cube Plus', true, 0)], ['40FT High Cube']),\n"
-            "  correr([el('REEFER', true, 0)], ['DRY', 'REEFER']),\n"
+            "  correr([el('REEFER', true, 0), el('DRY', true, 0)], ['DRY', 'REEFER']),\n"
             "  correr([], ['REEFER'])]));\n")
-        self.assertEqual(correr_node(self, guion), [[True, True, True], [True, True, True], [False, True, False],
-                                                    [False, True, False], [False, True, False], [True, True, True],
-                                                    [False, True, False]])
+        self.assertEqual(correr_node(self, guion), [[1, True, True], [2, True, True], [0, True, False],
+                                                    [0, True, False], [0, True, False], [2, True, True],
+                                                    [0, True, False]])
+
+    def test_one_espera_la_lista_que_crece(self):
+        # ONE (revisión de seguridad del encargo 93): la espera de _one_dropdown sigue solo con más opciones candidatas
+        # a la vista que antes de abrir la lista (un «No» de otro campo ya se veía) y con dos cuentas seguidas iguales;
+        # si no, o si no pudo contar antes, los 1,3 s de siempre. Después, el clic de siempre.
+        m = self.mod
+
+        class Pagina:
+            def __init__(self, cuentas):
+                self.cuentas, self.esperas, self.clics, self.t = list(cuentas), [], [], 0.0
+
+            def evaluate(self, js, arg=None):
+                if js == m._JS_CUANTAS_OPCIONES_EXACTAS:
+                    v = self.cuentas.pop(0) if self.cuentas else self.ultima
+                    if isinstance(v, Exception):
+                        raise v
+                    self.ultima = v
+                    return v
+                if js == m._JS_ONE_OPEN_DD:
+                    return "opened"
+                if js == m._JS_CLICK_OPTION_EXACT:
+                    self.clics.append(arg)
+                    return True
+                raise AssertionError("JavaScript desconocido")
+
+            def wait_for_timeout(self, ms):
+                self.esperas.append(ms)
+                self.t += ms / 1000
+
+        for cuentas, esperas in (([1, 1, 2, 2], [250, 250, 800]),         # la lista llega, y se queda quieta
+                                 ([0, 2, 3, 3], [250, 250, 800]),         # llega de a poco: espera que se quede quieta
+                                 ([1, 1, 1, 1, 1, 1, 1], [250] * 5 + [50, 800]),      # no crece: el tope de antes
+                                 ([RuntimeError("x"), 2, 2, 2, 2, 2, 2], [250] * 5 + [50, 800])):   # sin la cuenta
+            p, (reg, _, _) = Pagina(cuentas), self.corrida(f"one_dd_{len(cuentas)}_{cuentas[0]!s:.3}")
+            with mock.patch("time.monotonic", lambda: p.t):
+                self.assertIs(m._one_dropdown(p, "Genset", ["No"], reg, "Genset"), True)
+            with self.subTest(cuentas=cuentas):
+                self.assertEqual((p.esperas, p.clics), (esperas, ["No"]))
 
     def test_js_modal_de_otra_nave_a_la_vista(self):
         # HYUNDAI: el OK del modal «Alternate Vessel Option» con caja y sin visibility:hidden, como lo ve is_visible.
@@ -10138,16 +10198,20 @@ class TestEsperasConCondicion(ConRegistro):
             "  correr(null)]));\n")
         self.assertEqual(correr_node(self, guion), [True, False, False, False])
 
-    def test_js_hay_contrato_como_lo_cuenta_el_paso_que_sigue(self):
-        # HYUNDAI: «Contract No» con una opción con valor que no es «Select», «Dummy» ni «Direct Input» (_hmm_reales).
+    def test_js_shipper_y_contrato_como_los_miran_los_pasos_que_siguen(self):
+        # HYUNDAI, tras el «Apply» del Shipper: #shipperName con algo escrito (lo que mira su respaldo) y «Contract No»
+        # con una opción con valor que no es «Select», «Dummy» ni «Direct Input» (_hmm_reales).
         guion = (
-            "const correr = (ops) => { global.document = {querySelector: (s) => (s === '#selContractNo' && ops\n"
+            "const correr = (sn, ops) => { global.document = {querySelector: (s) => (s === '#shipperName'\n"
+            "    ? (sn === null ? null : {value: sn}) : s === '#selContractNo' && ops\n"
             "    ? {options: ops.map(([t, v]) => ({textContent: t, value: v}))} : null)};\n"
-            "  return (" + self.mod._JS_HMM_HAY_CONTRATO + ")(" + json.dumps(list(self.mod.HMM_NO_SON_CONTRATO)) + "); };\n"
-            "console.log(JSON.stringify([correr([['Select', '']]), correr([['Select', ''], ['Dummy', 'D'],\n"
-            "  [' Direct Input ', 'DI']]), correr([['Select', ''], ['CT-1 - (GA)', 'CT-1']]), correr([['CT-1', ' ']]),\n"
-            "  correr(null)]));\n")
-        self.assertEqual(correr_node(self, guion), [False, False, True, False, False])
+            "  return (" + self.mod._JS_HMM_SHIPPER_Y_CONTRATO + ")(" + json.dumps(list(self.mod.HMM_NO_SON_CONTRATO))
+            + "); };\n"
+            "const real = [['Select', ''], ['CT-1 - (GA)', 'CT-1']];\n"
+            "console.log(JSON.stringify([correr('X', [['Select', '']]), correr('X', [['Select', ''], ['Dummy', 'D'],\n"
+            "  [' Direct Input ', 'DI']]), correr('X', real), correr('X', [['CT-1', ' ']]), correr('X', null),\n"
+            "  correr('', real), correr('  ', real), correr(null, real)]));\n")
+        self.assertEqual(correr_node(self, guion), [False, False, True, False, False, False, False, False])
 
     def test_js_panel_reefer_es_la_busqueda_de_la_temperatura(self):
         # CMA-CGM: un solo panel a la vista con su «Temperature» y su campo a la vista, lo que busca
@@ -10179,7 +10243,9 @@ class TestEsperasConCondicion(ConRegistro):
         f = self.fuentes()
         # ONE: cada desplegable, antes de su clic.
         uno = f["_one_dropdown"]
-        self.assertIn("    _esperar_que(page, _JS_HAY_OPCION_EXACTA, 1.3, list(opciones_candidatas))\n", uno)
+        self.assertIn("    _esperar_que(page, _JS_CUANTAS_OPCIONES_EXACTAS, 1.3, list(opciones_candidatas),\n"
+                      "                 leer=_lista_que_crecio(page, antes))\n", uno)
+        self.assertLess(uno.index("antes = int(page.evaluate(_JS_CUANTAS_OPCIONES_EXACTAS"), uno.index("_JS_ONE_OPEN_DD"))
         self.assertNotIn("esperar(page, 1.3)", uno)
         self.assertLess(uno.index("_esperar_que("), uno.index("_JS_CLICK_OPTION_EXACT"))
         # MSC: el «Next», cada 0,3 s y con el tope de antes, 12 s.
@@ -10192,13 +10258,17 @@ class TestEsperasConCondicion(ConRegistro):
         self.assertIn("    _esperar_que(page, _JS_HMM_MODAL_OTRA_NAVE, 3.5 if tipo_sel == \"book_now\" else 1.5, "
                       "asentar=0.5)\n    modal = _hmm_mantener_nave(page, reg, f)\n", hmm)
         self.assertNotIn("Book Now presionado: {modo}\")\n        esperar(page, 2.0)", hmm)
-        self.assertIn("_esperar_que(page, _JS_HMM_HAY_CONTRATO, 2.5, list(HMM_NO_SON_CONTRATO))", hmm)
+        self.assertIn("_esperar_que(page, _JS_HMM_SHIPPER_Y_CONTRATO, 2.5, list(HMM_NO_SON_CONTRATO))", hmm)
         self.assertNotIn("esperar(page, 2.5)", hmm[:hmm.index("_hmm_elegir_contrato(")])
+        # Ante la ventana del Shipper sigue la espera fija (revisión de seguridad del encargo 93): su fila se busca en
+        # toda la página.
         abre = hmm.index('reg.info("Abriendo modal Booking Shipper Selection...")')
-        self.assertNotIn("esperar(", hmm[abre:hmm.index("opt_aqua.wait_for(", abre)])
-        # MAERSK: la lista reefer la espera _mk_elegir_unica.
+        self.assertIn("esperar(page, 1.2)", hmm[abre:hmm.index("opt_aqua.wait_for(", abre)])
+        # MAERSK: la lista reefer muestra una opción, con el tope de antes, y después la lee _mk_elegir_unica.
         mk = f["_mk_elegir_reefer"]
-        self.assertNotIn("esperar(", mk[:mk.index("_mk_elegir_unica(")])
+        self.assertIn('    _esperar_que(page, None, 1.5, leer=lambda js, arg: page.locator("mc-option:visible").count() > 0)\n'
+                      "    _mk_elegir_unica(", mk)
+        self.assertNotIn("esperar(page, 1.5)\n    _mk_elegir_unica(", mk)
         # CMA-CGM: el panel Reefer, leído con plazo.
         cma = f["_cma_ajustes_reefer"]
         self.assertIn("_esperar_que(page, _JS_CMA_PANEL_CON_TEMPERATURA, 2.0, asentar=0.5, "
