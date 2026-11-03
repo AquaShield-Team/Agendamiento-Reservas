@@ -5003,7 +5003,7 @@ SUG_RESERVADORES = SUG + "test_cada_reservador_la_pide_para_su_origen_y_su_desti
 SUG_JS = SUG + "test_js_pulsa_solo_con_la_marca_true"
 SUG_TEXTO_ONE = SUG + "test_one_compara_solo_el_texto_de_la_sugerencia"
 SUG_SOLO_AHI = "test_evidencia.TestCadaReservadorLaDeja.test_solo_ahi"
-LEE_ONE = ("                vista = \" \".join(str(_sugerencia_sin_pulsar(page, _JS_PICK_SUGGESTION, [tok])).split())\n"
+LEE_ONE = ("                vista = \" \".join(str(_sugerencia_sin_pulsar(page, _JS_PICK_SUGGESTION, con)).split())\n"
            "                if vista:\n")
 LEE_MSC = ("            esperar(page, 0.4)\n            if pendiente:\n"
            "                vista = \" \".join(str(_sugerencia_sin_pulsar(page, js, [ciudad])).split())\n"
@@ -5013,7 +5013,7 @@ EVIDENCIA_SUG = ("                    _evidencia_antes_de_la_guarda(page, reg, e
                  "f\"con las sugerencias de {etiqueta}\",\n")
 SIN_EVIDENCIA = ("_evidencia_antes_de_la_guarda(", "(lambda *a, **k: None)(")
 CONTINUA_ONE = "                                                  completa=False)\n"
-PULSA_ONE = "            try:\n                info = page.evaluate(_JS_PICK_SUGGESTION, [tok, True])"
+PULSA_ONE = "            try:\n                info = page.evaluate(_JS_PICK_SUGGESTION, con + [True])"
 EVIDENCIA_MK = ("                        _evidencia_antes_de_la_guarda(page, reg, nombre, "
                 "f\"con las sugerencias de {etiqueta}\",\n"
                 "                                                      completa=False)\n")
@@ -5046,7 +5046,7 @@ MUTACIONES += [
          viejo="return alcance.evaluate(js, list(args) + [False]) or \"\"",
          nuevo="return alcance.evaluate(js, list(args) + [True]) or \"\""),
     dict(id="sug-js-one-sin-marca-pulsa", pruebas=[SUG_JS],
-         viejo="[a[0], a[1] === true]", nuevo="[a[0], a[1] !== false]"),
+         viejo=": [a[0], a[1] === true, ''];", nuevo=": [a[0], a[1] !== false, ''];"),
     dict(id="sug-js-msc-sin-marca-pulsa", pruebas=[SUG_JS],
          viejo="if(pulsar===true) items[0].click();", nuevo="if(pulsar!==false) items[0].click();"),
     dict(id="sug-js-hmm-sin-marca-pulsa", pruebas=[SUG_JS],
@@ -5059,8 +5059,8 @@ MUTACIONES += [
     dict(id="sug-js-one-pulsa-igual", pruebas=[SUG_JS],
          viejo="        if (pulsar) cand[0].click();\n", nuevo="        cand[0].click();\n"),
     dict(id="sug-js-one-sin-cual", pruebas=[SUG_JS],
-         viejo="    return pulsar ? 'CLICK[' + clicked + '] CANDS[' + dump + ']' : clicked;\n",
-         nuevo="    return 'CLICK[' + clicked + '] CANDS[' + dump + ']';\n"),
+         viejo="    return pulsar ? 'CLICK[' + clicked + '] CANDS[' + dump + ']' + entera : clicked;\n",
+         nuevo="    return 'CLICK[' + clicked + '] CANDS[' + dump + ']' + entera;\n"),
     dict(id="sug-js-one-sin-texto", pruebas=[SUG_JS],
          viejo="\n            + ' «' + (cand[0].textContent||'').trim().slice(0,45) + '»';\n", nuevo=";\n"),
     dict(id="sug-js-msc-pulsa-igual", pruebas=[SUG_JS],
@@ -5161,7 +5161,7 @@ MUTACIONES += [
          viejo="        commodity, reg, \"Commodity\")\n",
          nuevo="        commodity, reg, \"Commodity\", evidencia=f\"one_f{f}_commodity\")\n"),
     dict(id="sug-fill-port-no-la-pasa", pruebas=[SUG_DEJA, SUG_RESERVADORES],
-         viejo="reg, etiqueta, evidencia=evidencia)\n", nuevo="reg, etiqueta)\n"),
+         viejo="reg, etiqueta, evidencia=evidencia,\n", nuevo="reg, etiqueta,\n"),
     dict(id="sug-msc-destino-sin-evidencia", pruebas=[SUG_RESERVADORES],
          viejo="reg, \"Port of Discharge\", evidencia=f\"msc_f{f}_destino\")", nuevo="reg, \"Port of Discharge\")"),
     dict(id="sug-cosco-destino-sin-evidencia", pruebas=[SUG_RESERVADORES],
@@ -5251,7 +5251,7 @@ MUTACIONES += [
 # --- Encargo 41 · commit 6 (segunda revisión del informe): el JavaScript de ONE, llamado con el texto solo, pulsa, como
 # antes; el commit 4 quitó esta mutación sin reemplazo (CICLO-origen-y-destino.md) ---
 MUTACIONES += [
-    dict(id="sug-js-one-texto-solo-no-pulsa", pruebas=[SUG_JS], viejo=": [a, true];", nuevo=": [a, false];"),
+    dict(id="sug-js-one-texto-solo-no-pulsa", pruebas=[SUG_JS], viejo="? [a, true, '']", nuevo="? [a, false, '']"),
 ]
 
 # --- Encargo 42 · commit 1: la fila con nave y sin puerto de carga o sin destino queda NO ENVIADA sin entrar al
@@ -5397,7 +5397,7 @@ MUTACIONES += [
          viejo=si + "        raise ObjetivoNoEncontrado(" + corte)
     for nombre, si, corte in (
         ("one", "    if not _ciudad_de(keyword):\n", 'f"{etiqueta} de ONE", _TEXTO_DE_LA_FILA)\n'),
-        ("msc", "    if not _ciudad_de(ciudad):\n", 'f"{etiqueta} de MSC", _TEXTO_DE_LA_FILA)\n'),
+        ("msc", "    if not _ciudad_de(escrito):\n", 'f"{etiqueta} de MSC", _TEXTO_DE_LA_FILA)\n'),
         ("cosco", '    if not str(match_texto or "").strip():\n', 'f"{etiqueta} de COSCO", _TEXTO_DE_LA_FILA)\n'),
         ("hmm", "    if not _ciudad_de(texto):\n", 'f"{etiqueta} de HYUNDAI", _TEXTO_DE_LA_FILA)\n'),
         ("mk", "    if not ciudad:\n", 'f"{etiqueta} de MAERSK", _TEXTO_DE_LA_FILA)\n'),
@@ -5498,7 +5498,7 @@ MUTACIONES += [
     for nombre, mira, sin_palabra, corte, extra in (
         ("one", "    if not _ciudad_de(keyword):\n", '    if not keyword.split(",")[0].strip():\n',
          '        raise ObjetivoNoEncontrado(f"{etiqueta} de ONE"', []),
-        ("msc", "    if not _ciudad_de(ciudad):\n", '    if not ciudad.split(",")[0].strip():\n',
+        ("msc", "    if not _ciudad_de(escrito):\n", '    if not escrito.split(",")[0].strip():\n',
          '        raise ObjetivoNoEncontrado(f"{etiqueta} de MSC"', []),
         ("hmm", "    if not _ciudad_de(texto):\n", '    if not texto.split(",")[0].strip():\n',
          '        raise ObjetivoNoEncontrado(f"{etiqueta} de HYUNDAI"', []),
@@ -10048,8 +10048,10 @@ PLANO_E86 = "    if a[:len(b)] == b[:len(a)]:\n"
 PARTES_E87 = '    a = [_mk_plano(p) for p in puerto.split(",")]\n'
 DOOR_E86 = ("    if not _msc_hasta(page, lambda: (activa() or radio.is_checked(timeout=1000)) and "
             "campo_modo.is_visible()):\n")
-CIUDAD_E86 = ('    ciudad = " ".join(_ciudad_de(final).split())\n    if not ciudad:\n'
-              "        raise ObjetivoNoEncontrado(MSC_PASO_DESTINO")
+PIEZA_E94 = '    pieza = _re_mk.sub(r"(?<!\\s)\\s*[^\\S ]\\s*", " ", _ciudad_de(final))\n'
+ESCRITO_E94 = '    escrito = _msc_sin_codigo(pieza)\n'
+CIUDAD_E94 = '    ciudad = " ".join(escrito.split())\n'
+PALABRA_E94 = "    if not _ciudad_de(ciudad):\n        raise ObjetivoNoEncontrado(MSC_PASO_DESTINO, _TEXTO_DE_LA_FILA)\n"
 PUERTO_E86 = '        dest = " ".join(separado[0].split(",")[0].split())\n'
 CALZA_E86 = "    return bool(c) and s.startswith(c) and not s[len(c):len(c) + 1].isalnum()\n"
 MUTACIONES += [
@@ -10107,10 +10109,12 @@ MUTACIONES += [
          viejo=CALZA_E86,
          nuevo="    return bool(c) and s.startswith(c) and s[len(c):len(c) + 1] not in _LETRAS_DE_NAVE\n"),
     dict(id="e86-destino-sin-su-regla", pruebas=[DFM_CORTA],
-         viejo="lambda t: _msc_calza_el_destino(t, ciudad), ciudad,", nuevo="lambda t: True, ciudad,"),
+         viejo="lambda t: _msc_calza_el_destino(t, ciudad) and t.upper().endswith(codigo), ciudad,",
+         nuevo="lambda t: True, ciudad,"),
     dict(id="e86-lista-sin-lecturas-iguales", pruebas=[DFM_PAGINA],
          viejo=("            op, textos = _msc_opciones(page, lista)\n        except Exception:\n"
-                "            op, textos = None, []\n        if textos and textos == anterior:\n"),
+                "            op, textos = None, []\n"
+                "        if textos and textos == anterior and (al_dia is None or al_dia(textos)):\n"),
          nuevo=("            op, textos = _msc_opciones(page, lista)\n        except Exception:\n"
                 "            op, textos = None, []\n        if textos:\n")),
     dict(id="e86-lista-sin-volver-a-leer", pruebas=[DFM_CORTA],
@@ -10123,19 +10127,19 @@ MUTACIONES += [
          viejo="    if not _msc_hasta(page, lambda: \" \".join(campo.input_value(timeout=1000).split()) == elegida):\n",
          nuevo="    if not _msc_hasta(page, lambda: True):\n"),
     dict(id="e86-destino-con-la-celda-entera", pruebas=[DFM_PAGINA],
-         viejo=CIUDAD_E86,
-         nuevo="    ciudad = final\n    if not ciudad:\n        raise ObjetivoNoEncontrado(MSC_PASO_DESTINO"),
+         viejo=PIEZA_E94 + ESCRITO_E94 + CIUDAD_E94, nuevo="    pieza = final\n    escrito = ciudad = final\n"),
+    # Desde el encargo 94 se escribe con los espacios de la celda, y se compara con los espacios de a uno: compararla
+    # con sus espacios no calza con las opciones, que se leen con los espacios de a uno.
     dict(id="e86-destino-con-sus-espacios", pruebas=[DFM_PAGINA],
-         viejo=CIUDAD_E86,
-         nuevo="    ciudad = _ciudad_de(final)\n    if not ciudad:\n        raise ObjetivoNoEncontrado(MSC_PASO_DESTINO"),
+         viejo=CIUDAD_E94, nuevo="    ciudad = escrito\n"),
     dict(id="e86-destino-sin-palabra", pruebas=[DFM_CORTA],
-         viejo=CIUDAD_E86,
-         nuevo="    ciudad = final\n    if False:\n        raise ObjetivoNoEncontrado(MSC_PASO_DESTINO"),
+         viejo=PALABRA_E94,
+         nuevo="    if False:\n        raise ObjetivoNoEncontrado(MSC_PASO_DESTINO, _TEXTO_DE_LA_FILA)\n"),
     dict(id="e86-lista-sin-evidencia", pruebas=[DFM_PAGINA, "test_evidencia.TestCadaReservadorLaDeja.test_solo_ahi"],
          viejo="    _evidencia_antes_de_la_guarda(page, reg, evidencia, f\"con la lista de «{nombre}»\", completa=False)\n",
          nuevo=""),
     dict(id="e86-destino-sin-escribir", pruebas=[DFM_PAGINA],
-         viejo="        campo.type(ciudad, delay=90)\n", nuevo="        pass\n"),
+         viejo="        campo.type(escrito, delay=90)\n", nuevo="        pass\n"),
 ]
 
 # --- Encargo 87 (CICLO-destino-final-normalizado.md): una sola regla para MSC y CMA-CGM (_destino_separado), que
@@ -10893,4 +10897,171 @@ MUTACIONES += [
          nuevo="    sello = f\"{time.strftime('%Y%m%d-%H%M%S')}\""),
     dict(id="e93-igual-status-con-candado", archivo=IGUAL, pruebas=[IG + "test_git_sin_clave_ni_preguntas"],
          viejo='git(raiz, "--no-optional-locks", "status",', nuevo='git(raiz, "status",'),
+]
+
+# --- Encargo 94 (CICLO-msc-puertos-del-portal.md): los puertos y el destino final de MSC escritos como los muestra el
+# portal. El puerto con su código entre corchetes se escribe sin el código y se elige la sugerencia que dice la celda
+# entera; el destino final se escribe con los espacios de la celda (el portal escribe «Ciudad␣␣ST»), sin el código y
+# sin saltos de línea; la lista de «Destination» vale solo si todas sus opciones empiezan por lo escrito; y ONE elige la
+# sugerencia que dice la celda entera, si hay una.
+PUERTO_E94 = "test_clics.TestMsc.test_puerto_con_el_codigo_del_portal"
+MEDIAS_E94 = DFM + "test_la_lista_que_responde_a_lo_escrito_a_medias_no_vale"
+ONE_JS_E94 = SUG + "test_js_one_elige_la_que_dice_la_celda_entera"
+ONE_PY_E94 = "test_clics.TestOne.test_el_puerto_con_la_celda_entera"
+OTRA_E94 = DFM + "test_con_otros_espacios_lo_escribe_de_a_uno"
+MILES_E94 = DFM + "test_una_celda_con_miles_de_espacios_no_se_cuelga"
+AL_DIA_E94 = "        if textos and textos == anterior and (al_dia is None or al_dia(textos)):\n"
+EMPIEZA_E94 = ('    return " ".join(str(sugerencia or "").split()).upper().startswith('
+               '" ".join(str(escrito or "").split()).upper())\n')
+PLANO_E94 = "    const plano = (s) => (s || '').replace(/\\\\s+/g, ' ').trim().toUpperCase();\n"
+CELDA_E94 = "                              celda=\" \".join(valor.split()) if despues.strip() else \"\")\n"
+MUTACIONES += [
+    dict(id="e94-msc-puerto-escribe-el-codigo", pruebas=[PUERTO_E94],
+         viejo="        inp.type(escrito, delay=90)\n", nuevo="        inp.type(ciudad, delay=90)\n"),
+    dict(id="e94-msc-sin-codigo-no-lo-quita", pruebas=[PUERTO_E94, DFM_PAGINA],
+         viejo='", "", str(texto or "")).strip()\n',
+         nuevo='", "", str(texto or "")).strip() if False else str(texto or "").strip()\n'),
+    dict(id="e94-msc-puerto-busca-sin-el-codigo", pruebas=[PUERTO_E94],
+         viejo="                picked = str(page.evaluate(js, [ciudad, True]))\n            except Exception:\n                pass\n",
+         nuevo="                picked = str(page.evaluate(js, [escrito, True]))\n            except Exception:\n                pass\n"),
+    dict(id="e94-msc-puerto-vacio-con-codigo", pruebas=[PUERTO_E94],
+         viejo="    if not _ciudad_de(escrito):\n        raise ObjetivoNoEncontrado(f\"{etiqueta} de MSC\"",
+         nuevo="    if not _ciudad_de(ciudad):\n        raise ObjetivoNoEncontrado(f\"{etiqueta} de MSC\""),
+    dict(id="e94-destino-con-los-espacios-de-a-uno", pruebas=[DFM_PAGINA],
+         viejo=ESCRITO_E94, nuevo='    escrito = " ".join(_msc_sin_codigo(pieza).split())\n'),
+    dict(id="e94-destino-con-el-salto-de-linea", pruebas=[DFM_PAGINA],
+         viejo=PIEZA_E94, nuevo="    pieza = _ciudad_de(final)\n"),
+    dict(id="e94-destino-con-el-codigo", pruebas=[DFM_PAGINA],
+         viejo=ESCRITO_E94, nuevo="    escrito = pieza\n"),
+    # Un tabulador con un espacio al lado deja dos espacios, que ninguna opción trae (revisión de código del encargo 94).
+    dict(id="e94-destino-el-blanco-sin-sus-espacios", pruebas=[DFM_PAGINA],
+         viejo=PIEZA_E94, nuevo='    pieza = _re_mk.sub(r"[^\\S ]+", " ", _ciudad_de(final))\n'),
+    # Las dos expresiones empiezan solo donde empieza una racha de blancos: sin eso, una celda con miles de espacios
+    # seguidos tarda en proporción al cuadrado de la racha (revisión de seguridad del encargo 94).
+    dict(id="e94-destino-regex-sin-mirar-atras", pruebas=[MILES_E94],
+         viejo=PIEZA_E94, nuevo='    pieza = _re_mk.sub(r"\\s*[^\\S ]\\s*", " ", _ciudad_de(final))\n'),
+    dict(id="e94-sin-codigo-sin-mirar-atras", pruebas=[PUERTO_E94, MILES_E94],
+         viejo='(r"(?<!\\s)\\s*\\[[', nuevo='(r"\\s*\\[['),
+    # El código también antes de la primera coma, y con dos códigos distintos, corta (revisión de seguridad).
+    dict(id="e94-codigo-solo-al-final", pruebas=[DFM_CORTA],
+         viejo="    codigo = cod_final or cod_pieza\n", nuevo="    codigo = cod_final\n"),
+    dict(id="e94-dos-codigos-sin-cortar", pruebas=[DFM_CORTA],
+         viejo="    if cod_pieza and cod_final and cod_pieza != cod_final:\n", nuevo="    if False:\n"),
+    # Con más de MSC_ESPACIOS_DE_MAS espacios de más, la escribe de entrada con los espacios de a uno, y lo dice.
+    dict(id="e94-espacios-de-mas-como-vienen", pruebas=[DFM_PAGINA, MILES_E94],
+         viejo="    if len(escrito) - len(ciudad) > MSC_ESPACIOS_DE_MAS:\n", nuevo="    if False:\n"),
+    dict(id="e94-espacios-de-mas-desde-el-tope", pruebas=[DFM_PAGINA],
+         viejo="    if len(escrito) - len(ciudad) > MSC_ESPACIOS_DE_MAS:\n",
+         nuevo="    if len(escrito) - len(ciudad) >= MSC_ESPACIOS_DE_MAS:\n"),
+    dict(id="e94-espacios-de-mas-otro-tope", pruebas=[DFM_PAGINA],
+         viejo="MSC_ESPACIOS_DE_MAS = 8 ", nuevo="MSC_ESPACIOS_DE_MAS = 80 "),
+    dict(id="e94-espacios-de-mas-sin-avisar", pruebas=[DFM_PAGINA, MILES_E94],
+         viejo="        reg.info(f\"Destination: la celda trae {len(escrito) - len(ciudad)} espacios de más",
+         nuevo="        (lambda *a: None)(f\"Destination: la celda trae {len(escrito) - len(ciudad)} espacios de más"),
+    # El puerto de MSC se escribe con los espacios de a uno: un salto de línea sería la tecla Enter (revisión de
+    # seguridad).
+    dict(id="e94-msc-puerto-con-sus-saltos", pruebas=[PUERTO_E94],
+         viejo='    escrito = " ".join(_msc_sin_codigo(ciudad).split())\n', nuevo="    escrito = _msc_sin_codigo(ciudad)\n"),
+    # Sin el código, la celda tiene que traer una palabra: el código no es la ciudad.
+    dict(id="e94-destino-palabra-con-el-codigo", pruebas=[DFM_CORTA],
+         viejo="    if not _ciudad_de(ciudad):\n        raise ObjetivoNoEncontrado(MSC_PASO_DESTINO",
+         nuevo="    if not ciudad:\n        raise ObjetivoNoEncontrado(MSC_PASO_DESTINO"),
+    # La opción tiene que terminar con el código de la celda, sin distinguir mayúsculas y con los espacios de a uno.
+    dict(id="e94-destino-sin-el-codigo", pruebas=[DFM_CORTA],
+         viejo=" and t.upper().endswith(codigo), ciudad,", nuevo=", ciudad,"),
+    dict(id="e94-codigo-con-mayusculas", pruebas=[DFM_PAGINA],
+         viejo="    return \" \".join(m.group(0).split()).upper() if m else \"\"\n",
+         nuevo="    return \" \".join(m.group(0).split()) if m else \"\"\n"),
+    dict(id="e94-codigo-sin-juntar-espacios", pruebas=[DFM_PAGINA],
+         viejo="    return \" \".join(m.group(0).split()).upper() if m else \"\"\n",
+         nuevo="    return m.group(0).upper() if m else \"\"\n"),
+    # Con los espacios de la celda y la lista vacía, la escribe otra vez con los espacios de a uno, una sola vez.
+    dict(id="e94-sin-otra-vez", pruebas=[OTRA_E94],
+         viejo="                                   otra_vez=otra_vez)\n", nuevo="                                   otra_vez=None)\n"),
+    dict(id="e94-otra-vez-tambien-de-a-uno", pruebas=[OTRA_E94],
+         viejo="        if escrito == ciudad:\n            return False\n", nuevo=""),
+    dict(id="e94-otra-vez-escribe-lo-mismo", pruebas=[OTRA_E94],
+         viejo="            campo.type(ciudad, delay=90)\n", nuevo="            campo.type(escrito, delay=90)\n"),
+    dict(id="e94-otra-vez-sin-borrar", pruebas=[OTRA_E94],
+         viejo="            campo.fill(\"\", timeout=3000)\n            campo.type(ciudad", nuevo="            campo.type(ciudad"),
+    dict(id="e94-otra-vez-sin-cortar", pruebas=[OTRA_E94],
+         viejo="            campo.type(ciudad, delay=90)\n        except Exception as e:\n",
+         nuevo="            campo.type(ciudad, delay=90)\n        except ZeroDivisionError as e:\n"),
+    dict(id="e94-otra-vez-sin-avisar", pruebas=[OTRA_E94],
+         viejo="        reg.info(f\"Destination: con «{escrito}» la lista no trajo",
+         nuevo="        (lambda *a: None)(f\"Destination: con «{escrito}» la lista no trajo"),
+    dict(id="e94-otra-vez-sin-volver-a-leer", pruebas=[OTRA_E94],
+         viejo="and otra_vez():\n        op, textos = _msc_lista_quieta(page, reg, lista, nombre, buscado, al_dia)\n",
+         nuevo="and otra_vez():\n        pass\n"),
+    dict(id="e94-otra-vez-con-opciones", pruebas=[OTRA_E94],
+         viejo="    if not textos and otra_vez is not None and otra_vez():\n",
+         nuevo="    if otra_vez is not None and otra_vez():\n"),
+    dict(id="e94-destino-escribe-la-ciudad", pruebas=[DFM_PAGINA],
+         viejo="        campo.type(escrito, delay=90)\n", nuevo="        campo.type(ciudad, delay=90)\n"),
+    dict(id="e94-lista-sin-al-dia", pruebas=[MEDIAS_E94],
+         viejo=AL_DIA_E94, nuevo="        if textos and textos == anterior:\n"),
+    dict(id="e94-destino-sin-al-dia", pruebas=[MEDIAS_E94],
+         viejo="                                   al_dia=lambda textos: all(_msc_empieza_por(t, ciudad) for t in textos),\n",
+         nuevo="                                   al_dia=None,\n"),
+    dict(id="e94-al-dia-con-una-sola", pruebas=[MEDIAS_E94],
+         viejo="al_dia=lambda textos: all(_msc_empieza_por(", nuevo="al_dia=lambda textos: any(_msc_empieza_por("),
+    dict(id="e94-lista-sin-avisar", pruebas=[MEDIAS_E94],
+         viejo="            reg.info(f\"{nombre}: la lista no llegó a traer solo opciones",
+         nuevo="            (lambda *a: None)(f\"{nombre}: la lista no llegó a traer solo opciones"),
+    dict(id="e94-empieza-sin-mayusculas", pruebas=[MEDIAS_E94],
+         viejo=EMPIEZA_E94,
+         nuevo='    return " ".join(str(sugerencia or "").split()).startswith(" ".join(str(escrito or "").split()))\n'),
+    dict(id="e94-empieza-sin-juntar-espacios", pruebas=[MEDIAS_E94],
+         viejo=EMPIEZA_E94, nuevo='    return str(sugerencia or "").upper().startswith(str(escrito or "").upper())\n'),
+    dict(id="e94-one-sin-la-celda-entera", pruebas=[ONE_JS_E94],
+         viejo="    if (enteras.length) cand = enteras;\n", nuevo=""),
+    dict(id="e94-one-entera-solo-arriba", pruebas=[ONE_JS_E94],
+         viejo="    const enteras = E ? all.filter(e => e.getAttribute", nuevo="    const enteras = E ? cand.filter(e => e.getAttribute"),
+    dict(id="e94-one-entera-con-las-frecuentes", pruebas=[ONE_JS_E94],
+         viejo="        && !e.closest('[class*=Frequent i],[class*=pattern i]') && plano(e.textContent) === E) : [];\n",
+         nuevo="        && plano(e.textContent) === E) : [];\n"),
+    # Ni una tarjeta, con el filtro de clases de la regla de siempre (revisión de seguridad).
+    dict(id="e94-one-entera-sin-filtro-de-clases", pruebas=[ONE_JS_E94],
+         viejo=("        && !/frequent|pattern|summaryinfo|infobox|card/i.test((e.className||'').toString())\n"
+                "        && !e.closest('[class*=Frequent i],[class*=pattern i]') && plano("),
+         nuevo="        && !e.closest('[class*=Frequent i],[class*=pattern i]') && plano("),
+    # Al pulsar con la celda, dice si eligió por ella o con la regla de siempre, y log.txt lo dice (revisión de
+    # seguridad).
+    dict(id="e94-one-sin-decir-si-fue-entera", pruebas=[ONE_JS_E94],
+         viejo="    const entera = E ? (enteras.length ? ' ENTERA' : ' SIN-ENTERA') : '';\n",
+         nuevo="    const entera = E ? ' ENTERA' : '';\n"),
+    dict(id="e94-one-log-sin-avisar", pruebas=[ONE_PY_E94],
+         viejo='        if celda and info.endswith(" SIN-ENTERA"):\n', nuevo="        if False:\n"),
+    # La ciudad de ONE se escribe con los espacios de a uno: un salto de línea sería la tecla Enter.
+    dict(id="e94-one-ciudad-con-sus-saltos", pruebas=[ONE_PY_E94],
+         viejo='    return _fill_autocomplete(page, css, " ".join(ciudad.split()), reg,',
+         nuevo="    return _fill_autocomplete(page, css, ciudad.strip(), reg,"),
+    # Solo las opciones de la lista (role=option), no un texto de la página que dice lo mismo (revisión de código).
+    dict(id="e94-one-entera-sin-el-rol", pruebas=[ONE_JS_E94],
+         viejo="e => e.getAttribute && e.getAttribute('role') === 'option'\n", nuevo="e => true\n"),
+    dict(id="e94-one-entera-sin-ordenar", pruebas=[ONE_JS_E94],
+         viejo="    enteras.sort((a,b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);\n", nuevo=""),
+    # La lectura (marca false) nunca pulsa, también con la celda (revisión de código).
+    dict(id="e94-one-lectura-con-la-celda-pulsa", pruebas=[ONE_JS_E94],
+         viejo=": a.length > 2 ? [a[0], a[2] === true, a[1] || '']", nuevo=": a.length > 2 ? [a[0], a.length > 2, a[1] || '']"),
+    dict(id="e94-one-celda-con-mayusculas", pruebas=[ONE_JS_E94],
+         viejo=PLANO_E94, nuevo="    const plano = (s) => (s || '').replace(/\\\\s+/g, ' ').trim();\n"),
+    dict(id="e94-one-celda-sin-juntar-espacios", pruebas=[ONE_JS_E94],
+         viejo=PLANO_E94, nuevo="    const plano = (s) => (s || '').trim().toUpperCase();\n"),
+    dict(id="e94-one-marca-en-su-lugar", pruebas=[ONE_JS_E94],
+         viejo="        : a.length > 2 ? [a[0], a[2] === true, a[1] || ''] : [a[0], a[1] === true, ''];\n",
+         nuevo="        : [a[0], a[1] === true, ''];\n"),
+    dict(id="e94-one-puerto-sin-la-celda", pruebas=[ONE_PY_E94],
+         viejo=CELDA_E94, nuevo="                              celda=\"\")\n"),
+    dict(id="e94-one-celda-sin-juntar-espacios-py", pruebas=[ONE_PY_E94],
+         viejo=CELDA_E94, nuevo="                              celda=valor.strip() if despues.strip() else \"\")\n"),
+    dict(id="e94-one-celda-sin-la-coma", pruebas=[ONE_PY_E94],
+         viejo=CELDA_E94, nuevo="                              celda=\" \".join(valor.split()))\n"),
+    dict(id="e94-one-clic-sin-la-celda", pruebas=[ONE_PY_E94],
+         viejo="                info = page.evaluate(_JS_PICK_SUGGESTION, con + [True])\n",
+         nuevo="                info = page.evaluate(_JS_PICK_SUGGESTION, [tok, True])\n"),
+    dict(id="e94-one-lectura-sin-la-celda", pruebas=[ONE_PY_E94],
+         viejo="_sugerencia_sin_pulsar(page, _JS_PICK_SUGGESTION, con)", nuevo="_sugerencia_sin_pulsar(page, _JS_PICK_SUGGESTION, [tok])"),
+    dict(id="e94-one-con-sin-celda", pruebas=[ONE_PY_E94],
+         viejo="        con = [tok, celda] if celda else [tok]\n", nuevo="        con = [tok]\n"),
 ]

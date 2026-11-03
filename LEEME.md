@@ -73,6 +73,16 @@ la fila»), y la lista que mostró el portal queda en la carpeta de la corrida: 
 armarla. En CMA-CGM cuentan la nave y el viaje del tramo que sale de Chile, el primero de cada ruta: una ruta que
 trae la nave de la fila solo después del transbordo no es la suya.
 
+En MSC, el puerto de descarga y el destino final se pueden escribir como los muestra la lista del portal, con su código
+entre corchetes o sin él («PUERTO BETA [XXBET]» o «PUERTO BETA»): el programa busca por el nombre y elige la sugerencia
+que dice la celda. Copia el destino final desde el portal, con sus espacios: algunos lugares traen dos espacios
+seguidos, y el buscador de MSC busca letra por letra. Si el portal ofrece varios lugares que empiezan por la ciudad (dos
+terminales del mismo puerto, por ejemplo), la fila queda NO ENVIADA con la lista en el motivo: escribe el nombre entero
+del que corresponde.
+
+En ONE, si la celda del puerto dice la sugerencia entera del portal («PUERTO ALFA, CHILE (CY)»), el programa elige esa.
+Con la ciudad sola, elige la primera de la lista que la trae, que puede ser de otro país.
+
 Cuando el panel te pide resolver algo en el navegador («Te toca a ti»), `log.txt` anota cuándo empezó la pausa, por
 qué, y cuándo terminó: si pulsaste «Ya lo resolví» o «Detener», si pasaron 10 minutos sin respuesta o, con el
 deslizador de CMA, si el portal te dejó pasar o restringió el acceso.
@@ -168,7 +178,9 @@ recárgala (F5).
 ## Credenciales y opciones
 
 Usuario, clave y contrato de cada naviera se guardan en `config.json`, junto al programa y en texto plano. Se
-editan desde el panel, en **Credenciales de los portales** (la llave, arriba a la derecha). `config.example.json` es
+editan desde el panel, en **Credenciales de los portales** (la llave, arriba a la derecha). **El contrato de HYUNDAI
+va ahí, en la columna «Contrato» de la fila de HYUNDAI, del operador con que corres:** sin él, cada reserva de
+HYUNDAI queda NO ENVIADA en «Contract No», en modo seguro y en emisión, y el motivo lo dice. `config.example.json` es
 la plantilla, sin credenciales: si falta `config.json`, el panel lo crea desde ella. Si `config.json` no se puede leer
 (por ejemplo, después de editarlo a mano), el panel lo dice, con la línea donde está el error, y no arma reservas hasta
 que se corrija.

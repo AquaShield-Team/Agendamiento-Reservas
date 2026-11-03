@@ -766,9 +766,10 @@ cerrado:
     final, como en el video del dueño: «Door» debajo del puerto (la etiqueta `#onDoor_Label`, por su id y su texto), el
     modo «TRUCK» (`MSC_EN_CAMION`: la única opción de «Select on-carriage mode» que lo dice entero; las otras son
     TRUCK/RAIL y TRUCK/BARGE) y, en «Destination» de «Intermodal Details - Final destination», la ciudad (la parte de
-    la celda antes de su primera coma, con los espacios de a uno, como en los puertos) y la única sugerencia a la vista
-    que empieza por ella como palabra entera (`_msc_calza_el_destino`: el servidor da las que empiezan por lo escrito;
-    «PARIS» no calza con «Parisot», ni «PARANA» con «PARANAGUA, PARANA, …», en ningún alfabeto; revisiones del encargo).
+    la celda antes de su primera coma; desde el encargo 94, con sus espacios y sin el código del portal, abajo) y la
+    única sugerencia a la vista que empieza por ella como palabra entera (`_msc_calza_el_destino`: el servidor da las
+    que empiezan por lo escrito; «PARIS» no calza con «Parisot», ni «PARANA» con «PARANAGUA, PARANA, …», en ningún
+    alfabeto; revisiones del encargo).
     El puerto separado va con los espacios de a uno: un salto de línea en la celda sería la tecla Enter al escribirlo.
     Cada paso comprueba lo que dejó: «Door» activa (la clase de su
     etiqueta, o su radio marcado: el clic lo maneja Knockout, que le quita al navegador su acción; log.txt anota las dos
@@ -804,6 +805,66 @@ cerrado:
     empieza por lo escrito, desde 3 letras. **No está probado en el portal:** lo prueba el dueño en modo prueba.
   - **La regla de los puertos de MSC no es «solo si calza sin ambigüedad»:** `_msc_puerto` pulsa la más corta de las
     sugerencias que traen la ciudad. El destino final pide una sola, como pidió el encargo; los puertos no cambiaron.
+  - **Los puertos y el destino final, escritos como los muestra el portal** (encargo 94,
+    `CICLO-msc-puertos-del-portal.md`). El 03-11, en el equipo de un colega, con `77d5801`, las filas con los dos puertos
+    escritos tal como los muestra la lista de MSC quedaron NO ENVIADA. Lo medido en el HTML guardado de sus corridas:
+    - **El código entre corchetes** («PUERTO BETA [XXBET]», 3 puertos de descarga en una corrida): el programa escribía
+      la celda entera en el buscador, y con el código el portal no trae ninguna sugerencia (el HTML no trae la lista de
+      «Port of Discharge»); con el nombre solo, trae una sola, la de la celda, letra por letra. Desde el encargo 94,
+      `_msc_puerto` escribe el nombre sin el código (`_msc_sin_codigo`) y su JavaScript busca la celda con su código:
+      elige solo la sugerencia que la dice entera, y si el portal no la ofrece, NO ENVIADA, como antes. Sin el código,
+      nada cambia. El nombre va con los espacios de a uno: un salto de línea en la celda sería la tecla Enter en la
+      lista (revisión de seguridad del encargo 94; el puerto de descarga aparte ya iba así desde el encargo 86).
+    - **Dos espacios en el nombre:** el portal escribe algunos lugares con dos espacios seguidos entre la ciudad y la
+      sigla de su estado, como «Ciudad␣␣ST, PAIS [XXCIU ST]» (2 de las 4 opciones de una lista, en el HTML), y su
+      buscador empieza por lo escrito letra por letra. El programa escribía la ciudad con los espacios de a uno, y la
+      lista volvía vacía (dos corridas). Desde el encargo 94, `_msc_destino_final` escribe la ciudad con los espacios de
+      la celda, sin el código del portal; todo otro blanco (un salto de línea, un tabulador, un espacio duro), con los
+      espacios de su lado, pasa a un espacio, que escrito sería una tecla. Si con los espacios de la celda la lista no
+      trae nada, la escribe una vez con los espacios de a uno: una celda con un espacio de más por error funcionaba hasta
+      ahí (revisión de código del encargo 94; `otra_vez` de `_msc_elegir_de_lista`). Con más de `MSC_ESPACIOS_DE_MAS`
+      (8; hipótesis) espacios de más, la escribe de entrada con los espacios de a uno, y log.txt lo dice: cada espacio es
+      una tecla, y una celda con miles tardaba minutos (revisión de seguridad). Se compara como antes, con los espacios
+      de a uno en la ciudad y en cada opción, y si la celda trae el código del portal, al final o antes de su primera
+      coma, la opción tiene que terminar con ese mismo código (`_msc_codigo`, sin distinguir mayúsculas); con dos
+      códigos distintos en la celda, NO ENVIADA sin pulsar nada (revisión de seguridad: con el código antes de la coma,
+      la primera versión elegía otro lugar). Sin el código, la celda tiene que traer una palabra, como siempre: una
+      celda que es solo el código queda NO ENVIADA sin pulsar nada (`_TEXTO_DE_LA_FILA`).
+    - **Las expresiones que quitan el código y pasan los blancos a un espacio empiezan solo donde empieza una racha de
+      blancos** (mirando hacia atrás): sin eso, con una celda de miles de espacios seguidos tardaban en proporción al
+      cuadrado de la racha (4,3 s con 20.000; con el arreglo, 0,0006 s, y 0,04 s con un millón; medido con el equipo
+      ocupado, `.trabajo/e94/tiempo_regex.py`), y «Detener» no corta un cálculo en curso (revisión de seguridad).
+    - **La lista que responde a lo escrito a medias:** el buscador del portal (Kendo, `serverFiltering`, `filter:
+      startswith`, `minLength` 3, `delay` 500 ms, sin tope de resultados; leído en el HTML) responde mientras se
+      escribe. Con una ciudad escrita, el programa decidió con 8 opciones que respondían a sus primeras letras, dos
+      lecturas iguales de la respuesta a lo escrito a medias, y el HTML de un instante después trae las 4 de la
+      ciudad. Desde el encargo 94, `_msc_elegir_de_lista` recibe `al_dia`, y en «Destination» dos lecturas iguales
+      valen solo si todas sus opciones empiezan por lo escrito (`_msc_empieza_por`, sin distinguir mayúsculas y con los
+      espacios de a uno). Si no llega a una así en `MSC_LECTURAS_LISTA` lecturas (8 s), decide con la última, como
+      antes, y log.txt lo dice. El modo («TRUCK») no lo usa: su lista es fija.
+    - Medido antes del cambio (`.trabajo/e94/medir_celdas.py`): en las 90 filas de las 4 planillas del equipo y de «1.
+      pruebas» y en las 191 líneas de ruta de los log.txt de `logs/` y de «1. pruebas», las únicas celdas con el código
+      entre corchetes en un puerto de MSC (3), con dos espacios o un código en el destino final (3) o con la celda
+      entera de ONE (2) son las del colega: en las del equipo, ninguna, así que ninguna fila que hoy funciona cambia.
+    - **Probado en el portal, en modo prueba, el 03-11 desde este equipo,** con las tres filas del colega escritas como
+      él las escribió (los puertos con su código y el destino de dos espacios): las tres llegan a OK-EJEMPLO. La de
+      control, con la ciudad sola, que el portal ofrece en 3 lugares, sigue NO ENVIADA, y decidió con la lista entera de
+      4 opciones, no con la de lo escrito a medias.
+    - Lo vigilan `test_clics.TestMsc.test_puerto_con_el_codigo_del_portal` y
+      `TestDestinoFinalMsc` (`test_el_destino_final_en_la_pagina`,
+      `test_la_lista_que_responde_a_lo_escrito_a_medias_no_vale`, `test_con_otros_espacios_lo_escribe_de_a_uno`,
+      `test_una_celda_con_miles_de_espacios_no_se_cuelga` y `test_cada_paso_corta_sin_seguir`).
+    - Medido después de los arreglos de las revisiones (`.trabajo/e94/espacios_puertos.py`): escribir el puerto de carga
+      de MSC y los puertos de ONE con los espacios de a uno no cambia lo que se teclea en ninguna de las 73 celdas de las
+      planillas ni de las 155 líneas de ruta de MSC y ONE de los log.txt.
+    - **`_destino_separado` no conoce el código del portal** (residual, revisión de código del encargo 94): con el
+      código en una sola de las dos celdas y el país en la otra («PUERTO BETA [XXBET]» y «PUERTO BETA, PAIS»), la regla
+      que separa el puerto del destino final (la misma de CMA-CGM, encargo 87) las da por dos lugares, y la fila va por
+      el camino de dos; sin el código («PUERTO BETA» y «PUERTO BETA, PAIS»), por el de uno. Cuándo dos nombres escritos
+      distinto son el mismo puerto es una decisión de Marcelo, y no se cambió. Medido (`.trabajo/e94/separado_codigo.py`,
+      con una fila inventada como control): en las 43 filas de MSC y CMA-CGM de las planillas del equipo, de «1. pruebas»
+      y de la prueba en vivo, y en las 66 líneas de ruta con el destino aparte de los log.txt (9 con el código), quitar el
+      código no cambia el camino de ninguna.
   - En la planilla de ejemplo hay otro par distinto, en 2 filas, que ahora también se separa. Si el portal sugiere su
     destino final como «Destination», no está medido; si no, esas filas quedan NO ENVIADA en «Destination» (antes,
     también NO ENVIADA, en «Port of Discharge»). La regla no distingue otro puerto de una puerta tierra adentro, y el modo
@@ -1040,9 +1101,26 @@ cerrado:
       otras cinco navieras eligen como antes: CMA, la primera con los mismos 5 caracteres, que desde el encargo 48 arma
       como MAERSK, sin tildes y con la Ñ como N (`_prefijo_de_la_lista`; decisión de Marcelo,
       `CICLO-calendario-cosco-y-cma.md`), y el lugar de entrega, la primera con «ramp»; ONE, la que trae la ciudad y
-      está más arriba; HYUNDAI, la primera que la trae; MSC, la más
-      corta a la vista que la trae; y COSCO, en el origen la que dice Chile y en el destino la que empieza con la ciudad
-      y una coma, o la primera.
+      está más arriba (desde el encargo 94, si una sugerencia dice la celda entera, esa: abajo); HYUNDAI, la primera que
+      la trae; MSC, la más corta a la vista que la trae (desde el encargo 94, con el código del portal en la celda, la
+      que la dice entera); y COSCO, en el origen la que dice Chile y en el destino la que empieza con la ciudad y una
+      coma, o la primera.
+    - **ONE, con la celda entera** (encargo 94, `CICLO-msc-puertos-del-portal.md`): `_fill_port` escribe la ciudad, como
+      antes, y si la celda trae algo después de su primera coma se la pasa entera a `_JS_PICK_SUGGESTION`
+      (`[texto, celda, marca]`): si una opción de la lista (`role="option"`) dice la celda entera, sin distinguir
+      mayúsculas y con los espacios de a uno, elige entre esas, también si la lista la deja más abajo de los 850 px que
+      miran las candidatas de siempre (en el portal, la 7.ª de 9 estaba a 866 px), y nunca una tarjeta ni una dentro de
+      una de reservas frecuentes (con el filtro de clases de la regla de siempre); si no, la de siempre, y log.txt dice
+      que ninguna sugerencia dice la celda entera (el JavaScript termina con « ENTERA» o « SIN-ENTERA»). En los 23 HTML
+      de ONE guardados, `role="option"` lo llevan solo los botones de su lista. La ciudad va con los espacios de a uno:
+      un salto de línea sería la tecla Enter (revisiones de código y de seguridad del encargo 94).
+      Probado en el portal, en modo prueba, el 03-11 desde este equipo: con la celda entera elige la de Chile (CY),
+      encuentra la nave y llega a OK-EJEMPLO; con la ciudad sola, como antes. El 03-11, en el equipo de un colega, con la celda «<puerto de carga>,
+      CHILE (CY)», ONE eligió un lugar de España cuyo nombre empieza igual, la primera de 9 sugerencias con esas palabras
+      (6 de España; la de la celda era la 7.ª), y la fila quedó REVISAR, «nave no encontrada», en 5 corridas (en 4, con
+      la ciudad sola en la celda). **Con la ciudad sola sigue eligiendo esa:** cambiar la regla para la ciudad sola es
+      una decisión de Marcelo (el informe trae las opciones). Lo vigilan `test_evidencia.TestListaDeSugerencias
+      .test_js_one_elige_la_que_dice_la_celda_entera` (en Node) y `test_clics.TestOne.test_el_puerto_con_la_celda_entera`.
   - La fecha de zarpe: el día de carga de la planilla o, si falta o no se entiende, «Select tomorrow», y entonces
     avisa que busca desde mañana y no desde hoy (`_mk_fecha`). Marcelo decidió que busque desde hoy, pero sin el
     portal no se sabe si lo acepta (FRENO, `CICLO-cola-siete-items.md`). También avisa si el portal no aceptó la

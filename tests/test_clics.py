@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 import re
+import time
 import types
 import unittest
 from collections import Counter
@@ -834,6 +835,42 @@ console.log(JSON.stringify([
                          ("Origen de ONE", "la sugerencia «LIRQUEN» en la lista del autocompletado"))
         self.assertEqual(hechos, ["clic", "LIRQUEN"])
         self.assertIn("Origen ('LIRQUEN'): sin sugerencia | CLICK[] CANDS[]", log.read_text(encoding="utf-8"))
+
+    def test_el_puerto_con_la_celda_entera(self):
+        # El puerto escribe la ciudad (la parte de la celda antes de su primera coma), y si la celda trae algo después
+        # de la coma, se la pasa entera, con los espacios de a uno, al JavaScript que elige (_JS_PICK_SUGGESTION), en la
+        # lectura sin pulsar y en el clic: si una sugerencia la dice entera, elige esa (encargo 94). Sin nada después
+        # de la coma, como antes: [ciudad, marca]. La ciudad va con los espacios de a uno: un salto de línea sería la
+        # tecla Enter en la lista (revisión de seguridad). Y si ninguna sugerencia dice la celda entera (el JavaScript
+        # termina con « SIN-ENTERA»), log.txt lo dice: eligió con la regla de siempre.
+        def evaluar(llamadas, fin):
+            def f(js, *a):
+                if js == self.mod._JS_ONE_CERRAR_MODAL:
+                    return False
+                llamadas.append(list(a[0]))
+                return "CLICK[BUTTON.x#100 «PUERTO ALFA, CHILE (CY)»] CANDS[]" + fin if a[0][-1] is True else "X"
+            return f
+        reg, _, log = self.corrida()
+        aviso = "Origen: ninguna sugerencia dice la celda entera «PUERTO ALFA, CHILE (CY)»; elegí con la regla de "
+        for celda, ciudad, entera, fin in (
+                ("PUERTO ALFA, CHILE (CY)", "PUERTO ALFA", "PUERTO ALFA, CHILE (CY)", " ENTERA"),
+                (" PUERTO ALFA ,  CHILE ", "PUERTO ALFA", "PUERTO ALFA , CHILE", " ENTERA"),
+                ("PUERTO\nALFA, CHILE (CY)", "PUERTO ALFA", "PUERTO ALFA, CHILE (CY)", " ENTERA"),
+                ("PUERTO  ALFA", "PUERTO ALFA", None, ""), ("PUERTO ALFA,", "PUERTO ALFA", None, ""),
+                ("PUERTO ALFA, CHILE (CY)", "PUERTO ALFA", "PUERTO ALFA, CHILE (CY)", " SIN-ENTERA")):
+            with self.subTest(celda=celda, fin=fin):
+                hechos, llamadas = [], []
+                pagina = soporte.PaginaFalsa(texto=evaluar(llamadas, fin))
+                pagina.locator = lambda sel: CampoFalso(hechos)
+                antes = log.read_text(encoding="utf-8").count(aviso) if log.exists() else 0
+                with mock.patch.object(self.mod, "_evidencia_antes_de_la_guarda", lambda *a, **k: None):
+                    self.assertIs(self.mod._fill_port(pagina, "input[placeholder*='Origin' i]", celda, reg, "Origen",
+                                                      evidencia="one_f5_origen"), True)
+                con = [ciudad, entera] if entera else [ciudad]
+                self.assertEqual(hechos, ["clic", ciudad])
+                self.assertEqual(llamadas, [con + [False], con + [True]])
+                self.assertEqual(log.read_text(encoding="utf-8").count(aviso) - antes, int(fin == " SIN-ENTERA"))
+        self.assertIn(aviso + "siempre, la de más arriba que trae «PUERTO ALFA»", log.read_text(encoding="utf-8"))
 
     def test_detenida_deja_captura_y_html_sin_esperar(self):
         reg, vistas, log = self.corrida()
@@ -1671,6 +1708,72 @@ class TestMsc(ConRegistro):
                 self.assertEqual((e.exception.paso, e.exception.buscaba), esperado)
                 self.assertNotIn("ArrowDown", hechos)
                 self.assertNotIn("Enter", hechos)
+
+    def test_puerto_con_el_codigo_del_portal(self):
+        # La celda puede traer el puerto como lo muestra la lista de MSC, con su código entre corchetes («PUERTO BETA
+        # [XXBET]»). El buscador del portal busca por el nombre: con el código escrito no traía nada (el HTML del colega
+        # del 03-11 no trae la lista), y con el nombre, una sola opción, la de la celda. Escribe el nombre sin el código
+        # y elige solo la sugerencia que dice la celda entera; si el portal no la ofrece, corta sin pulsar nada
+        # (encargo 94). Sin código, como siempre.
+        def portal(ofrece):
+            """El portal: con lo escrito, la lista de las opciones cuyo nombre (sin el código) empieza por ello, como
+            busca su servidor; el JavaScript del programa elige la más corta que trae su texto (args[0]) y la pulsa solo
+            con la marca true."""
+            hechos, buscados = [], []
+
+            def evaluar(js, args):
+                buscados.append(list(args))
+                escrito = next((h for h in reversed(hechos) if h != "clic"), "")
+                lista = [o for o in ofrece
+                         if escrito and re.sub(r"\s*\[[^\]]*\]$", "", o).upper().startswith(escrito.upper())]
+                cand = sorted((o for o in lista if args[0].upper() in o.upper()), key=len)
+                return cand[0] if cand else ""
+            pagina = soporte.PaginaFalsa(texto=evaluar)
+            pagina.locator = lambda sel: CampoFalso(hechos)
+            return pagina, hechos, buscados
+        reg, _, log = self.corrida()
+        casos = (("PUERTO BETA [XXBET]", ("PUERTO BETA [XXBET]",), "PUERTO BETA", "PUERTO BETA [XXBET]"),
+                 ("PUERTO BETA [XXBET]", ("PUERTO BETA [XXOTR]",), "PUERTO BETA", None),
+                 ("PUERTO BETA", ("PUERTO BETA [XXBET]",), "PUERTO BETA", "PUERTO BETA [XXBET]"),
+                 ("PUERTO DELTA [XXDEL]", ("PUERTO DELTA [XXDEL]", "PUERTO DELTA NORTE [XXDLN]"),
+                  "PUERTO DELTA", "PUERTO DELTA [XXDEL]"),
+                 ("PUERTO DELTA NORTE [XXDLN]", ("PUERTO DELTA [XXDEL]", "PUERTO DELTA NORTE [XXDLN]"),
+                  "PUERTO DELTA NORTE", "PUERTO DELTA NORTE [XXDLN]"),
+                 # Con los espacios de a uno: un salto de línea en la celda sería la tecla Enter en la lista (revisión de
+                 # seguridad). La celda con el salto no la dice ninguna sugerencia: corta sin pulsar nada.
+                 ("PUERTO\nBETA [XXBET]", ("PUERTO BETA [XXBET]",), "PUERTO BETA", None))
+        for celda, ofrece, escrito, elegida in casos:
+            with self.subTest(celda=celda, ofrece=ofrece):
+                pagina, hechos, buscados = portal(ofrece)
+                if elegida:
+                    self.assertIs(self.mod._msc_puerto(pagina, "PODId_input", celda, reg, "Port of Discharge"), True)
+                    self.assertIn(f"Port of Discharge '{celda}': {elegida}", log.read_text(encoding="utf-8"))
+                else:
+                    with self.assertRaises(self.mod.ObjetivoNoEncontrado) as e:
+                        self.mod._msc_puerto(pagina, "PODId_input", celda, reg, "Port of Discharge")
+                    self.assertEqual(e.exception.buscaba,
+                                     f"la sugerencia que dice «{celda}» entre las que ofrece el portal")
+                self.assertEqual(hechos, ["clic", escrito])
+                self.assertTrue(buscados and all(b == [celda, True] for b in buscados))
+        # Sin el nombre (solo el código), no escribe ni pulsa nada.
+        pagina, hechos, buscados = portal(("PUERTO BETA [XXBET]",))
+        with self.assertRaises(self.mod.ObjetivoNoEncontrado) as e:
+            self.mod._msc_puerto(pagina, "PODId_input", "[XXBET]", reg, "Port of Discharge")
+        self.assertEqual(e.exception.buscaba, self.mod._TEXTO_DE_LA_FILA)
+        self.assertEqual((hechos, buscados), ([], []))
+        sin = self.mod._msc_sin_codigo
+        for texto, esperado in (("PUERTO BETA [XXBET]", "PUERTO BETA"), ("Ciudad Gamma 13 [XXGAM 13] ", "Ciudad Gamma 13"),
+                                ("Ciudad Gamma SG, PAIS [XXGAM SG]", "Ciudad Gamma SG, PAIS"), ("[XXBET]", ""),
+                                ("PUERTO [A] BETA", "PUERTO [A] BETA"), ("PUERTO BETA", "PUERTO BETA"), (None, ""),
+                                ("PUERTO BETA   [XXBET]", "PUERTO BETA"), ("PUERTO BETA [XXBET]  ", "PUERTO BETA")):
+            with self.subTest(texto=texto):
+                self.assertEqual(sin(texto), esperado)
+        # Una celda con miles de espacios seguidos no la cuelga: la expresión empieza solo donde empieza una racha de
+        # blancos. Sin eso, con 32.767 espacios (el tope de una celda de Excel) tardaba segundos, en proporción al
+        # cuadrado de la racha (revisión de seguridad del encargo 94).
+        inicio = time.monotonic()
+        self.assertEqual(sin("PUERTO" + " " * 50000 + "BETA"), "PUERTO" + " " * 50000 + "BETA")
+        self.assertLess(time.monotonic() - inicio, 1.0)
 
     MESES = ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
 
@@ -2797,21 +2900,26 @@ class PaginaDestinoMsc(soporte.PaginaFalsa):
     clic queda en el campo, las lecturas sucesivas de la lista del destino (la última se repite), si su clic queda en
     el campo, y el texto de la opción justo antes del clic. 'eventos' anota en orden lo que se hace."""
 
+    # Por omisión, la lista del destino trae solo opciones que empiezan por lo escrito, como la filtra el portal
+    # («filter: startswith», en su servidor), y una sola calza: la otra sigue con otra letra (encargo 94).
+    # Con 'filtra', la lista trae solo las opciones que empiezan por lo escrito, sin distinguir mayúsculas y letra por
+    # letra, espacios incluidos, como el buscador del portal (encargo 94).
     def __init__(self, puertas=1, dice="Door", activa_puerta=True, marca_puerta=False,
                  modos=("TRUCK", "TRUCK/RAIL", "TRUCK/BARGE"), marca_modo=True,
-                 destinos=(("CIUDAD GAMMA 10, PAIS [XXGAM 10]", "CIUDAD GALAXIA, PAIS [XXGAL]"),), marca_destino=True,
-                 no_aceptan=()):
+                 destinos=(("CIUDAD GAMMA 10, PAIS [XXGAM 10]", "CIUDAD GAMMAS, PAIS [XXGMS]"),), marca_destino=True,
+                 no_aceptan=(), filtra=False):
         super().__init__(texto="")
         self.eventos, self.escrito, self.texto_al_pulsar, self.no_aceptan = [], "", "", set(no_aceptan)
         self.puerta, self.puerta_activa, self.modo_abierto, self.modo, self.destino = False, False, False, "", ""
         self.puertas, self.dice, self.activa_puerta, self.marca_puerta = puertas, dice, activa_puerta, marca_puerta
         self.modos, self.marca_modo = list(modos), marca_modo
-        self.destinos, self.marca_destino = [list(d) for d in destinos], marca_destino
+        self.destinos, self.marca_destino, self.filtra = [list(d) for d in destinos], marca_destino, filtra
 
     def leer_destinos(self):
         if not self.escrito:
             return []
-        return self.destinos.pop(0) if len(self.destinos) > 1 else self.destinos[0]
+        lista = self.destinos.pop(0) if len(self.destinos) > 1 else self.destinos[0]
+        return [o for o in lista if o.upper().startswith(self.escrito.upper())] if self.filtra else lista
 
     def elige(self, lista, texto):
         if lista == "modo" and self.marca_modo:
@@ -3012,16 +3120,135 @@ class TestDestinoFinalMsc(ConRegistro):
         log = self.destino_final(pagina, nombre="msc_destino_radio")
         self.assertEqual(pagina.eventos, self.PASOS)
         self.assertIn("Port of Discharge: Door ✓ (etiqueta activa: no; radio marcado: sí)", log)
-        # La ciudad, con los espacios de a uno: la búsqueda del portal empieza por lo escrito.
+        # La ciudad se escribe con los espacios de la celda: el buscador del portal empieza por lo escrito, letra por
+        # letra, y el portal escribe algunos lugares con dos espacios («Ciudad␣␣ST, PAIS», medido en el HTML del colega
+        # del 03-11; encargo 94). Todo otro blanco (un salto de línea, un tabulador, un espacio duro), con los espacios
+        # de su lado, pasa a un espacio: escrito sería una tecla. Y sin el código del portal entre corchetes, con el que
+        # no trae nada. Se compara igual, con los espacios de a uno, en la ciudad y en cada opción. Hasta el encargo 94
+        # escribía la ciudad con los espacios de a uno, y con un lugar de dos espacios la lista volvía vacía.
+        for k, (final, escrito) in enumerate(((" CIUDAD  GAMMA , PAIS", "CIUDAD  GAMMA"),
+                                              ("CIUDAD\nGAMMA, PAIS", "CIUDAD GAMMA"),
+                                              ("CIUDAD\t GAMMA", "CIUDAD GAMMA"),
+                                              ("CIUDAD \n\t GAMMA", "CIUDAD GAMMA"),
+                                              (f"CIUDAD{chr(0xA0)}GAMMA", "CIUDAD GAMMA"),
+                                              ("CIUDAD  GAMMA [XXGAM 10]", "CIUDAD  GAMMA"),
+                                              ("CIUDAD GAMMA, PAIS [XXGAM 10]", "CIUDAD GAMMA"),
+                                              ("CIUDAD GAMMA [xxgam  10]", "CIUDAD GAMMA"),
+                                              # El código también antes de la primera coma, y el mismo en los dos
+                                              # lugares (revisión de seguridad del encargo 94).
+                                              ("CIUDAD GAMMA [XXGAM 10], PAIS", "CIUDAD GAMMA"),
+                                              ("CIUDAD GAMMA [XXGAM 10], PAIS [xxgam 10]", "CIUDAD GAMMA"),
+                                              # Hasta MSC_ESPACIOS_DE_MAS espacios de más, como vienen.
+                                              ("CIUDAD" + " " * 9 + "GAMMA", "CIUDAD" + " " * 9 + "GAMMA"))):
+            with self.subTest(final=final):
+                pagina = PaginaDestinoMsc()
+                log = self.destino_final(pagina, final=final, nombre=f"msc_destino_espacios_{k}")
+                self.assertEqual(pagina.eventos, [p if p[0] != "escribe" else (*p[:2], escrito) for p in self.PASOS])
+                self.assertIn("Destination 'CIUDAD GAMMA': CIUDAD GAMMA 10, PAIS [XXGAM 10]", log)
+                self.assertNotIn("espacios de más", log)
+        # Con más espacios de más, la escribe de entrada con los espacios de a uno: cada espacio es una tecla, y una
+        # celda con miles tardaba minutos en escribirse (revisión de seguridad del encargo 94).
+        self.assertEqual(self.mod.MSC_ESPACIOS_DE_MAS, 8)
         pagina = PaginaDestinoMsc()
-        self.destino_final(pagina, final=" CIUDAD  GAMMA , PAIS", nombre="msc_destino_espacios")
+        log = self.destino_final(pagina, final="CIUDAD" + " " * 10 + "GAMMA", nombre="msc_destino_espacios_de_mas")
         self.assertEqual(pagina.eventos, self.PASOS)
+        self.assertIn("Destination: la celda trae 9 espacios de más; la escribo con los espacios de a uno", log)
         # La lista del destino llega de a poco: decide con dos lecturas iguales seguidas, no con la primera.
         pagina = PaginaDestinoMsc(destinos=(("CIUDAD GAMMA 10, PAIS [XXGAM 10]", "CIUDAD GAMMA 20, PAIS [XXGAM 20]"),
                                             ("CIUDAD GAMMA 10, PAIS [XXGAM 10]",)))
         self.destino_final(pagina, nombre="msc_destino_de_a_poco")
         self.assertEqual(pagina.eventos, self.PASOS)
         self.assertEqual(self.mod.MSC_EN_CAMION, "TRUCK")
+
+    def test_la_lista_que_responde_a_lo_escrito_a_medias_no_vale(self):
+        # El portal busca en su servidor, mientras se escribe: dos lecturas iguales de la lista que respondió a lo
+        # escrito a medias (con una opción que no empieza por lo escrito) no valen, y espera la que responde a lo
+        # escrito entero. Así decidió el 03-11 a las 09:44, en el equipo de un colega, con 8 opciones que respondían a
+        # las primeras letras de la ciudad, y el HTML de un instante después trae las 4 de la ciudad (encargo 94). Aquí,
+        # con esas dos lecturas, decidía, y después, con la lista nueva, cortaba: «la lista cambió mientras la guardaba».
+        a_medias = ("CIUDAD GALAXIA, PAIS [XXGAL]", "CIUDAD GAMMA 10, PAIS [XXGAM 10]")
+        entera = ("CIUDAD GAMMA 10, PAIS [XXGAM 10]",)
+        pagina = PaginaDestinoMsc(destinos=(a_medias, a_medias, entera))
+        log = self.destino_final(pagina, nombre="msc_destino_a_medias")
+        self.assertEqual(pagina.eventos, self.PASOS)
+        self.assertIn("Destination: 1 de las 1 opciones a la vista calzan con «CIUDAD GAMMA»", log)
+        self.assertNotIn("la lista no llegó", log)
+        # Las mayúsculas y los espacios no cuentan: «Ciudad Delta 10» empieza por «CIUDAD DELTA», y «Ciudad␣␣ST», por
+        # «Ciudad ST».
+        pagina = PaginaDestinoMsc(destinos=(("ciudad  gamma 10, pais [XXGAM 10]",),))
+        log = self.destino_final(pagina, final="Ciudad Gamma", nombre="msc_destino_minusculas")
+        self.assertIn("Destination 'Ciudad Gamma': ciudad gamma 10, pais [XXGAM 10]", log)
+        self.assertNotIn("la lista no llegó", log)
+        # Si nunca llega a una así, decide con la última lectura, como antes, y log.txt lo dice.
+        pagina = PaginaDestinoMsc(destinos=(a_medias,))
+        log = self.destino_final(pagina, nombre="msc_destino_nunca_al_dia")
+        self.assertEqual(pagina.eventos, self.PASOS)
+        self.assertIn("Destination: la lista no llegó a traer solo opciones que empiecen por «CIUDAD GAMMA»; decido "
+                      "con la última lectura", log)
+        empieza = self.mod._msc_empieza_por
+        for sugerencia, escrito, esperado in (("Ciudad Delta 10, PAIS [XXDEL 10]", "CIUDAD DELTA", True),
+                                              ("Ciudad  ST, PAIS [XXCIU ST]", "Ciudad ST", True),
+                                              ("Ciudad ST, PAIS", "Ciudad  ST", True),
+                                              ("Ciudadela MI, PAIS [XXCDL MI]", "CIUDAD ALFA", False),
+                                              ("OTRA, CIUDAD GAMMA", "CIUDAD GAMMA", False)):
+            with self.subTest(sugerencia=sugerencia, escrito=escrito):
+                self.assertIs(empieza(sugerencia, escrito), esperado)
+
+    def test_una_celda_con_miles_de_espacios_no_se_cuelga(self):
+        # La expresión que pasa los blancos a un espacio empieza solo donde empieza una racha de blancos: sin eso, con
+        # 32.767 espacios (el tope de una celda de Excel) tardaba segundos, en proporción al cuadrado de la racha, y
+        # «Detener» no corta un cálculo en curso. Y la escribe con los espacios de a uno (revisión de seguridad del
+        # encargo 94).
+        pagina = PaginaDestinoMsc()
+        inicio = time.monotonic()
+        log = self.destino_final(pagina, final="CIUDAD" + " " * 50000 + "GAMMA", nombre="msc_destino_miles")
+        self.assertLess(time.monotonic() - inicio, 2.0)
+        self.assertEqual(pagina.eventos, self.PASOS)
+        self.assertIn("Destination: la celda trae 49999 espacios de más; la escribo con los espacios de a uno", log)
+
+    def test_con_otros_espacios_lo_escribe_de_a_uno(self):
+        # Si con los espacios de la celda la lista no trae nada, la escribe una vez con los espacios de a uno: una celda
+        # con un espacio de más por error, que hasta el encargo 94 funcionaba (revisión de código del encargo 94). La
+        # página falsa filtra como el buscador del portal: las que empiezan por lo escrito, espacios incluidos.
+        dos_espacios = [p if p[0] != "escribe" else (*p[:2], "CIUDAD  GAMMA") for p in self.PASOS[:7]]
+        reintento = [("borra", "campo del destino"), ("escribe", "campo del destino", "CIUDAD GAMMA")]
+        pagina = PaginaDestinoMsc(filtra=True)
+        log = self.destino_final(pagina, final="CIUDAD  GAMMA, PAIS", nombre="msc_destino_reintento")
+        self.assertEqual(pagina.eventos, dos_espacios + reintento + self.PASOS[7:])
+        self.assertIn("Destination: con «CIUDAD  GAMMA» la lista no trajo ninguna opción; lo escribo con los espacios "
+                      "de a uno", log)
+        self.assertIn("Destination 'CIUDAD GAMMA': CIUDAD GAMMA 10, PAIS [XXGAM 10]", log)
+        # Si el portal lo escribe con los mismos espacios de la celda, lo encuentra a la primera, sin volver a escribir.
+        pagina = PaginaDestinoMsc(filtra=True, destinos=(("CIUDAD  GAMMA 10, PAIS [XXGAM 10]",),))
+        log = self.destino_final(pagina, final="CIUDAD  GAMMA, PAIS", nombre="msc_destino_mismos_espacios")
+        self.assertEqual(pagina.eventos, dos_espacios + [("evidencia", "msc_f9_destino_final"),
+                                                         ("clic", "destino: CIUDAD  GAMMA 10, PAIS [XXGAM 10]")])
+        self.assertNotIn("lo escribo con los espacios de a uno", log)
+        # Si tampoco trae nada, corta, como con la lista vacía (NO ENVIADA, sin pulsar nada); y con los espacios de a
+        # uno en la celda no la vuelve a escribir.
+        for k, (final, eventos) in enumerate((("CIUDAD  GAMMA", dos_espacios + reintento),
+                                              ("CIUDAD GAMMA", self.PASOS[:7]))):
+            with self.subTest(final=final):
+                pagina = PaginaDestinoMsc(filtra=True, destinos=(("OTRA, PAIS [XXOTR]",),))
+                with self.assertRaises(self.mod.ObjetivoNoEncontrado) as c:
+                    self.destino_final(pagina, final=final, nombre=f"msc_destino_reintento_vacio_{k}")
+                self.assertIn("la lista no trajo ninguna opción", c.exception.buscaba)
+                self.assertEqual(pagina.eventos, eventos + [("evidencia", "msc_f9_destino_final")])
+        # Si el campo no acepta lo que vuelve a escribir, corta con lo que falló (el campo pudo quedar borrado).
+        llamadas = []
+
+        def fill(elem, v, **k):
+            llamadas.append(v)
+            if len(llamadas) > 1:
+                raise RuntimeError("el campo no acepta")
+            elem.pagina.eventos.append(("borra", elem.nombre))
+        pagina = PaginaDestinoMsc(filtra=True)
+        with mock.patch.object(ElemMsc, "fill", fill), self.assertRaises(self.mod.ObjetivoNoEncontrado) as c:
+            self.destino_final(pagina, final="CIUDAD  GAMMA", nombre="msc_destino_reintento_falla")
+        self.assertEqual(c.exception.paso, self.mod.MSC_PASO_DESTINO)
+        self.assertIn("para escribir «CIUDAD GAMMA»", c.exception.buscaba)
+        self.assertIn("el campo no acepta", c.exception.buscaba)
+        self.assertEqual(pagina.eventos, dos_espacios)
 
     def test_cada_paso_corta_sin_seguir(self):
         # Si algo no está, no es lo que dice o no queda, corta ahí (NO ENVIADA, con el paso y lo que buscaba), sin pulsar
@@ -3060,6 +3287,20 @@ class TestDestinoFinalMsc(ConRegistro):
             ("el destino no queda", dict(marca_destino=False), {}, m.MSC_PASO_DESTINO,
              "en el campo «Destination», después del clic", P),
             ("la celda sin una palabra", {}, {"final": "X"}, m.MSC_PASO_DESTINO, m._TEXTO_DE_LA_FILA, []),
+            # Sin el código del portal, la celda tiene que traer una palabra: el código no es la ciudad (revisión de
+            # código del encargo 94).
+            ("la celda solo con el código", {}, {"final": "X [XXGAM 10]"}, m.MSC_PASO_DESTINO, m._TEXTO_DE_LA_FILA, []),
+            ("la celda es el código", {}, {"final": "[XXGAM 10]"}, m.MSC_PASO_DESTINO, m._TEXTO_DE_LA_FILA, []),
+            # Con el código del portal en la celda, la opción tiene que terminar con ese mismo código (revisión de
+            # código del encargo 94).
+            ("el código de la celda es otro", {}, {"final": "CIUDAD GAMMA, PAIS [XXGAM 20]"}, m.MSC_PASO_DESTINO,
+             "hay 0 entre 2", P[:8]),
+            # También con el código antes de la primera coma; y con dos códigos distintos en la celda, corta antes de
+            # pulsar nada (revisión de seguridad del encargo 94).
+            ("el código antes de la coma es otro", {}, {"final": "CIUDAD GAMMA [XXGAM 20], PAIS"}, m.MSC_PASO_DESTINO,
+             "hay 0 entre 2", P[:8]),
+            ("dos códigos distintos", {}, {"final": "CIUDAD GAMMA [XXGAM 10], PAIS [XXGAM 20]"}, m.MSC_PASO_DESTINO,
+             "una celda con un solo código del portal (trae «[XXGAM 10]» y «[XXGAM 20]»)", []),
         ]
         for caso, (nombre, kw, extra, paso, buscaba, eventos) in enumerate(casos):
             with self.subTest(caso=nombre):

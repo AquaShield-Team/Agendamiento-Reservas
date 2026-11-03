@@ -4006,10 +4006,17 @@ def _cerrar_modal_one(page, reg, antes_de_la_guarda=True):
 # Diagnóstico + clic de la sugerencia real (excluye tarjetas frecuentes/patrón). Pulsa solo con [texto, true] (o con
 # el texto solo, como antes); con [texto, false] solo lee y devuelve la que pulsaría ('' si ninguna), sin pulsarla, para
 # dejar antes la evidencia de la lista (CICLO-origen-y-destino.md). La describe con su etiqueta, su clase, su posición y
-# su texto.
+# su texto. Con [texto, celda, marca], si una de las candidatas dice la celda entera (sin distinguir mayúsculas y con
+# los espacios de a uno), elige entre esas: la regla de siempre, la de más arriba que trae el texto, eligió un lugar de
+# otro país que empieza igual con la celda «<puerto>, CHILE (CY)», que ONE ofrecía más abajo (encargo 94,
+# CICLO-msc-puertos-del-portal.md). Con la celda, al pulsar dice al final si eligió por ella (« ENTERA») o, sin ninguna
+# que la diga entera, con la regla de siempre (« SIN-ENTERA»), para que log.txt lo diga (revisión de seguridad).
 _JS_PICK_SUGGESTION = """(a) => {
-    const [tok, pulsar] = Array.isArray(a) ? [a[0], a[1] === true] : [a, true];
+    const [tok, pulsar, celda] = !Array.isArray(a) ? [a, true, '']
+        : a.length > 2 ? [a[0], a[2] === true, a[1] || ''] : [a[0], a[1] === true, ''];
     const T = tok.toUpperCase();
+    const plano = (s) => (s || '').replace(/\\s+/g, ' ').trim().toUpperCase();
+    const E = plano(celda);
     // candidatos en la zona del formulario/desplegable (arriba), excluyendo tarjetas frecuentes
     const all = [...document.querySelectorAll('li,[role=option],[class*=option],[class*=item],[class*=menu] *,[class*=list] *,[class*=autocomplete] *,div,span,td,p')]
         .filter(e => {
@@ -4028,6 +4035,15 @@ _JS_PICK_SUGGESTION = """(a) => {
         && !e.closest('[class*=Frequent i],[class*=pattern i]')
         && e.getBoundingClientRect().top < 850);
     cand.sort((a,b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+    // La opción de la lista (role=option: en los 23 HTML de ONE guardados, solo sus botones, y ninguna tarjeta de
+    // reservas frecuentes) cuyo texto entero es la celda, también más abajo de los 850 px: la lista la deja ahí (la 7.ª
+    // de 9, a 866 px, en el portal). Nunca una tarjeta ni dentro de una de reservas frecuentes, como las de siempre.
+    const enteras = E ? all.filter(e => e.getAttribute && e.getAttribute('role') === 'option'
+        && !/frequent|pattern|summaryinfo|infobox|card/i.test((e.className||'').toString())
+        && !e.closest('[class*=Frequent i],[class*=pattern i]') && plano(e.textContent) === E) : [];
+    enteras.sort((a,b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+    if (enteras.length) cand = enteras;
+    const entera = E ? (enteras.length ? ' ENTERA' : ' SIN-ENTERA') : '';
     let clicked = '';
     if (cand.length) {
         const r = cand[0].getBoundingClientRect();
@@ -4035,7 +4051,7 @@ _JS_PICK_SUGGESTION = """(a) => {
         clicked = cand[0].tagName + '.' + (cand[0].className||'').toString().slice(0,24) + '#' + Math.round(r.top)
             + ' «' + (cand[0].textContent||'').trim().slice(0,45) + '»';
     }
-    return pulsar ? 'CLICK[' + clicked + '] CANDS[' + dump + ']' : clicked;
+    return pulsar ? 'CLICK[' + clicked + '] CANDS[' + dump + ']' + entera : clicked;
 }"""
 
 
@@ -4049,7 +4065,7 @@ def _texto_de_la_sugerencia(descripcion):
     return descripcion[i + 2:-1] if i >= 0 and descripcion.endswith("»") else descripcion
 
 
-def _fill_autocomplete(page, css, keyword, reg, etiqueta, evidencia=""):
+def _fill_autocomplete(page, css, keyword, reg, etiqueta, evidencia="", celda=""):
     """Escribe 'keyword' en un autocompletado (mag-list) y clica la sugerencia apenas aparece. Si no aparece, no
     pulsa nada y corta la reserva (ObjetivoNoEncontrado): hasta fb63271 elegía con el teclado (flecha abajo y Enter)
     la sugerencia que quedara primera, fuera cual fuera (CICLO-cola-nueve-items.md). Anota cuál pulsó.
@@ -4057,7 +4073,9 @@ def _fill_autocomplete(page, css, keyword, reg, etiqueta, evidencia=""):
     de la página y de sus marcos, con la lista: _JS_PICK_SUGGESTION, sin pulsar, dice si hay una que pulsaría (decisión
     de Marcelo, CICLO-origen-y-destino.md); y después del clic, _avisar_lista_distinta, con solo el texto de cada una
     (_texto_de_la_sugerencia). Sin una palabra antes de la primera coma (_ciudad_de: vacío, «-», «X») no escribe ni
-    pulsa nada: corta (_TEXTO_DE_LA_FILA; encargo 42), porque calzaba con cualquier sugerencia que lo trajera."""
+    pulsa nada: corta (_TEXTO_DE_LA_FILA; encargo 42), porque calzaba con cualquier sugerencia que lo trajera.
+    Con 'celda' (la del puerto, cuando trae algo después de su primera coma), si una sugerencia la dice entera, elige
+    esa (_JS_PICK_SUGGESTION; encargo 94); si ninguna, elige con la regla de siempre, y log.txt lo dice."""
     if not _ciudad_de(keyword):
         raise ObjetivoNoEncontrado(f"{etiqueta} de ONE", _TEXTO_DE_LA_FILA)
     try:
@@ -4076,18 +4094,19 @@ def _fill_autocomplete(page, css, keyword, reg, etiqueta, evidencia=""):
         except Exception: pass
         inp.type(keyword, delay=80)
         tok = keyword.split(",")[0].strip()
+        con = [tok, celda] if celda else [tok]
         # Sondea hasta ~3.5s: avanza apenas la sugerencia es clicable
         info = ""; clic_ok = False; pendiente = bool(evidencia); vista = ""
         for _ in range(9):
             esperar(page, 0.4)
             if pendiente:
-                vista = " ".join(str(_sugerencia_sin_pulsar(page, _JS_PICK_SUGGESTION, [tok])).split())
+                vista = " ".join(str(_sugerencia_sin_pulsar(page, _JS_PICK_SUGGESTION, con)).split())
                 if vista:
                     _evidencia_antes_de_la_guarda(page, reg, evidencia, f"con las sugerencias de {etiqueta}",
                                                   completa=False)
                     pendiente = False
             try:
-                info = page.evaluate(_JS_PICK_SUGGESTION, [tok, True])
+                info = page.evaluate(_JS_PICK_SUGGESTION, con + [True])
             except Exception as e:
                 info = f"err {str(e)[:50]}"
             if ("CLICK[" in info) and ("CLICK[]" not in info):
@@ -4099,6 +4118,9 @@ def _fill_autocomplete(page, css, keyword, reg, etiqueta, evidencia=""):
             raise ObjetivoNoEncontrado(f"{etiqueta} de ONE", f"la sugerencia «{tok}» en la lista del autocompletado")
         pulsada = " ".join(info[info.index("CLICK[") + 6:info.rfind("] CANDS[")].split())
         reg.info(f"{etiqueta} ('{keyword}'): sugerencia seleccionada: {pulsada}")
+        if celda and info.endswith(" SIN-ENTERA"):
+            reg.info(f"{etiqueta}: ninguna sugerencia dice la celda entera «{celda[:60]}»; elegí con la regla de "
+                     f"siempre, la de más arriba que trae «{tok}»")
         _avisar_lista_distinta(reg, etiqueta, evidencia, _texto_de_la_sugerencia(vista),
                                _texto_de_la_sugerencia(pulsada), pendiente)
         esperar(page, 0.4)
@@ -4110,8 +4132,12 @@ def _fill_autocomplete(page, css, keyword, reg, etiqueta, evidencia=""):
 
 def _fill_port(page, css, valor, reg, etiqueta, evidencia=""):
     """Escribe la CIUDAD del puerto para disparar el autocompletado y clica la sugerencia; con 'evidencia', antes deja
-    la de la lista (_fill_autocomplete)."""
-    return _fill_autocomplete(page, css, valor.split(",")[0].strip(), reg, etiqueta, evidencia=evidencia)
+    la de la lista (_fill_autocomplete). Si la celda trae algo después de su primera coma, se la pasa entera: una
+    sugerencia que la dice entera gana (encargo 94). La ciudad va con los espacios de a uno: un salto de línea en la
+    celda sería la tecla Enter en la lista (revisión de seguridad del encargo 94)."""
+    ciudad, _, despues = valor.partition(",")
+    return _fill_autocomplete(page, css, " ".join(ciudad.split()), reg, etiqueta, evidencia=evidencia,
+                              celda=" ".join(valor.split()) if despues.strip() else "")
 
 
 def _fill_texto_por_label(page, regex_label, valor, reg, etiqueta):
@@ -5268,6 +5294,24 @@ def _msc_esperar_paso(page, tab, seg, reg, motivo="", minimo=0.6):
     return False
 
 
+def _msc_sin_codigo(texto):
+    """'texto' sin el código entre corchetes con que MSC termina el nombre de un lugar en sus listas («PUERTO BETA
+    [XXBET]», «Ciudad Gamma 13, PAIS [XXGAM 13]»), y sin los espacios de los extremos. El buscador del portal busca por
+    el nombre, y con el código escrito no trae nada: en las corridas de un colega del 03-11, con un puerto escrito con
+    su código, el HTML no trae la lista de «Port of Discharge», y con el nombre solo, trae una sola opción, la que dice
+    la celda letra por letra (encargo 94, CICLO-msc-puertos-del-portal.md). La expresión empieza solo donde empieza
+    una racha de blancos (mira hacia atrás que no haya otro): sin eso, una celda con miles de espacios seguidos tardaba
+    en proporción al cuadrado de la racha (revisión de seguridad del encargo 94)."""
+    return _re_mk.sub(r"(?<!\s)\s*\[[^\[\]]*\]\s*$", "", str(texto or "")).strip()
+
+
+def _msc_codigo(texto):
+    """El código entre corchetes con que termina 'texto' («[XXGAM 13]»), en mayúsculas y con los espacios de a uno, o
+    "" si no trae uno (_msc_destino_final: la opción elegida tiene que terminar con él; encargo 94)."""
+    m = _re_mk.search(r"\[[^\[\]]*\]\s*$", str(texto or ""))
+    return " ".join(m.group(0).split()).upper() if m else ""
+
+
 def _msc_puerto(page, name, ciudad, reg, etiqueta, evidencia=""):
     """Escribe la ciudad en un autocompletado de puerto de MSC y elige la sugerencia. Si ninguna dice la ciudad, no
     pulsa nada y corta la reserva (ObjetivoNoEncontrado): hasta fb63271 elegía con el teclado la que quedara
@@ -5276,8 +5320,14 @@ def _msc_puerto(page, name, ciudad, reg, etiqueta, evidencia=""):
     ventana y el HTML de la página y de sus marcos, con la lista: el mismo JavaScript, sin pulsar, dice si hay una que
     pulsaría (decisión de Marcelo, CICLO-origen-y-destino.md); y después del clic, _avisar_lista_distinta.
     Sin una palabra antes de la primera coma (_ciudad_de: vacío, «-», «X») no escribe ni pulsa nada: corta
-    (_TEXTO_DE_LA_FILA; encargo 42), porque calzaba con cualquier sugerencia que lo trajera."""
-    if not _ciudad_de(ciudad):
+    (_TEXTO_DE_LA_FILA; encargo 42), porque calzaba con cualquier sugerencia que lo trajera.
+    Si la celda trae el código del portal entre corchetes, como la muestra la lista («PUERTO BETA [XXBET]»), escribe el
+    nombre sin el código (_msc_sin_codigo), y el JavaScript busca la celda con su código: elige solo la sugerencia que
+    la dice entera (encargo 94). Hasta ahí escribía la celda entera, y el portal no traía ninguna sugerencia.
+    Escribe con los espacios de a uno: un salto de línea en la celda sería la tecla Enter en la lista, como ya cuidaba
+    el puerto de descarga aparte (revisión de seguridad del encargo 94)."""
+    escrito = " ".join(_msc_sin_codigo(ciudad).split())
+    if not _ciudad_de(escrito):
         raise ObjetivoNoEncontrado(f"{etiqueta} de MSC", _TEXTO_DE_LA_FILA)
     # [ciudad, pulsar]: pulsa solo con pulsar en true; con false, solo dice cuál pulsaría ('' si ninguna).
     js = """(args)=>{
@@ -5296,7 +5346,7 @@ def _msc_puerto(page, name, ciudad, reg, etiqueta, evidencia=""):
         inp.click()
         try: inp.fill("")
         except Exception: pass
-        inp.type(ciudad, delay=90)
+        inp.type(escrito, delay=90)
         picked, vista = "", ""
         pendiente = bool(evidencia)
         for _ in range(8):     # sondea hasta ~3.2s
@@ -5898,8 +5948,12 @@ MSC_LISTAS_DEL_DESTINO = ((MSC_MODO_DE_ENTREGA, "On-carriage mode"), (MSC_DESTIN
 MSC_PASO_PUERTA = "Door del puerto de descarga de MSC"
 MSC_PASO_MODO = "On-carriage mode de MSC"
 MSC_PASO_DESTINO = "Destination de MSC"
-MSC_LECTURAS_LISTA = 16     # lecturas de una lista, cada 0,5 s, hasta que dos seguidas den lo mismo (8 s; hipótesis)
+MSC_LECTURAS_LISTA = 16     # lecturas de una lista, cada 0,5 s, hasta que dos seguidas den lo mismo, y en «Destination»
+                            # al día con lo escrito (_msc_elegir_de_lista, al_dia; 8 s; hipótesis)
 MSC_VUELTAS_CAMPO = 10      # lecturas de lo que dejó un clic, cada 0,5 s (5 s; hipótesis)
+MSC_ESPACIOS_DE_MAS = 8     # espacios de más con que se escribe el destino final tal como viene en su celda; con más, de
+                            # a uno (_msc_destino_final; hipótesis: el portal escribe un lugar con algún espacio de más,
+                            # no con decenas)
 
 
 def _msc_calza_el_destino(sugerencia, ciudad):
@@ -5910,6 +5964,13 @@ def _msc_calza_el_destino(sugerencia, ciudad):
     «PARIS»): las dos, de las revisiones del encargo 86."""
     s, c = str(sugerencia or "").upper(), str(ciudad or "").upper()
     return bool(c) and s.startswith(c) and not s[len(c):len(c) + 1].isalnum()
+
+
+def _msc_empieza_por(sugerencia, escrito):
+    """Si una opción de «Destination» de MSC empieza por lo escrito, sin distinguir mayúsculas y con los espacios de a
+    uno en las dos. El portal busca en su servidor las que empiezan por lo escrito («filter: startswith»), así que una
+    lista con una opción que no empieza por él todavía responde a lo escrito a medias (encargo 94)."""
+    return " ".join(str(sugerencia or "").split()).upper().startswith(" ".join(str(escrito or "").split()).upper())
 
 
 def _msc_hasta(page, condicion):
@@ -5946,14 +6007,10 @@ def _msc_opciones(page, lista):
     return op, [" ".join((t or "").split()) for t in op.all_text_contents()]
 
 
-def _msc_elegir_de_lista(page, reg, lista, calza, buscado, paso, nombre, evidencia):
-    """Con la lista del combobox 'lista' ya abierta, la lee hasta que dos lecturas seguidas den lo mismo, no vacías
-    (hasta MSC_LECTURAS_LISTA, cada 0,5 s), deja su evidencia ('evidencia': la captura de la ventana y el HTML de la
-    página y de sus marcos) y pulsa la única opción que calza ('calza', sobre su texto en una línea). Si no hay
-    exactamente una, si la lista cambió mientras guardaba la evidencia, o si la opción ya no dice lo mismo o no acepta
-    el clic, corta sin pulsar nada (ObjetivoNoEncontrado, con 'paso'): la reserva queda NO ENVIADA. Devuelve el texto
-    de la que pulsó. Es la regla de MAERSK con su contenedor (_mk_elegir_unica): una sola, y el clic va a la opción
-    misma (encargo 86)."""
+def _msc_lista_quieta(page, reg, lista, nombre, buscado, al_dia):
+    """Lee la lista del combobox 'lista' hasta que dos lecturas seguidas den lo mismo, no vacías, y, con 'al_dia', que
+    al_dia(textos) sea verdadero (hasta MSC_LECTURAS_LISTA, cada 0,5 s). Devuelve el localizador y los textos de la
+    última lectura; si no llegó a una al día, log.txt lo dice (_msc_elegir_de_lista)."""
     op, textos, anterior = None, [], None
     for _ in range(MSC_LECTURAS_LISTA):
         esperar(page, 0.5)
@@ -5961,9 +6018,34 @@ def _msc_elegir_de_lista(page, reg, lista, calza, buscado, paso, nombre, evidenc
             op, textos = _msc_opciones(page, lista)
         except Exception:
             op, textos = None, []
-        if textos and textos == anterior:
+        if textos and textos == anterior and (al_dia is None or al_dia(textos)):
             break
         anterior = textos
+    else:
+        if textos and al_dia is not None and not al_dia(textos):
+            reg.info(f"{nombre}: la lista no llegó a traer solo opciones que empiecen por «{buscado}»; decido con "
+                     f"la última lectura")
+    return op, textos
+
+
+def _msc_elegir_de_lista(page, reg, lista, calza, buscado, paso, nombre, evidencia, al_dia=None, otra_vez=None):
+    """Con la lista del combobox 'lista' ya abierta, la lee hasta que dos lecturas seguidas den lo mismo, no vacías
+    (hasta MSC_LECTURAS_LISTA, cada 0,5 s), deja su evidencia ('evidencia': la captura de la ventana y el HTML de la
+    página y de sus marcos) y pulsa la única opción que calza ('calza', sobre su texto en una línea). Si no hay
+    exactamente una, si la lista cambió mientras guardaba la evidencia, o si la opción ya no dice lo mismo o no acepta
+    el clic, corta sin pulsar nada (ObjetivoNoEncontrado, con 'paso'): la reserva queda NO ENVIADA. Devuelve el texto
+    de la que pulsó. Es la regla de MAERSK con su contenedor (_mk_elegir_unica): una sola, y el clic va a la opción
+    misma (encargo 86).
+    Con 'al_dia' (una función sobre los textos), dos lecturas iguales valen solo si al_dia(textos) es verdadero: la
+    lista de «Destination» llega del servidor, que mientras se escribe responde a lo escrito a medias (encargo 94: en
+    la corrida de un colega del 03-11 a las 09:44, con una ciudad escrita, el programa decidió con 8 opciones que
+    respondían a sus primeras letras, y el HTML de un instante después trae las 4 de la ciudad). Si no llega a una así
+    en MSC_LECTURAS_LISTA lecturas, decide con la última, como antes, y log.txt lo dice.
+    Con 'otra_vez' (una función que vuelve a escribir y dice si lo hizo), si la lista no trajo ninguna opción, la llama
+    una vez y la vuelve a leer (encargo 94: el destino final con otros espacios)."""
+    op, textos = _msc_lista_quieta(page, reg, lista, nombre, buscado, al_dia)
+    if not textos and otra_vez is not None and otra_vez():
+        op, textos = _msc_lista_quieta(page, reg, lista, nombre, buscado, al_dia)
     _evidencia_antes_de_la_guarda(page, reg, evidencia, f"con la lista de «{nombre}»", completa=False)
     calzan = [i for i, t in enumerate(textos) if calza(t)]
     reg.info(f"{nombre}: {len(calzan)} de las {len(textos)} opciones a la vista calzan con «{buscado}»")
@@ -6002,11 +6084,34 @@ def _msc_destino_final(page, reg, fila, final):
     seguir; si algo no está o no queda, corta sin pulsar nada más (ObjetivoNoEncontrado): la reserva queda NO ENVIADA.
     El destino se elige con la regla del encargo: la única sugerencia a la vista que empieza por lo escrito como palabra
     entera (_msc_calza_el_destino; lo escrito es la ciudad, como en los puertos de MSC, _msc_puerto: la parte antes de la
-    primera coma, con los espacios de a uno); con ninguna o con más de una, NO ENVIADA. Deja la evidencia de las dos
-    listas (msc_f<fila>_modo y msc_f<fila>_destino_final)."""
-    ciudad = " ".join(_ciudad_de(final).split())
-    if not ciudad:
+    primera coma); con ninguna o con más de una, NO ENVIADA. Deja la evidencia de las dos listas (msc_f<fila>_modo y
+    msc_f<fila>_destino_final).
+    La ciudad se escribe con los espacios que trae la celda (a diferencia de los puertos, que van con los espacios de a
+    uno), sin el código del portal entre corchetes (_msc_sin_codigo), y todo otro blanco (un salto de línea, un
+    tabulador, un espacio duro), con los espacios de su lado, pasa a un espacio: escrito sería una tecla (encargo 94).
+    El buscador del portal empieza por lo escrito, letra por letra, y el portal escribe algunos lugares con dos
+    espacios, como «Ciudad␣␣ST, PAIS [XXCIU ST]» (medido en el HTML de las corridas de un colega del 03-11): con los
+    espacios de a uno, como hasta ahí, la lista volvía vacía. Si con los espacios de la celda la lista no trae nada, la
+    escribe una vez con los espacios de a uno: una celda con un espacio de más por error, que antes funcionaba
+    (revisión de código del encargo 94). Con más de MSC_ESPACIOS_DE_MAS espacios de más, la escribe así de entrada:
+    cada espacio es una tecla, y una celda con miles tardaba minutos en escribirse (revisión de seguridad). Se compara
+    con los espacios de a uno, en la ciudad y en cada opción, como antes; y si la celda trae el código del portal, al
+    final o antes de su primera coma, la opción tiene que terminar con ese mismo código (con dos códigos distintos,
+    corta: revisión de seguridad del encargo 94)."""
+    pieza = _re_mk.sub(r"(?<!\s)\s*[^\S ]\s*", " ", _ciudad_de(final))
+    escrito = _msc_sin_codigo(pieza)
+    ciudad = " ".join(escrito.split())
+    if not _ciudad_de(ciudad):
         raise ObjetivoNoEncontrado(MSC_PASO_DESTINO, _TEXTO_DE_LA_FILA)
+    cod_pieza, cod_final = _msc_codigo(pieza), _msc_codigo(final)
+    if cod_pieza and cod_final and cod_pieza != cod_final:
+        raise ObjetivoNoEncontrado(MSC_PASO_DESTINO, f"una celda con un solo código del portal (trae «{cod_pieza}» y "
+                                                     f"«{cod_final}»)")
+    codigo = cod_final or cod_pieza
+    if len(escrito) - len(ciudad) > MSC_ESPACIOS_DE_MAS:
+        reg.info(f"Destination: la celda trae {len(escrito) - len(ciudad)} espacios de más; la escribo con los "
+                 f"espacios de a uno")
+        escrito = ciudad
     reg.paso(f"Destino final aparte del puerto: {final} (Door, {MSC_EN_CAMION})...")
     # «Door», en los radios del puerto de descarga: su etiqueta, por su id y su texto.
     puerta = _msc_unico_a_la_vista(page, f"#{MSC_DESCARGA_A_PUERTA}Label", MSC_PASO_PUERTA,
@@ -6061,13 +6166,29 @@ def _msc_destino_final(page, reg, fila, final):
     try:
         campo.click(timeout=4000)
         campo.fill("", timeout=3000)
-        campo.type(ciudad, delay=90)
+        campo.type(escrito, delay=90)
     except Exception as e:
         raise ObjetivoNoEncontrado(MSC_PASO_DESTINO, f"el campo «Destination», para escribir «{ciudad}» "
                                                      f"({_texto_error(e)})")
     esperar(page, 1.0)
-    elegida = _msc_elegir_de_lista(page, reg, MSC_DESTINO_FINAL, lambda t: _msc_calza_el_destino(t, ciudad), ciudad,
-                                   MSC_PASO_DESTINO, "Destination", f"msc_f{fila}_destino_final")
+
+    def otra_vez():
+        if escrito == ciudad:
+            return False
+        reg.info(f"Destination: con «{escrito}» la lista no trajo ninguna opción; lo escribo con los espacios de a uno")
+        try:
+            campo.fill("", timeout=3000)
+            campo.type(ciudad, delay=90)
+        except Exception as e:
+            raise ObjetivoNoEncontrado(MSC_PASO_DESTINO, f"el campo «Destination», para escribir «{ciudad}» "
+                                                         f"({_texto_error(e)})")
+        esperar(page, 1.0)
+        return True
+    elegida = _msc_elegir_de_lista(page, reg, MSC_DESTINO_FINAL,
+                                   lambda t: _msc_calza_el_destino(t, ciudad) and t.upper().endswith(codigo), ciudad,
+                                   MSC_PASO_DESTINO, "Destination", f"msc_f{fila}_destino_final",
+                                   al_dia=lambda textos: all(_msc_empieza_por(t, ciudad) for t in textos),
+                                   otra_vez=otra_vez)
     if not _msc_hasta(page, lambda: " ".join(campo.input_value(timeout=1000).split()) == elegida):
         raise ObjetivoNoEncontrado(MSC_PASO_DESTINO, f"«{elegida[:45]}» en el campo «Destination», después del clic")
     reg.info(f"Destination '{ciudad}': {elegida}")

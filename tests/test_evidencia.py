@@ -1341,7 +1341,7 @@ class PaginaSugerencias(Pantalla):
         if js == m._JS_COSCO_AUTO_PICK:
             pulsa = len(args) > 2 and args[2] is True
         else:
-            pulsa = len(args) > 1 and args[1] is True
+            pulsa = len(args) > 1 and args[-1] is True        # ONE, con la celda: [texto, celda, marca] (encargo 94)
         if not pulsa and self.lectura_falla:
             raise RuntimeError("la página cambió")
         if pulsa and self.al_pulsar:
@@ -2012,3 +2012,70 @@ class TestListaDeSugerencias(ConRegistro):
                                       ["PUERTO ALFA, PAIS", [0, 0]], ["PUERTO ALFA, PAIS", [0, 1]],
                                       ["PUERTO ALFA, PAIS", [0, 1]], ["PUERTO ALFA NORTE", [0, 0]],
                                       ["PUERTO ALFA NORTE", [1, 0]], ["", [0]], ["PUERTO ALFA NORTE", [0, 0]]])
+
+    def test_js_one_elige_la_que_dice_la_celda_entera(self):
+        # Con [texto, celda, marca], si una opción de la lista (role=option) dice la celda entera (sin distinguir
+        # mayúsculas y con los espacios de a uno), ONE elige entre esas; si ninguna, la de siempre: la de más arriba que
+        # trae el texto. Así, con la celda «<puerto>, CHILE (CY)», ya no elige el lugar de otro país que empieza igual y
+        # que ONE ofrecía más arriba (encargo 94). Con [texto, marca] o el texto solo, como antes. La de más arriba es la
+        # última de la lista (su top es el menor).
+        guion = (
+            "const el = (t, i) => ({tagName: 'BUTTON', className: 'opcion', textContent: t, offsetParent: {}, clics: 0,\n"
+            "  children: {length: 0}, getBoundingClientRect: () => ({top: 300 - 100 * i, height: 20}),\n"
+            "  getAttribute: (n) => (n === 'role' ? 'option' : null), closest: () => null, click() { this.clics++; }});\n"
+            "const correr = (f, textos, arg) => {\n"
+            "  const els = textos.map(el);\n"
+            "  global.document = {querySelectorAll: () => els};\n"
+            "  return [f(arg), els.map(e => e.clics)];\n"
+            "};\n"
+            f"const one = {self.mod._JS_PICK_SUGGESTION};\n"
+            "const lista = ['PUERTO ALFA, CHILE (CY)', 'PUERTO ALFA, CHILE (DOOR)', 'PUERTO ALFA DE ARRIBA, OTRO (DOOR)'];\n"
+            "const r = [\n"
+            "  correr(one, lista, ['PUERTO ALFA', 'PUERTO ALFA, CHILE (CY)', true]),\n"
+            "  correr(one, lista, ['PUERTO ALFA', ' puerto  alfa, chile (cy) ', false]),\n"
+            "  correr(one, lista, ['PUERTO ALFA', 'PUERTO ALFA, CHILE', true]),\n"
+            "  correr(one, lista, ['PUERTO ALFA', true]),\n"
+            "  correr(one, lista, ['PUERTO ALFA', '', true]),\n"
+            "  correr(one, lista, 'PUERTO ALFA'),\n"
+            "];\n"
+            # La lista puede dejar la de la celda más abajo de los 850 px que miran las candidatas de siempre: en el
+            # portal, el 03-11, la 7.ª de 9, a 866 px. Una tarjeta de reservas frecuentes con el mismo texto no cuenta,
+            # aunque fuera una opción (en lo medido, ninguna lo es); y lo que no es una opción de la lista (un texto de
+            # la página que dice lo mismo, sin role=option), tampoco: más abajo de los 850 px, queda la de siempre
+            # (revisión de código del encargo 94). Tampoco una tarjeta (la clase de una tarjeta, como en la regla de
+            # siempre), aunque fuera una opción (revisión de seguridad). Al pulsar con la celda, el JavaScript termina
+            # con « ENTERA» si eligió por ella, y con « SIN-ENTERA» si eligió con la regla de siempre.
+            "const conTop = (t, top, o = {}) => ({tagName: 'BUTTON', className: o.clase || 'opcion',\n"
+            "  textContent: t, offsetParent: {}, clics: 0, children: {length: 0},\n"
+            "  getBoundingClientRect: () => ({top, height: 20}),\n"
+            "  getAttribute: (n) => (n === 'role' ? (o.rol === undefined ? 'option' : o.rol) : null),\n"
+            "  closest: (s) => (o.dentro && /Frequent/.test(s) ? {} : null), click() { this.clics++; }});\n"
+            "const conTops = (f, els, arg) => { global.document = {querySelectorAll: () => els};\n"
+            "  return [f(arg), els.map(e => e.clics)]; };\n"
+            "const celda = ['PUERTO ALFA', 'PUERTO ALFA, CHILE (CY)', true];\n"
+            "const abajo = [\n"
+            "  conTops(one, [conTop('PUERTO ALFA DE ARRIBA, OTRO (DOOR)', 626), conTop('PUERTO ALFA, CHILE (CY)', 866)],\n"
+            "          celda),\n"
+            "  conTops(one, [conTop('PUERTO ALFA, CHILE (CY)', 100, {dentro: true}),\n"
+            "                conTop('PUERTO ALFA DE ARRIBA, OTRO (DOOR)', 626), conTop('PUERTO ALFA, CHILE (CY)', 866)],\n"
+            "          celda),\n"
+            "  conTops(one, [conTop('PUERTO ALFA, CHILE (CY)', 100, {clase: 'BookingCard_item'}),\n"
+            "                conTop('PUERTO ALFA DE ARRIBA, OTRO (DOOR)', 626), conTop('PUERTO ALFA, CHILE (CY)', 866)],\n"
+            "          celda),\n"
+            "  conTops(one, [conTop('PUERTO ALFA DE ARRIBA, OTRO (DOOR)', 626),\n"
+            "                conTop('PUERTO ALFA, CHILE (CY)', 866, {rol: null})], celda),\n"
+            # Con dos opciones que dicen la celda, la de más arriba, como la regla de siempre.
+            "  conTops(one, [conTop('PUERTO ALFA, CHILE (CY)', 900), conTop('PUERTO ALFA, CHILE (CY)', 866)], celda),\n"
+            "];\n"
+            "console.log(JSON.stringify([r, abajo]));\n")
+        r, abajo = correr_node(self, guion)
+        exacta, arriba = "BUTTON.opcion#300 «PUERTO ALFA, CHILE (CY)»", "BUTTON.opcion#100 «PUERTO ALFA DE ARRIBA, OTRO (DOOR)»"
+        cands = "CANDS[BUTTON.opcion#300  BUTTON.opcion#200  BUTTON.opcion#100]"
+        self.assertEqual(r, [[f"CLICK[{exacta}] {cands} ENTERA", [1, 0, 0]], [exacta, [0, 0, 0]],
+                             [f"CLICK[{arriba}] {cands} SIN-ENTERA", [0, 0, 1]], [f"CLICK[{arriba}] {cands}", [0, 0, 1]],
+                             [f"CLICK[{arriba}] {cands}", [0, 0, 1]], [f"CLICK[{arriba}] {cands}", [0, 0, 1]]])
+        la_866 = "CLICK[BUTTON.opcion#866 «PUERTO ALFA, CHILE (CY)»]"
+        la_626 = "CLICK[BUTTON.opcion#626 «PUERTO ALFA DE ARRIBA, OTRO (DOOR)»]"
+        self.assertEqual([(x[0].split(" CANDS")[0], x[0].rsplit("]", 1)[1], x[1]) for x in abajo],
+                         [(la_866, " ENTERA", [0, 1]), (la_866, " ENTERA", [0, 0, 1]), (la_866, " ENTERA", [0, 0, 1]),
+                          (la_626, " SIN-ENTERA", [1, 0]), (la_866, " ENTERA", [0, 1])])
