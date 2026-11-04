@@ -45,7 +45,9 @@ def con_contratos(caso, contratos):
 
 # Dónde pide cada naviera su contrato por defecto (función, llave): una por cada valor que estaba escrito en el
 # programa hasta el encargo 44 (HYUNDAI, en sus dos pasos).
-LLAMADAS_CONTRATO = [("_determinar_contrato_one", "one_otros"), ("_determinar_contrato_one", "one_usa"),
+LLAMADAS_CONTRATO = [("_contrato_por_defecto_a_la_vista", "msc"), ("_contrato_por_defecto_a_la_vista", "one_otros"),
+                     ("_contrato_por_defecto_a_la_vista", "one_usa"),   # lo que muestra Credenciales (encargo 96)
+                     ("_determinar_contrato_one", "one_otros"), ("_determinar_contrato_one", "one_usa"),
                      ("_hmm_contrato", "hyundai"), ("reservar_msc", "msc")]
 
 

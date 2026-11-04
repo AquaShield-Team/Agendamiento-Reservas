@@ -1702,6 +1702,67 @@ class TestLoQueFaltaALaVista(soporte.CasoAQ):
                          [[1, texto, 0, "", ["⚠ " + texto, False], [[texto, "f-alerta", "REVISAR"]], None, 1],
                           [2, sin_operador, ["", True]], [3, ""]])
 
+    def test_la_casilla_contrato_muestra_el_por_defecto_en_gris(self):
+        # La casilla «Contrato» lleva el contrato por defecto (n.por_defecto, de /api/credenciales) como texto de
+        # ayuda, en gris, y su valor sigue siendo el del operador (decisión de Marcelo, encargo 96). Sin uno, la casilla
+        # queda como hoy, sin texto de ayuda: el negativo.
+        abrir = self.trozo(r"^async function abrirCred\(usuario, yaAbierto\) \{\n.*?\n\}\n")
+        navieras = [
+            {"clave": "one", "nombre": "ONE", "usuario": "", "contrato": "", "tiene_clave": False,
+             "por_defecto": "por defecto: USA CT-1 · otros CT-2"},
+            {"clave": "msc", "nombre": "MSC", "usuario": "u", "contrato": "CT-PROPIO", "tiene_clave": True,
+             "por_defecto": "por defecto: CT-3"},
+            {"clave": "hyundai", "nombre": "HYUNDAI", "usuario": "", "contrato": "", "tiene_clave": False,
+             "por_defecto": 'por defecto: "<b>x</b>'},
+            {"clave": "cma", "nombre": "CMA-CGM", "usuario": "", "contrato": "", "tiene_clave": False,
+             "por_defecto": ""}]
+        guion = (DOM_FALSO + self.funciones() + "let CRED = null; const dlg = $('#dlg-cred');\n" + abrir +
+                 "(async () => {\n"
+                 "  RESPUESTAS['/api/credenciales'] = { operadores: ['usuario1'], navieras: "
+                 + json.dumps(navieras) + " };\n"
+                 "  await abrirCred('usuario1');\n"
+                 "  console.log(JSON.stringify($('#cred-filas').innerHTML));\n"
+                 "})();\n")
+        html = correr_node(self, guion)
+        casillas = dict(re.findall(r'<tr data-nav="(\w+)">.*?<input data-c="contrato"([^>]*)>', html, re.S))
+        self.assertEqual(casillas, {
+            "one": ' value="" autocomplete="off" placeholder="por defecto: USA CT-1 · otros CT-2"'
+                   ' title="por defecto: USA CT-1 · otros CT-2"',
+            "msc": ' value="CT-PROPIO" autocomplete="off" placeholder="por defecto: CT-3" title="por defecto: CT-3"',
+            "hyundai": ' value="" autocomplete="off" placeholder="por defecto: &quot;&lt;b&gt;x&lt;/b&gt;"'
+                       ' title="por defecto: &quot;&lt;b&gt;x&lt;/b&gt;"',
+            "cma": ' value="" autocomplete="off"'})
+        # Gris: el texto de ayuda de las casillas de Credenciales va en el color atenuado, como el de la clave. Y la
+        # columna Contrato tiene lugar para los dos de ONE (medido en Chromium: 297 px de texto a 1366 px; 218 antes).
+        for regla in (".rs-cred input::placeholder { color: var(--text-muted); font-style: italic; }",
+                      "#dlg-cred { width: min(960px, 92vw); }",
+                      ".rs-cred th:last-child, .rs-cred td:last-child { width: 36%; }"):
+            with self.subTest(regla=regla):
+                self.assertEqual(self.mod.CSS_INDEX.count(regla), 1)
+
+    def test_guardar_no_escribe_el_contrato_por_defecto(self):
+        # Al guardar, cada casilla manda su valor: la vacía, vacía, aunque muestre el contrato por defecto en gris.
+        guardar = self.trozo(r'^\$\("#cred-guardar"\)\.onclick = async \(\) => \{\n.*?\n\};\n')
+        guion = (DOM_FALSO + self.funciones() +
+                 "let CRED = null; const dlg = $('#dlg-cred'); dlg.close = () => {};\n"
+                 "async function leerSinContrato() {}\nfunction pintarContrato() {}\n" + guardar +
+                 "(async () => {\n"
+                 "  $('#cred-op').value = 'usuario1';\n"
+                 "  const fila = (nav, valores) => ({ dataset: { nav }, querySelector: s => {\n"
+                 "    const c = /data-c=\"(\\w+)\"/.exec(s)[1];\n"
+                 "    return { value: valores[c], placeholder: c === 'contrato' ? 'por defecto: CT-9' : '' }; } });\n"
+                 "  MARCADAS = [fila('one', { usuario: 'u', clave: '', contrato: '' }),\n"
+                 "              fila('msc', { usuario: '', clave: 'k', contrato: ' CT-PROPIO ' })];\n"
+                 "  let cuerpo = null;\n"
+                 "  api = async (ruta, o) => { cuerpo = JSON.parse(o.body); return { operadores: ['usuario1'] }; };\n"
+                 "  await $('#cred-guardar').onclick();\n"
+                 "  console.log(JSON.stringify(cuerpo));\n"
+                 "})();\n")
+        self.assertEqual(correr_node(self, guion),
+                         {"usuario": "usuario1", "navieras": {
+                             "one": {"usuario": "u", "contrato": "", "clave": None},
+                             "msc": {"usuario": "", "contrato": "CT-PROPIO", "clave": "k"}}})
+
     def test_armar_y_entrar_avisan_a_la_vista(self):
         js = self.mod.JS_INDEX
         for trozo in ('avisoFijo("No pude arrancar: " + e.message);', 'avisoFijo("No pude entrar: " + e.message);',

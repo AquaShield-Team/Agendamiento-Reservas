@@ -187,6 +187,10 @@ de HYUNDAI no deja armar la reserva (no encuentra la mercancía), así que cada 
 entrar al portal, en modo seguro y en emisión, y el motivo lo dice. El panel te lo avisa antes de correr: marca las
 filas de HYUNDAI con «sin contrato de HYUNDAI» y dice, arriba, dónde se escribe. Con un contrato, el programa elige
 solo la opción del portal con ese contrato, y si no la encuentra, la reserva queda NO ENVIADA con el motivo.
+Si la casilla «Contrato» de ONE, MSC o HYUNDAI está vacía y `contratos_por_defecto` (abajo) trae uno para esa
+naviera, la casilla lo muestra en gris, «por defecto: …»: es el que se usa si no escribes otro, y no se guarda en tu
+fila. ONE tiene dos, y los muestra los dos, «USA … · otros …»: lo que escribas en su casilla reemplaza solo el de los
+destinos de Estados Unidos. Sin un contrato por defecto, la casilla queda vacía.
 `config.example.json` es la plantilla, sin credenciales: si falta `config.json`, el panel lo crea desde ella. Si
 `config.json` no se puede leer (por ejemplo, después de editarlo a mano), el panel lo dice, con la línea donde está el
 error, y no arma reservas hasta que se corrija.
@@ -197,8 +201,9 @@ manda sobre la de `config.json`. Si falta una de esas llaves, el programa usa es
 
 También en «opciones»:
 - `contratos_por_defecto`: el contrato que va cuando ni la fila ni las credenciales traen uno, para ONE a Estados
-  Unidos (`one_usa`) y a otros mercados (`one_otros`), MSC (`msc`) y HYUNDAI (`hyundai`). Sin contrato, la reserva
-  de HYUNDAI queda NO ENVIADA.
+  Unidos (`one_usa`) y a otros mercados (`one_otros`: la casilla de ONE no lo reemplaza, así que va siempre que la fila
+  no traiga uno), MSC (`msc`) y HYUNDAI (`hyundai`). Credenciales los muestra en gris en la casilla vacía. Sin
+  contrato, la reserva de HYUNDAI queda NO ENVIADA.
 - `codigo_shipper_hyundai`: el código de la empresa como Shipper en HYUNDAI. Sin él, se busca solo por el nombre.
 
 En la plantilla vienen vacíos. Si falta una de esas llaves, el programa sigue sin ella y lo avisa.

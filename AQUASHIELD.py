@@ -8917,6 +8917,29 @@ def _operadores_sin_contrato(cfg):
             if not _hmm_contrato(datos.get("hyundai") if isinstance(datos, dict) else None, avisar=False)]
 
 
+def _contrato_por_defecto_a_la_vista(nav):
+    """Lo que la casilla «Contrato» de Credenciales muestra en gris cuando está vacía, para la naviera 'nav': «por
+    defecto: …», con el contrato de config.json → opciones → contratos_por_defecto que el programa usa si la casilla no
+    trae uno; vacío si no hay ninguno, o si la naviera no tiene contrato por defecto (decisión de Marcelo, encargo 96).
+    Sale de las mismas funciones con que lo usa cada reservador: ONE, _contrato_por_defecto («one_usa» y «one_otros»,
+    _determinar_contrato_one); MSC, _contrato_por_defecto («msc»); y HYUNDAI, _hmm_contrato, que no cuenta un contrato
+    sin ninguna letra ni cifra. ONE tiene dos, y los dice con su rótulo: la casilla reemplaza solo el de los destinos
+    USA, y el de los demás destinos va igual. No avisa si falta la llave: su aviso caería en el log.txt de una corrida
+    en curso. Cada contrato, como lo muestran los motivos de HYUNDAI (_hmm_contrato_a_la_vista). Solo para mostrar: la
+    casilla sigue vacía, y al guardar no se escribe."""
+    if nav == "one":
+        contratos = [("USA", _contrato_por_defecto("one_usa", avisar=False)),
+                     ("otros", _contrato_por_defecto("one_otros", avisar=False))]
+    elif nav == "msc":
+        contratos = [("", _contrato_por_defecto("msc", avisar=False))]
+    elif nav == "hyundai":
+        contratos = [("", _hmm_contrato({}, avisar=False))]
+    else:
+        contratos = []
+    partes = [f"{rotulo} {_hmm_contrato_a_la_vista(c)}".strip() for rotulo, c in contratos if c]
+    return "por defecto: " + " · ".join(partes) if partes else ""
+
+
 # Las listas de contrato de los pasos 2 y 3 se leen y se eligen con _hmm_una_lista (desde el encargo 92): de cada
 # opción, su texto, su valor y su etiqueta (desde el encargo 91, para no elegir una opción cuyo valor comparte otra), y
 # la elegida, en una sola lectura del mismo elemento con que se elige. Hasta el encargo 91 las leían _JS_HMM_CONTRATOS
@@ -16330,6 +16353,8 @@ def lanzar_web(puerto=8765, abrir=True):
                     # La clave NUNCA sale del proceso, ni por localhost: se informa
                     # solo si HAY una guardada. Para cambiarla se escribe una nueva;
                     # dejar el campo en blanco conserva la que ya estaba.
+                    # Con cada naviera, lo que su casilla «Contrato» muestra en gris si está vacía: el contrato por
+                    # defecto que se usaría (_contrato_por_defecto_a_la_vista; decisión de Marcelo, encargo 96).
                     return self._json({
                         "usuario": usuario,
                         "descripcion": datos.get("descripcion", usuario),
@@ -16337,6 +16362,7 @@ def lanzar_web(puerto=8765, abrir=True):
                         "navieras": [{"clave": k, "nombre": v[0],
                                       "usuario": (datos.get(k) or {}).get("usuario", ""),
                                       "contrato": (datos.get(k) or {}).get("contrato", ""),
+                                      "por_defecto": _contrato_por_defecto_a_la_vista(k),
                                       "tiene_clave": bool((datos.get(k) or {}).get("clave"))}
                                      for k, v in NAVIERAS.items()]})
                 if u.path == "/api/filas":
@@ -17693,13 +17719,17 @@ async function abrirCred(usuario, yaAbierto) {
     const o = document.createElement("option"); o.value = x; o.textContent = x; op.appendChild(o);
   });
   if (usuario) op.value = usuario;
+  // La casilla «Contrato» vacía muestra en gris el contrato por defecto de config.json que se usaría, si hay uno
+  // (n.por_defecto, decisión de Marcelo, encargo 96): como texto de ayuda, no como valor, así que al guardar no se
+  // escribe en la fila del operador.
   $("#cred-filas").innerHTML = CRED.navieras.map(n => `
     <tr data-nav="${esc(n.clave)}">
       <td>${esc(n.nombre)}</td>
       <td><input data-c="usuario" value="${esc(n.usuario)}" autocomplete="off"></td>
       <td><input data-c="clave" type="password" value="" autocomplete="new-password"
                  placeholder="${n.tiene_clave ? "guardada · en blanco la conserva" : "sin clave"}"></td>
-      <td><input data-c="contrato" value="${esc(n.contrato)}" autocomplete="off"></td>
+      <td><input data-c="contrato" value="${esc(n.contrato)}" autocomplete="off"${n.por_defecto
+        ? ` placeholder="${esc(n.por_defecto)}" title="${esc(n.por_defecto)}"` : ""}></td>
     </tr>`).join("");
   $("#cred-estado").textContent = op.options.length ? "" : SIN_OPERADOR;
   if (!yaAbierto) dlg.showModal();
@@ -18599,6 +18629,12 @@ body.light-theme .rs-dlg::backdrop { background: rgba(68, 85, 99, 0.35); }
 
 .rs-cred td { padding: 6px 6px; }
 .rs-cred th { padding: 8px 6px; }
+/* La casilla «Contrato» vacía muestra en gris el contrato por defecto (encargo 96), y la de ONE trae dos: «por defecto:
+   USA … · otros …», unos 282 px con dos códigos inventados de 10 caracteres («ABC1234567»). Medido en Chromium a 1366
+   px: con el cuadro de 860 px y las tres columnas iguales, la casilla dejaba 218 px de texto y lo cortaba; así deja
+   297, y a 1024 px, 290. Usuario y Clave también ganan unos píxeles. El texto entero va también en su «title». */
+#dlg-cred { width: min(960px, 92vw); }
+.rs-cred th:last-child, .rs-cred td:last-child { width: 36%; }
 .rs-cred td:first-child {
     font-family: var(--font-mono); font-size: 12px; font-weight: 400;
     white-space: nowrap; width: 1%;

@@ -322,11 +322,73 @@ class TestPanelCredenciales(PanelBase):
         self.assertNotIn(b"clave-falsa", cuerpo)
         r = json.loads(cuerpo)
         for n in r["navieras"]:
-            self.assertEqual(set(n), {"clave", "nombre", "usuario", "contrato", "tiene_clave"})
+            self.assertEqual(set(n), {"clave", "nombre", "usuario", "contrato", "tiene_clave", "por_defecto"})
             self.assertTrue(n["tiene_clave"])
             self.assertEqual(n["usuario"], f"usuario.{n['clave']}@ejemplo.invalid")
         _, vacio = self.srv.json("/api/credenciales?usuario=op_vacio")
         self.assertEqual({n["tiene_clave"] for n in vacio["navieras"]}, {False})
+
+    def con_por_defecto(self, por_defecto, usuario="op_vacio"):
+        """/api/credenciales con config.json → opciones → contratos_por_defecto en 'por_defecto': lo que trae cada
+        naviera en «por_defecto»."""
+        cfg = sinteticos.config()
+        cfg["opciones"]["contratos_por_defecto"] = por_defecto
+        soporte.escribir_json(self.sb / "config.json", cfg)
+        # El estado y el texto primero: con un 500, la prueba dice por qué (revisión de código del encargo 96).
+        st, cuerpo = self.srv.get("/api/credenciales?usuario=" + usuario)
+        self.assertEqual(st, 200, cuerpo.decode("utf-8", "replace"))
+        return {n["clave"]: n["por_defecto"] for n in json.loads(cuerpo)["navieras"]}
+
+    def test_credenciales_dicen_el_contrato_por_defecto(self):
+        # La casilla «Contrato» vacía muestra en gris el contrato por defecto que se usaría (decisión de Marcelo,
+        # encargo 96): /api/credenciales lo trae en «por_defecto», de las mismas funciones con que lo usa cada
+        # reservador (_contrato_por_defecto_a_la_vista). ONE trae dos, y los dice con su rótulo.
+        sin = {k: "" for k in sinteticos.NAVIERAS}
+        todos = {"one_usa": "CT-USA-1", "one_otros": "CT-OTROS-2", "msc": " CT-MSC-3 ", "hyundai": "CT-HMM-4"}
+        self.assertEqual(self.con_por_defecto(todos),
+                         dict(sin, one="por defecto: USA CT-USA-1 · otros CT-OTROS-2", msc="por defecto: CT-MSC-3",
+                              hyundai="por defecto: CT-HMM-4"))
+        # Es el mismo para cada operador: no depende de lo que traiga su casilla, que sigue llegando tal cual.
+        st, r = self.srv.json("/api/credenciales?usuario=op_prueba")
+        self.assertEqual({n["clave"]: (n["contrato"], n["por_defecto"]) for n in r["navieras"]}["msc"],
+                         ("CT-PRUEBA-MSC", "por defecto: CT-MSC-3"))
+        # Con uno solo de los de ONE, ese.
+        self.assertEqual(self.con_por_defecto({"one_otros": "CT-OTROS-2"}),
+                         dict(sin, one="por defecto: otros CT-OTROS-2"))
+        self.assertEqual(self.con_por_defecto({"one_usa": "CT-USA-1"}), dict(sin, one="por defecto: USA CT-USA-1"))
+        # HYUNDAI no cuenta un contrato sin letras ni cifras (_hmm_contrato); MSC lo usa igual, y lo dice.
+        self.assertEqual(self.con_por_defecto({"msc": "-", "hyundai": chr(0x200B)}), dict(sin, msc="por defecto: -"))
+        # Como lo muestran los motivos de HYUNDAI: un carácter de control como «?», los espacios de a uno, hasta 40.
+        largo = "CT" + chr(0x202E) + "X\n  Y" + "9" * 50
+        self.assertEqual(self.con_por_defecto({"msc": largo})["msc"], "por defecto: " + ("CT?X Y" + "9" * 50)[:40])
+
+    def test_sin_contrato_por_defecto_la_casilla_queda_como_hoy(self):
+        # El negativo: sin un contrato por defecto (vacío, en blanco, sin la llave, sin la sección o con otra forma),
+        # «por_defecto» viene vacío, y la página no muestra nada. Y no avisa: el aviso de la llave que falta caería en
+        # el log.txt de una corrida en curso.
+        sin = {k: "" for k in sinteticos.NAVIERAS}
+        with mock.patch.object(self.mod, "_avisar_en_pantalla_y_log", side_effect=AssertionError("avisó")):
+            for por_defecto in ({"one_usa": "", "one_otros": "  ", "msc": "", "hyundai": ""}, {},
+                                {"msc": 7, "hyundai": None, "one_usa": ["CT-1"]}, "no es un objeto"):
+                with self.subTest(por_defecto=por_defecto):
+                    self.assertEqual(self.con_por_defecto(por_defecto), sin)
+            # La configuración sintética no trae la sección.
+            soporte.escribir_json(self.sb / "config.json", sinteticos.config())
+            _, r = self.srv.json("/api/credenciales?usuario=op_prueba")
+            self.assertEqual({n["clave"]: n["por_defecto"] for n in r["navieras"]}, sin)
+
+    def test_el_contrato_por_defecto_no_se_guarda_en_la_fila(self):
+        # La casilla vacía se guarda vacía: el contrato por defecto no pasa a la fila del operador, y
+        # contratos_por_defecto queda como estaba.
+        todos = {"one_usa": "CT-USA-1", "one_otros": "CT-OTROS-2", "msc": "CT-MSC-3", "hyundai": "CT-HMM-4"}
+        self.con_por_defecto(todos)
+        st, r = self.srv.json("/api/credenciales", {"usuario": "op_vacio", "navieras": {
+            n: {"usuario": "", "contrato": ""} for n in ("one", "msc", "hyundai")}})
+        self.assertEqual((st, r["ok"]), (200, True))
+        cfg = json.loads((self.sb / "config.json").read_text(encoding="utf-8"))
+        self.assertEqual({n: cfg["usuarios"]["op_vacio"][n]["contrato"] for n in ("one", "msc", "hyundai")},
+                         {"one": "", "msc": "", "hyundai": ""})
+        self.assertEqual(cfg["opciones"]["contratos_por_defecto"], todos)
 
     def test_guardar_credenciales(self):
         leer = lambda: json.loads((self.sb / "config.json").read_text(encoding="utf-8"))["usuarios"]["op_nuevo"]

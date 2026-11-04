@@ -1344,7 +1344,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 1110 pruebas al 2026-11-03 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 1115 pruebas al 2026-11-04 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -2406,6 +2406,30 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
 
 Las dos llaves van vacías en `config.example.json`; el `config.json` de este equipo trae los valores que el programa
 tenía. Si falta una, o no es un texto, el programa sigue sin ella y lo avisa una vez por corrida.
+
+**Credenciales muestra en gris el contrato por defecto** (decisión de Marcelo, encargo 96,
+`CICLO-contrato-por-defecto-en-credenciales.md`): la casilla «Contrato» de ONE, MSC y HYUNDAI, vacía, lleva como texto
+de ayuda (`placeholder`, y el mismo texto en su `title`) «por defecto: …», el contrato de `contratos_por_defecto` que el
+programa usa si la casilla no trae uno; sin uno, la casilla queda como antes, sin texto de ayuda. No es su valor: al
+guardar, la casilla vacía se guarda vacía.
+- `GET /api/credenciales` lo trae por naviera en `por_defecto` (`_contrato_por_defecto_a_la_vista`), armado con las
+  mismas funciones con que lo usa cada reservador: `_contrato_por_defecto` para ONE y MSC, y `_hmm_contrato` para
+  HYUNDAI (que no cuenta un contrato sin ninguna letra ni cifra; MSC sí lo usa, y lo muestra). Sin avisar si falta la
+  llave (`avisar=False`), y cada contrato como lo muestran los motivos de HYUNDAI (`_hmm_contrato_a_la_vista`).
+- **ONE tiene dos, y los muestra los dos:** «por defecto: USA … · otros …». Su casilla reemplaza solo el de los
+  destinos USA: para los demás destinos, `_determinar_contrato_one` toma `contrato_otros` de las credenciales o
+  `one_otros`, y nunca la casilla. Las llaves `contrato_usa` y `contrato_otros` de las credenciales no están en la
+  plantilla ni en el panel; si un `config.json` las trajera, mandarían sobre el contrato por defecto que muestra la
+  casilla (residual: no se miden).
+- El cuadro pasó de 860 a 960 px (`#dlg-cred`) y la columna Contrato al 36 % (medido en Chromium a 1366 px: el texto de
+  ONE con dos códigos inventados de 10 caracteres pide unos 282 px; la casilla dejaba 218 y ahora 297, y a 1024 px,
+  290). Gris: el color atenuado de las casillas de Credenciales, contraste 5,65 en claro y 4,82 en oscuro (medido).
+- `por_defecto` va sin escapar en el JSON: lo escapa la página al pintarlo (`esc`). Otro que lo use en un `innerHTML`
+  tiene que escaparlo igual (revisión de seguridad del encargo 96).
+- Lo vigilan `test_web.TestPanelCredenciales` (`test_credenciales_dicen_el_contrato_por_defecto`,
+  `test_sin_contrato_por_defecto_la_casilla_queda_como_hoy` y `test_el_contrato_por_defecto_no_se_guarda_en_la_fila`)
+  y, en Node, `test_envio.TestLoQueFaltaALaVista` (`test_la_casilla_contrato_muestra_el_por_defecto_en_gris` y
+  `test_guardar_no_escribe_el_contrato_por_defecto`).
 
 Los operadores de la plantilla son «usuario1» y «usuario2». Las credenciales de COSCO pueden traer
 `nombre_en_pantalla`: el nombre con que el portal muestra al operador. `_cosco_sesion_activa` lo busca para

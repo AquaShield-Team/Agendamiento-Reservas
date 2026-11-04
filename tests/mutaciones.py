@@ -11286,3 +11286,67 @@ MUTACIONES += [
     dict(id="e95b-contrato-por-defecto-invisible", pruebas=[CT_AYUDANTE_E95],
          viejo="    return contrato if any(c.isalnum() for c in contrato) else \"\"\n", nuevo="    return contrato\n"),
 ]
+
+# --- Encargo 96: la casilla «Contrato» de Credenciales, vacía, muestra en gris el contrato por defecto que se usaría
+# (_contrato_por_defecto_a_la_vista y su texto de ayuda en la página), sin guardarlo en la fila del operador.
+CRED_E96 = "test_web.TestPanelCredenciales."
+CR_POR_DEFECTO_E96 = CRED_E96 + "test_credenciales_dicen_el_contrato_por_defecto"
+CR_NEGATIVO_E96 = CRED_E96 + "test_sin_contrato_por_defecto_la_casilla_queda_como_hoy"
+CR_NO_SE_GUARDA_E96 = CRED_E96 + "test_el_contrato_por_defecto_no_se_guarda_en_la_fila"
+CR_LLAVES_E96 = CRED_E96 + "test_credenciales_nunca_devuelven_la_clave"
+CR_PAGINA_E96 = "test_envio.TestLoQueFaltaALaVista.test_la_casilla_contrato_muestra_el_por_defecto_en_gris"
+CR_GUARDAR_E96 = "test_envio.TestLoQueFaltaALaVista.test_guardar_no_escribe_el_contrato_por_defecto"
+MUTACIONES += [
+    dict(id="e96-api-por-defecto-vacio", pruebas=[CR_POR_DEFECTO_E96],
+         viejo='                                      "por_defecto": _contrato_por_defecto_a_la_vista(k),\n',
+         nuevo='                                      "por_defecto": "",\n'),
+    dict(id="e96-api-sin-por-defecto", pruebas=[CR_LLAVES_E96, CR_POR_DEFECTO_E96],
+         viejo='                                      "por_defecto": _contrato_por_defecto_a_la_vista(k),\n',
+         nuevo=""),
+    dict(id="e96-one-otros-con-el-de-usa", pruebas=[CR_POR_DEFECTO_E96],
+         viejo='                     ("otros", _contrato_por_defecto("one_otros", avisar=False))]\n',
+         nuevo='                     ("otros", _contrato_por_defecto("one_usa", avisar=False))]\n'),
+    dict(id="e96-one-sin-rotulo", pruebas=[CR_POR_DEFECTO_E96],
+         viejo='    partes = [f"{rotulo} {_hmm_contrato_a_la_vista(c)}".strip() for rotulo, c in contratos if c]\n',
+         nuevo='    partes = [_hmm_contrato_a_la_vista(c) for rotulo, c in contratos if c]\n'),
+    dict(id="e96-partes-sin-filtrar", pruebas=[CR_POR_DEFECTO_E96, CR_NEGATIVO_E96],
+         viejo='    partes = [f"{rotulo} {_hmm_contrato_a_la_vista(c)}".strip() for rotulo, c in contratos if c]\n',
+         nuevo='    partes = [f"{rotulo} {_hmm_contrato_a_la_vista(c)}".strip() for rotulo, c in contratos]\n'),
+    dict(id="e96-sin-sanear", pruebas=[CR_POR_DEFECTO_E96],
+         viejo='    partes = [f"{rotulo} {_hmm_contrato_a_la_vista(c)}".strip() for rotulo, c in contratos if c]\n',
+         nuevo='    partes = [f"{rotulo} {c}".strip() for rotulo, c in contratos if c]\n'),
+    dict(id="e96-hyundai-sin-su-regla", pruebas=[CR_POR_DEFECTO_E96],
+         viejo='        contratos = [("", _hmm_contrato({}, avisar=False))]\n',
+         nuevo='        contratos = [("", _contrato_por_defecto("hyundai", avisar=False))]\n'),
+    dict(id="e96-msc-avisa", pruebas=[CR_NEGATIVO_E96],
+         viejo='        contratos = [("", _contrato_por_defecto("msc", avisar=False))]\n',
+         nuevo='        contratos = [("", _contrato_por_defecto("msc"))]\n'),
+    dict(id="e96-vacio-dice-por-defecto", pruebas=[CR_NEGATIVO_E96],
+         viejo='    return "por defecto: " + " · ".join(partes) if partes else ""\n',
+         nuevo='    return "por defecto: " + " · ".join(partes)\n'),
+    dict(id="e96-post-guarda-el-por-defecto", pruebas=[CR_NO_SE_GUARDA_E96],
+         viejo='                        actual["contrato"] = str(entra.get("contrato") or "").strip()\n',
+         nuevo='                        actual["contrato"] = str(entra.get("contrato") or _contrato_por_defecto("msc", '
+               'avisar=False)).strip()\n'),
+    dict(id="e96-js-en-el-valor", pruebas=[CR_PAGINA_E96],
+         viejo='<input data-c="contrato" value="${esc(n.contrato)}"',
+         nuevo='<input data-c="contrato" value="${esc(n.contrato || n.por_defecto)}"'),
+    dict(id="e96-js-siempre", pruebas=[CR_PAGINA_E96],
+         viejo='autocomplete="off"${n.por_defecto\n',
+         nuevo='autocomplete="off"${true\n'),
+    dict(id="e96-js-sin-escapar", pruebas=[CR_PAGINA_E96],
+         viejo='? ` placeholder="${esc(n.por_defecto)}"', nuevo='? ` placeholder="${n.por_defecto}"'),
+    dict(id="e96-js-sin-title", pruebas=[CR_PAGINA_E96],
+         viejo=' title="${esc(n.por_defecto)}"` : ""}></td>', nuevo='` : ""}></td>'),
+    dict(id="e96-css-placeholder-sin-gris", pruebas=[CR_PAGINA_E96],
+         viejo=".rs-cred input::placeholder { color: var(--text-muted); font-style: italic; }",
+         nuevo=".rs-cred input::placeholder { color: var(--text-primary); font-style: italic; }"),
+    dict(id="e96-css-cuadro-angosto", pruebas=[CR_PAGINA_E96],
+         viejo="#dlg-cred { width: min(960px, 92vw); }", nuevo="#dlg-cred { }"),
+    dict(id="e96-css-columnas-iguales", pruebas=[CR_PAGINA_E96],
+         viejo=".rs-cred th:last-child, .rs-cred td:last-child { width: 36%; }",
+         nuevo=".rs-cred th:last-child, .rs-cred td:last-child { }"),
+    dict(id="e96-guardar-toma-el-gris", pruebas=[CR_GUARDAR_E96],
+         viejo='      contrato: g("contrato").trim(),\n',
+         nuevo='      contrato: (g("contrato") || tr.querySelector(\'[data-c="contrato"]\').placeholder).trim(),\n'),
+]
