@@ -1344,7 +1344,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 1104 pruebas al 2026-11-03 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 1110 pruebas al 2026-11-03 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -1729,7 +1729,8 @@ línea cambian). De arriba hacia abajo:
    sus salidas trae el viaje de la fila (en las seis desde el encargo 66), o la tarjeta que eligió MSC ya no es la
    misma justo antes del clic (encargo 67), o MSC no puede dejar el destino final aparte del puerto de descarga
    (encargo 86), o «Contract No» de HYUNDAI no trae una sola opción cuyo código o cuyo texto completo es el contrato
-   configurado, o su valor lo comparte otra, o no queda elegida, o no hay un contrato (encargos 44, 89, 90 y 91), o
+   configurado, o su valor lo comparte otra, o no queda elegida, o no hay un contrato (encargos 44, 89, 90 y 91; desde
+   el encargo 95, sin un contrato la fila no entra al portal), o
    «HMM Sales Person» trae más de una opción real, o su valor lo comparte otra, o no queda elegida (encargo 92), o
    «Named Customer» no trae una sola «Direct Input», o su valor lo comparte otra, o no queda elegida (encargo 93).
    `DETENIDO`, con «Detener»: en COSCO y, desde el encargo 56, en la espera del deslizador de CMA-CGM. `REVISAR`,
@@ -1995,7 +1996,8 @@ línea cambian). De arriba hacia abajo:
      seis reservadores llevan además `_con_la_nave_de_la_fila` y, por dentro, `_con_la_ruta_de_la_fila`, que corta la
      fila con nave y sin puerto de carga o sin destino (encargo 42; ver «Antes de la guarda no hay clics a ciegas»).
      MAERSK lleva también, por dentro de todos, `_mk_con_el_contenedor_de_la_fila`, que corta la fila que pide otro
-     contenedor (encargo 63; ver «MAERSK elige el contenedor de las filas»).
+     contenedor (encargo 63; ver «MAERSK elige el contenedor de las filas»), y HYUNDAI, `_hmm_con_el_contrato`, que
+     corta la fila si el operador no tiene contrato (encargo 95; ver «Credenciales»).
    - La consola ya no toma la nave de la columna F en ONE y MSC cuando la celda de la nave viene vacía, o si la hoja
      no tiene columna de nave: esa fila queda sin nave (`nave_de_la_f`). La F sigue decidiendo si la fila es una nota,
      si entra a la lista y el destino de ONE. Del lector de la consola no cambió nada más: es la única excepción que
@@ -2175,10 +2177,12 @@ Python sin las librerías de este equipo; con `config.json` copiado, el mismo cl
 Desde el encargo 44, «opciones» trae también lo que el programa traía escrito y es de la cuenta:
 - `contratos_por_defecto` (`one_usa`, `one_otros`, `msc` y `hyundai`): el contrato que va cuando ni la fila ni las
   credenciales traen uno (`_contrato_por_defecto`; HYUNDAI no mira la fila). Sin contrato, ONE elige «Otros
-  contratos» sin escribir uno y MSC deja el campo vacío; HYUNDAI no elige ninguno en el paso 2 (queda el del portal) y
-  corta en «Booking Details», en «Contract No», después del Contract Holder y del Shipper, sin pulsar nada más (NO
-  ENVIADA, `ObjetivoNoEncontrado`): elegir uno sería por su posición. Hasta el encargo 88 este archivo decía «antes de
-  Booking Details»; el corte, medido en las corridas de un colega del 26 y el 28-10, está en ese paso.
+  contratos» sin escribir uno y MSC deja el campo vacío; HYUNDAI, desde el encargo 95, no entra al portal: la fila
+  queda NO ENVIADA antes de abrir el navegador (abajo, «Esas filas no entran al portal»). Hasta ahí no elegía ninguno
+  en el paso 2 (quedaba el del portal) y cortaba en «Booking Details», en «Contract No», después del Contract Holder y
+  del Shipper, sin pulsar nada más (NO ENVIADA, `ObjetivoNoEncontrado`): elegir uno sería por su posición. Ese corte
+  queda de resguardo. Hasta el encargo 88 este archivo decía «antes de Booking Details»; el corte, medido en las
+  corridas de un colega del 26 y el 28-10, está en ese paso.
   - **En un equipo nuevo, el contrato de HYUNDAI lo escribe el operador** en el panel, en Credenciales, columna
     «Contrato» de la fila de HYUNDAI (`/api/credenciales` lo guarda en el `contrato` de su naviera), o en
     `contratos_por_defecto`: el `config.json` que el panel crea desde la plantilla lo trae vacío (encargo 61). Así quedaron
@@ -2202,8 +2206,18 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
     al armar lo repite con las filas elegidas y con quién no tiene contrato leído en ese momento (`leerSinContrato`,
     `pintarContrato`, `avisoDeContrato`; revisión de código: `config.json` pudo cambiar con la página abierta). El
     panel pregunta sin avisar si falta la llave de `contratos_por_defecto` (`avisar=False`): su aviso caería en el
-    log.txt de una corrida en curso. La corrida no cambia: esas filas
-    entran al portal y quedan NO ENVIADA en «Contract No», con el motivo. Lo vigilan
+    log.txt de una corrida en curso.
+  - **Esas filas no entran al portal** (decisión de Marcelo, encargo 95, segunda parte, después del cierre): quedan NO
+    ENVIADA con el motivo, en pantalla, en log.txt y en la planilla, como la fila sin nave (`_falta_el_contrato`,
+    `_sin_el_contrato`). El panel web y la consola las apartan antes de abrir el navegador, después de la fila que pide
+    otro contenedor, y si la naviera es HYUNDAI y el operador no tiene contrato, no abren el navegador para ella;
+    `reservar_hyundai` lleva además `_hmm_con_el_contrato`, por dentro de todos sus decoradores. El motivo: «el
+    operador no tiene un contrato de HYUNDAI, y sin él el portal no deja armar la reserva: se escribe en el panel →
+    Credenciales → HYUNDAI → columna Contrato» (no nombra al operador ni dice un contrato: va a la planilla). Hasta ahí
+    entraban al portal y quedaban NO ENVIADA en «Contract No»; ese corte de `reservar_hyundai` queda de resguardo. Lo
+    vigilan `test_ayudantes.TestSinContratoHyundai`, `test_web` y `test_consola`
+    (`test_hyundai_sin_contrato_no_abre_el_portal`).
+  - Las pruebas del aviso y del ayudante: lo vigilan
     `test_ayudantes.TestContratosPorDefecto` (`test_el_contrato_de_hyundai_sale_de_un_solo_ayudante` y
     `test_el_panel_sabe_quien_no_tiene_contrato_de_hyundai`), `test_web` (`test_config_dice_quien_no_tiene_contrato_de
     _hyundai` y `test_filas_dicen_si_piden_contrato`) y `test_envio.TestLecturaDelPanel.test_avisa_si_falta_el_contrato

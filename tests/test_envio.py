@@ -1347,9 +1347,9 @@ class TestLecturaDelPanel(soporte.CasoAQ):
             "  console.log(JSON.stringify(r));\n"
             "})();\n")
         r = correr_node(self, guion)
-        texto = ("2 reserva(s) de HYUNDAI quedan NO ENVIADA: el operador «op_sin» no tiene un contrato de HYUNDAI, y sin "
-                 "él el portal no deja armarlas. Escríbelo en Credenciales (la llave, arriba a la derecha) → HYUNDAI → "
-                 "columna Contrato.")
+        texto = ("2 reserva(s) de HYUNDAI quedan NO ENVIADA, sin entrar al portal: el operador «op_sin» no tiene un "
+                 "contrato de HYUNDAI, y sin él el portal no deja armarlas. Escríbelo en Credenciales (la llave, arriba "
+                 "a la derecha) → HYUNDAI → columna Contrato.")
         self.assertEqual(r[0], [[False, False], "⚠ " + texto, 1])
         self.assertEqual(r[1], [[True, True], "", 1])
         self.assertEqual(r[2], [[True, True], "⚠ otro aviso", 2])

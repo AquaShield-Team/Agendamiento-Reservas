@@ -194,6 +194,69 @@ actúa después de la guarda: leído y, la regla de ONE, ejecutado en Node.
 | Bajo. La regla cuenta todas las opciones de la página, no solo la lista del campo, y «a la vista» es `offsetParent`. | Residual: en los 23 HTML de ONE medidos, `role=option` lo llevan solo los botones de su lista; y otra lista suma ganadoras, lo que lleva a NO ENVIADA. |
 | Bajo. Si Windows niega un instante la lectura de `config.json`, el panel podría marcar a un operador sin contrato. | Residual: solo el aviso; la reserva lee el contrato otra vez al correr. |
 
+## 8. Después del cierre: la fila de HYUNDAI sin contrato no entra al portal
+
+**La decisión de Marcelo:** una fila de HYUNDAI cuyo operador no tiene contrato queda NO ENVIADA sin entrar al portal,
+igual que la fila sin nave, con el motivo claro en el panel. El contrato de su configuración se queda.
+
+**Lo que quedó:**
+- `_falta_el_contrato` da el motivo si la naviera es HYUNDAI y `_hmm_contrato` no da un contrato: «el operador no tiene
+  un contrato de HYUNDAI, y sin él el portal no deja armar la reserva: se escribe en el panel → Credenciales → HYUNDAI →
+  columna Contrato». No nombra al operador ni dice un contrato, porque va a la planilla.
+- El panel web y la consola apartan esas filas antes de abrir el navegador, después de la fila que pide otro contenedor,
+  y las dejan NO ENVIADA con el motivo, en pantalla, en log.txt y en la planilla (`_sin_el_contrato`). Sin contrato, no
+  abren el navegador para HYUNDAI.
+- `reservar_hyundai` lleva `_hmm_con_el_contrato`, por dentro de todos sus decoradores, como el del contenedor de MAERSK:
+  cuida cualquier otro camino. El corte de «Contract No» queda de resguardo.
+- El aviso de la página dice «quedan NO ENVIADA, sin entrar al portal».
+
+**Probado en el portal, en modo prueba, desde este equipo**, con la fila de HYUNDAI de siempre:
+- sin contrato (solo en la memoria del proceso de prueba): NO ENVIADA a los 2 s, con el motivo, sin abrir el navegador;
+- con el contrato configurado: OK-EJEMPLO a los 78 s, como antes.
+
+**Las pruebas:** `test_ayudantes.TestSinContratoHyundai` (el motivo, el decorador sin tocar la página, la fila sin nave o
+sin ruta, y con contrato pasa igual), `test_web` y `test_consola` (`test_hyundai_sin_contrato_no_abre_el_portal`: sin
+contrato no se abre el navegador, y con contrato va al portal), la lista de decoradores de `test_clics` y el aviso de
+`test_envio`. Corridas antes de la compuerta: las 551 pruebas de `test_clics`, `test_ayudantes` y `test_evidencia`, OK.
+
+**Revisión de código** (`code-reviewer`, Opus), en un clon: aprobado, nada crítico, alto ni medio, y tres hallazgos
+bajos, los tres arreglados.
+
+| Hallazgo | Qué hice |
+|---|---|
+| Ninguna prueba corría CONSOLIDADO con un operador sin contrato: el panel podía apartar también las filas de las otras navieras sin que nada cayera. | Arreglado: en el panel, CONSOLIDADO con el operador sin contrato aparta solo la fila de HYUNDAI; en la consola, el mismo operador en ONE va al portal. Con sus mutaciones. |
+| Con un `config.json` sin la llave de `contratos_por_defecto`, salía «sigo sin contrato por defecto» y, justo después, la fila no seguía. | Arreglado: la fila que no entra pregunta sin avisar; su motivo dice dónde se escribe el contrato. |
+| Un párrafo del `CLAUDE.md` seguía describiendo el corte en «Contract No» como vigente. | Arreglado. |
+
+La primera compuerta de esta parte la detuve, porque corría sobre el árbol de antes de estos arreglos.
+
+**Revisión de seguridad** (`security-reviewer`, Opus), en otro clon, sobre el árbol con esos arreglos: nada crítico ni
+alto. El cambio solo agrega salidas tempranas con NO ENVIADA, no toca el candado, y el motivo no lleva el contrato, la
+clave, el usuario ni el nombre del operador. Tres hallazgos bajos:
+
+| Hallazgo | Qué hice |
+|---|---|
+| Un contrato que no es texto (una lista, `true`, escrito a mano en `config.json`) o solo de caracteres invisibles (pegado en Credenciales) pasaba el filtro: la fila entraba al portal y se cortaba en el paso 3. | Arreglado: `_hmm_contrato` cuenta solo un texto o un número con al menos una letra o una cifra, en las credenciales y en `contratos_por_defecto`. Con sus pruebas y mutaciones. |
+| Si `config.json` no se lee en ese instante, o su `contratos_por_defecto → hyundai` no es texto, y el operador usa ese contrato, todas las filas de HYUNDAI de la corrida quedan NO ENVIADA con el motivo que manda al panel, sin aviso de que `config.json` está mal. | Residual: falla hacia el lado seguro, y la plantilla trae la llave como texto. |
+| El docstring del decorador decía que «cuida cualquier otro camino», pero corre después del inicio de sesión. | Arreglado: lo dice. |
+
+**La compuerta 5**, sobre el árbol con los arreglos de las dos revisiones (de 22:51 a 23:43, sin eventos de espera del
+equipo; corrían a la vez suites de otras sesiones, de Control Congelado y de Fresco):
+
+- **La suite:** 1.110 pruebas, OK (1 saltada); los originales, sin cambios.
+- **El censo:** 64 mutaciones, 63 muerden. **No muerde `e95b-contrato-invisible`:** la última comprobación de
+  `_hmm_contrato` también descarta un contrato invisible, así que la prueba no distinguía la primera.
+  - La primera hace falta en un solo caso: el contrato propio es invisible y hay uno de verdad en
+    `contratos_por_defecto`, que es el que va.
+  - Le sumé ese caso a la prueba.
+
+**La compuerta 6**, sobre el árbol que se commitea (de 23:46 a 00:17, sin eventos de espera del equipo):
+
+- **La suite:** 1.110 pruebas, OK (1 saltada); los originales, sin cambios.
+- **El censo:** las 6 mutaciones que nombran la prueba cambiada, 6 muerden, también `e95b-contrato-invisible`.
+
+Antes del commit, la sonda de secretos y la guarda de datos reales del hook (sección 6, el mismo procedimiento).
+
 ## Decisiones que tomé solo
 
 - Le pregunté a Marcelo dos veces a mitad del ciclo, con lo medido: qué regla dejar para HYUNDAI sin contrato (sección 4)
@@ -207,9 +270,8 @@ actúa después de la guarda: leído y, la regla de ONE, ejecutado en Node.
 
 ## Lo que decide Marcelo
 
-- **Si la fila de HYUNDAI sin contrato debe quedar NO ENVIADA sin entrar al portal,** como la fila sin nave, en vez de
-  entrar y cortarse en «Contract No». Hoy entra, como pediste («como estaba en `a0e27c9`»): cada una gasta su inicio de
-  sesión y el paso 1 y 2 del portal.
+- **Si la fila de HYUNDAI sin contrato debe quedar NO ENVIADA sin entrar al portal,** como la fila sin nave. Marcelo lo
+  decidió después del cierre: no entra (sección 8).
 - **Que no saques el contrato de tu configuración:** según lo medido, sin él HYUNDAI no arma ninguna reserva.
 
 ## RESIDUAL
@@ -224,7 +286,9 @@ actúa después de la guarda: leído y, la regla de ONE, ejecutado en Node.
   Abrir Credenciales y cancelar borra el aviso de la vista; las marcas de las filas quedan.
 - La rama de la celda entera toma la de más arriba si dos opciones dicen la celda igual, y la regla cuenta las opciones
   de toda la página, no solo las de la lista del campo (revisión de seguridad; ver la tabla de la sección 7).
-- Una lectura de `config.json` que falla un instante puede marcar a un operador sin contrato; solo el aviso.
+- Una lectura de `config.json` que falla un instante puede marcar a un operador sin contrato, y, desde la segunda
+  parte, dejar NO ENVIADA, sin entrar al portal, cada fila de HYUNDAI de esa corrida cuyo operador usa el contrato de
+  `contratos_por_defecto` (revisión de seguridad de la segunda parte): el lado seguro.
 - ONE pulsa con la primera lectura que da una sola ganadora. Propuesta: esperar dos lecturas iguales, como MAERSK, si
   algún día se ve una lista a medias.
 - Una celda de más de 55 caracteres nunca llega a «dice la celda entera» (las candidatas no pasan de 55; encargo 94): cae
@@ -243,6 +307,8 @@ actúa después de la guarda: leído y, la regla de ONE, ejecutado en Node.
 
 ## Defectos de instrumento que me cacé
 
+- La prueba de `_hmm_contrato` no distinguía las dos comprobaciones del contrato invisible: lo vio el censo de la
+  compuerta 5, con una mutación que no mordía (sección 8).
 - La prueba de la celda entera de ONE (encargo 94) dejó de distinguir la celda entera de la regla nueva, que elige la
   misma opción: lo vio el censo, con dos mutaciones que no mordían (sección 6).
 - `medir_pais.py` tomaba la celda desde el primer corchete de la línea de log.txt, el de la hora, y no desde el de la

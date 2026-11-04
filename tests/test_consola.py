@@ -350,6 +350,31 @@ class TestEjecutarReservas(ConPlanilla):
                       "navegador ni entro al portal.", log)
         self.assertIn("· ===== RESUMEN RESERVAS =====", log)
 
+    def test_hyundai_sin_contrato_no_abre_el_portal(self):
+        # Por la consola también: si el operador no tiene un contrato de HYUNDAI, sus filas quedan NO ENVIADA con el
+        # motivo en la planilla y en log.txt, sin abrir el navegador (decisión de Marcelo, encargo 95). op_vacio no
+        # tiene contrato; op_prueba, sí.
+        motivo = ("el operador no tiene un contrato de HYUNDAI, y sin él el portal no deja armar la reserva: se escribe en "
+                  "el panel → Credenciales → HYUNDAI → columna Contrato")
+        with soporte.Navieras(self.mod) as n:
+            res, carpeta = self.mod.ejecutar_reservas("op_vacio", "hyundai", esperar_cierre=lambda: None)
+        self.assertEqual((res, len(n.pw.lanzamientos), n.logins, n.reservas),
+                         ({5: "NO ENVIADA", 6: "NO ENVIADA"}, 0, [], []))
+        ws = openpyxl.load_workbook(self.planilla)["HYUNDAI"]
+        self.assertTrue(ws["H5"].value.endswith(f" · {motivo}"), ws["H5"].value)
+        log = (Path(carpeta) / "log.txt").read_text(encoding="utf-8")
+        self.assertIn(f"· ✗ fila 5: NO ENVIADA · {motivo}. No entro al portal por ella.", log)
+        self.assertIn("· El operador no tiene un contrato de HYUNDAI: no abro el navegador ni entro al portal.", log)
+        with soporte.Navieras(self.mod) as n:
+            res, _ = self.mod.ejecutar_reservas("op_prueba", "hyundai", esperar_cierre=lambda: None)
+        self.assertEqual(([r[:2] for r in n.reservas], set(res.values())), ([("hyundai", 5), ("hyundai", 6)],
+                                                                             {"OK-EJEMPLO"}))
+        # Las otras navieras no miran el contrato de HYUNDAI: el mismo operador, en ONE, va al portal (revisión de
+        # código).
+        with soporte.Navieras(self.mod) as n:
+            self.mod.ejecutar_reservas("op_vacio", "one", esperar_cierre=lambda: None)
+        self.assertEqual(sorted({r[0] for r in n.reservas}), ["one"])
+
     def test_fila_de_maersk_con_la_celda_vacia_va_al_portal(self):
         # Con la columna de contenedor y la celda vacía, o solo con espacios, la consola le da «40 HC REEFER», igual
         # que el panel, y la fila va al portal con ese contenedor (decisión de Marcelo, encargo 64,

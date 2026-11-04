@@ -985,6 +985,76 @@ class TestFilaSinRuta(soporte.CasoAQ):
         self.assertEqual((envuelto.__name__, envuelto.__doc__, vistas), ("bien", "doc de prueba", []))
 
 
+class TestSinContratoHyundai(soporte.CasoAQ):
+    """Una fila de HYUNDAI, si el operador no tiene un contrato (ni en sus credenciales ni en contratos_por_defecto),
+    queda NO ENVIADA sin abrir el portal, como la fila sin nave (decisión de Marcelo, encargo 95): sin un contrato real,
+    el portal no deja armar la reserva (medido el 03-11, en modo prueba). Hasta ahí entraba al portal y se cortaba en
+    «Contract No»."""
+    MOTIVO = ("el operador no tiene un contrato de HYUNDAI, y sin él el portal no deja armar la reserva: se escribe en el "
+              "panel → Credenciales → HYUNDAI → columna Contrato")
+
+    def corrida(self, nombre):
+        vistas = []
+        reg = self.mod.Registro(self.sb / nombre / "log.txt", on_log=vistas.append)
+        self.addCleanup(reg.cerrar)
+        return reg, vistas, self.sb / nombre / "log.txt"
+
+    def test_falta_el_contrato(self):
+        # Solo en HYUNDAI, y solo si _hmm_contrato no da uno: el de las credenciales, sin los espacios de los extremos,
+        # o el de contratos_por_defecto. El motivo no nombra al operador ni dice un contrato: va a la planilla.
+        f = self.mod._falta_el_contrato
+        con_contratos(self, {"hyundai": ""})
+        self.assertEqual([f("hyundai", {}), f("hyundai", {"contrato": "  "}), f("hyundai", None)], [self.MOTIVO] * 3)
+        self.assertEqual(f("hyundai", {"contrato": " CT-1 "}), "")
+        for nav in ("one", "msc", "cma", "cosco", "maersk"):
+            with self.subTest(naviera=nav):
+                self.assertEqual(f(nav, {}), "")
+        con_contratos(self, {"hyundai": "CT-DEF"})
+        self.assertEqual(f("hyundai", {}), "")
+        self.assertTrue(self.MOTIVO.endswith(self.mod.HMM_DONDE_VA_EL_CONTRATO))
+        # Sin la llave de contratos_por_defecto, pregunta sin avisar: el aviso dice «sigo sin contrato por defecto», y
+        # la fila no sigue (revisión de código).
+        con_contratos(self, None)
+        avisos = []
+        with mock.patch.object(self.mod, "_avisar_en_pantalla_y_log", lambda *a, **k: avisos.append(a[0])):
+            self.assertEqual((f("hyundai", {}), avisos), (self.MOTIVO, []))
+
+    def test_hyundai_no_abre_el_portal_sin_contrato(self):
+        # Los orquestadores ya la apartan antes de abrir el navegador (test_web, test_consola); el decorador cuida
+        # cualquier otro camino, sin tocar la página.
+        con_contratos(self, {"hyundai": ""})
+        reg, vistas, log = self.corrida("sin_contrato")
+        self.assertEqual(self.mod.RESERVADORES["hyundai"](PaginaQueNoSeToca(), TestFilaSinRuta.fila(), {"usuario": "u"},
+                                                          reg), ("NO ENVIADA", self.MOTIVO))
+        linea = f"· ✗ fila 9: NO ENVIADA · {self.MOTIVO}. No entro al portal por ella."
+        for donde in (log.read_text(encoding="utf-8"), "\n".join(vistas)):          # log.txt y pantalla
+            self.assertIn(linea, donde)
+
+    def test_sin_nave_o_sin_ruta_dicen_eso(self):
+        # Sin nave o sin la ruta, y sin contrato, el motivo es el de la nave o el de la ruta: el decorador del contrato
+        # va por dentro de todos.
+        con_contratos(self, {"hyundai": ""})
+        casos = ((dict(nave="AUTO"), TestFilaSinNave.MOTIVO), (dict(pol=""), TestFilaSinRuta.PUERTO))
+        for k, (cambio, motivo) in enumerate(casos):
+            with self.subTest(cambio=cambio):
+                reg, _, _ = self.corrida(f"sin_contrato_sin_{k}")
+                self.assertEqual(self.mod.RESERVADORES["hyundai"](PaginaQueNoSeToca(), TestFilaSinRuta.fila(**cambio),
+                                                                  {}, reg), ("NO ENVIADA", motivo))
+
+    def test_con_contrato_pasa_igual(self):
+        # Con un contrato, el decorador llama al reservador tal cual: la fila, las credenciales, el registro y
+        # on_pausa, con su nombre y su documentación.
+        def bien(page, reserva, creds, reg, on_pausa=None):
+            """doc de prueba"""
+            return ("OK-EJEMPLO", f"fila {reserva['fila']} {creds['contrato']} {on_pausa}")
+        envuelto = self.mod._hmm_con_el_contrato(bien)
+        con_contratos(self, {"hyundai": ""})
+        reg, vistas, _ = self.corrida("con_contrato")
+        self.assertEqual(envuelto(PaginaQueNoSeToca(), TestFilaSinRuta.fila(), {"contrato": "CT-1"}, reg, on_pausa="p"),
+                         ("OK-EJEMPLO", "fila 9 CT-1 p"))
+        self.assertEqual((envuelto.__name__, envuelto.__doc__, vistas), ("bien", "doc de prueba", []))
+
+
 class TestOtroContenedorMaersk(soporte.CasoAQ):
     """Una fila de MAERSK que pide otro contenedor que el de las filas, «40 HC REEFER», queda NO ENVIADA sin abrir el
     portal (decisión de Marcelo, encargo 63, CICLO-maersk-otro-contenedor-y-reefer.md): MAERSK elige siempre «40 Reefer
@@ -1262,6 +1332,16 @@ class TestContratosPorDefecto(soporte.CasoAQ):
         con_contratos(self, {"hyundai": ""})
         self.assertEqual([f({"contrato": " CT-1 "}), f({"contrato": "  "}), f({}), f({"contrato": None})],
                          ["CT-1", "", "", ""])
+        # Un valor que no es un texto ni un número, o un texto sin ninguna letra ni cifra, no cuenta (revisión de
+        # seguridad del encargo 95: la fila entraba al portal). Un número, escrito a mano en config.json, sí.
+        invisibles = chr(0x200B) + chr(0xFEFF) + chr(0)
+        self.assertEqual([f({"contrato": ["CT"]}), f({"contrato": {"a": 1}}), f({"contrato": True}),
+                          f({"contrato": invisibles}), f({"contrato": 12345})], ["", "", "", "", "12345"])
+        con_contratos(self, {"hyundai": invisibles})
+        self.assertEqual((f({}), f({"contrato": "CT-1"})), ("", "CT-1"))
+        # El propio invisible cuenta como ninguno: va el de contratos_por_defecto, como con uno de solo espacios.
+        con_contratos(self, {"hyundai": "CT-DEF"})
+        self.assertEqual(f({"contrato": invisibles}), "CT-DEF")
         tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
         r = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_hyundai")
         self.assertEqual([ast.unparse(n.value) for n in ast.walk(r)

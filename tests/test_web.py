@@ -897,6 +897,39 @@ class TestPanelCorridas(PanelBase):
         self.assertEqual((n.reservas, e["resultados"]["5"]["estado"]),
                          ([("one", 5, "usuario.one@ejemplo.invalid")], "OK-EJEMPLO"))
 
+    def test_hyundai_sin_contrato_no_abre_el_portal(self):
+        # Si el operador no tiene un contrato de HYUNDAI, sus filas quedan NO ENVIADA con el motivo, en pantalla, en
+        # log.txt y en la planilla, sin abrir el navegador ni entrar al portal, como la fila sin nave (decisión de
+        # Marcelo, encargo 95). En la configuración sintética, op_vacio no tiene contrato y op_prueba sí; no hay
+        # contratos_por_defecto.
+        motivo = ("el operador no tiene un contrato de HYUNDAI, y sin él el portal no deja armar la reserva: se escribe en "
+                  "el panel → Credenciales → HYUNDAI → columna Contrato")
+        with Navieras(self.mod) as n:
+            e = self.correr("HYUNDAI", [5, 6], usuario="op_vacio")
+        self.assertEqual((len(n.pw.lanzamientos), n.logins, n.reservas), (0, [], []))
+        for f in ("5", "6"):
+            with self.subTest(fila=f):
+                self.assertEqual((e["resultados"][f]["estado"], e["resultados"][f]["detalle"]), ("NO ENVIADA", motivo))
+        log = (Path(self.mod._WEB["carpeta"]) / "log.txt").read_text(encoding="utf-8")
+        for linea in (f"✗ fila 5: NO ENVIADA · {motivo}. No entro al portal por ella.",
+                      "El operador no tiene un contrato de HYUNDAI: no abro el navegador ni entro al portal."):
+            with self.subTest(linea=linea[:30]):
+                self.assertIn(linea, log)
+                self.assertEqual(sum(linea in l for l in e["lineas"]), 1)
+        st, _, cuerpo = self.srv.completo("/api/descargar")
+        ws = openpyxl.load_workbook(BytesIO(cuerpo))["HYUNDAI"]
+        self.assertEqual((st, ws["H5"].value, ws["I5"].value), (200, f"NO ENVIADA · {motivo}", None))
+        # Con contrato, al portal, como siempre.
+        with Navieras(self.mod) as n:
+            e = self.correr("HYUNDAI", [5])
+        self.assertEqual(([r[:2] for r in n.reservas], e["resultados"]["5"]["estado"]), ([("hyundai", 5)], "OK-EJEMPLO"))
+        # En CONSOLIDADO, sin contrato de HYUNDAI, solo se aparta su fila (la 9, HMM): las de las otras navieras van al
+        # portal, cada una con sus credenciales (revisión de código).
+        with Navieras(self.mod) as n:
+            e = self.correr("CONSOLIDADO", [5, 9, 10], usuario="op_vacio")
+        self.assertEqual(([r[:2] for r in n.reservas], e["resultados"]["9"]["detalle"]),
+                         ([("one", 5), ("maersk", 10)], motivo))
+
     def test_filas_dicen_si_traen_nave(self):
         # /api/filas dice, con la regla del programa, qué fila no trae una nave para reservar: el panel la muestra y la
         # marca con eso (test_envio.TestLecturaDelPanel). Hasta a198645 el panel solo miraba la celda vacía.

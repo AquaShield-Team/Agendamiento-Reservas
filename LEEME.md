@@ -183,10 +183,10 @@ recárgala (F5).
 Usuario, clave y contrato de cada naviera se guardan en `config.json`, junto al programa y en texto plano. Se
 editan desde el panel, en **Credenciales de los portales** (la llave, arriba a la derecha). **El contrato de HYUNDAI
 va ahí, en la columna «Contrato» de la fila de HYUNDAI, del operador con que corres:** sin un contrato real, el portal
-de HYUNDAI no deja armar la reserva (no encuentra la mercancía), así que cada reserva de HYUNDAI queda NO ENVIADA en
-«Contract No», en modo seguro y en emisión, y el motivo lo dice. El panel te lo avisa antes de correr: marca las filas
-de HYUNDAI con «sin contrato de HYUNDAI» y dice, arriba, dónde se escribe. Con un contrato, el programa elige solo la
-opción del portal con ese contrato, y si no la encuentra, la reserva queda NO ENVIADA con el motivo.
+de HYUNDAI no deja armar la reserva (no encuentra la mercancía), así que cada reserva de HYUNDAI queda NO ENVIADA sin
+entrar al portal, en modo seguro y en emisión, y el motivo lo dice. El panel te lo avisa antes de correr: marca las
+filas de HYUNDAI con «sin contrato de HYUNDAI» y dice, arriba, dónde se escribe. Con un contrato, el programa elige
+solo la opción del portal con ese contrato, y si no la encuentra, la reserva queda NO ENVIADA con el motivo.
 `config.example.json` es la plantilla, sin credenciales: si falta `config.json`, el panel lo crea desde ella. Si
 `config.json` no se puede leer (por ejemplo, después de editarlo a mano), el panel lo dice, con la línea donde está el
 error, y no arma reservas hasta que se corrija.

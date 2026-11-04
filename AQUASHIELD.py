@@ -774,6 +774,22 @@ def _mk_con_el_contenedor_de_la_fila(reservar):
     return reservar_con_el_contenedor
 
 
+def _hmm_con_el_contrato(reservar):
+    """Decorador de reservar_hyundai: si el operador no tiene un contrato de HYUNDAI (_falta_el_contrato), la fila no
+    llega al portal. Queda NO ENVIADA con el motivo, sin tocar la página (decisión de Marcelo, encargo 95). Va por dentro
+    de todos sus decoradores, como el del contenedor de MAERSK: la fila sin nave o sin ruta dice eso. Los dos
+    orquestadores ya la apartan antes de abrir el navegador; esto cuida cualquier otro camino que llegue al reservador,
+    que corre después del inicio de sesión: no evita ese inicio (revisión de seguridad del encargo 95)."""
+    def reservar_con_el_contrato(page, reserva, creds, reg, on_pausa=None):
+        motivo = _falta_el_contrato("hyundai", creds)
+        if motivo:
+            return _sin_el_contrato(reg, (reserva or {}).get("fila"), motivo)
+        return reservar(page, reserva, creds, reg, on_pausa=on_pausa)
+    reservar_con_el_contrato.__name__ = reservar.__name__
+    reservar_con_el_contrato.__doc__ = reservar.__doc__
+    return reservar_con_el_contrato
+
+
 def _temp_reserva(reserva):
     """Temperatura de la fila; si no viene en la planilla, la de config.json (_temperatura_reefer)."""
     return str((reserva or {}).get("temp") or "").strip() or _temperatura_reefer()
@@ -3428,6 +3444,28 @@ def _sin_el_contenedor(reg, fila, motivo):
     planilla (decisión de Marcelo, encargo 63)."""
     reg.paso(f"✗ fila {fila}: {NO_ENVIADA} · {motivo}. No entro al portal por ella: resérvala a mano en el portal, o "
              f"corrige el contenedor en la planilla si la fila pide «{CONTENEDOR_DE_LAS_FILAS}».")
+    return (NO_ENVIADA, motivo)
+
+
+def _falta_el_contrato(nav, creds):
+    """Si 'nav' es HYUNDAI y el operador no tiene un contrato (_hmm_contrato: ni en sus credenciales, 'creds', ni en
+    contratos_por_defecto), el motivo con que sus filas quedan NO ENVIADA sin entrar al portal; si no, vacío. Sin un
+    contrato real el portal no deja armar la reserva: medido el 03-11, en modo prueba, su búsqueda de la mercancía
+    vuelve vacía, también con «Dummy» (decisión de Marcelo, encargo 95: la fila no entra al portal, como la sin nave).
+    El motivo no nombra al operador ni dice un contrato: va a la planilla. Pregunta sin avisar si falta la llave de
+    contratos_por_defecto: su aviso dice «sigo sin contrato por defecto», y la fila no sigue; el motivo ya dice dónde se
+    escribe (revisión de código del encargo 95)."""
+    if nav != "hyundai" or _hmm_contrato(creds, avisar=False):
+        return ""
+    return (f"el operador no tiene un contrato de HYUNDAI, y sin él el portal no deja armar la reserva: se escribe en "
+            f"el {HMM_DONDE_VA_EL_CONTRATO}")
+
+
+def _sin_el_contrato(reg, fila, motivo):
+    """La fila de HYUNDAI y su operador sin contrato ('motivo', de _falta_el_contrato): no se entra al portal por ella.
+    Como _sin_el_contenedor, lo deja en pantalla y en log.txt y devuelve NO ENVIADA con el motivo, que quien la llama
+    deja en la planilla (decisión de Marcelo, encargo 95)."""
+    reg.paso(f"✗ fila {fila}: {NO_ENVIADA} · {motivo}. No entro al portal por ella.")
     return (NO_ENVIADA, motivo)
 
 
@@ -8857,9 +8895,14 @@ def _hmm_contrato(creds, avisar=True):
     → opciones → contratos_por_defecto → hyundai (_contrato_por_defecto, que con avisar=False no avisa si falta la
     llave), sin los espacios de los extremos; vacío si no hay ninguno. Lo usan los pasos 2 y 3 de reservar_hyundai y el
     panel, que avisa antes de correr si falta (_operadores_sin_contrato; decisión de Marcelo, encargo 95): una sola
-    regla."""
-    propio = str((creds if isinstance(creds, dict) else {}).get("contrato") or "").strip()
-    return propio or _contrato_por_defecto("hyundai", avisar=avisar)
+    regla. Un valor que no es un texto ni un número (una lista, true), o un texto sin ninguna letra ni cifra (solo
+    caracteres invisibles), no cuenta como contrato: la fila entraba al portal y se cortaba en el paso 3 (revisión de
+    seguridad del encargo 95)."""
+    propio = (creds if isinstance(creds, dict) else {}).get("contrato")
+    propio = str(propio).strip() if isinstance(propio, (str, int)) and not isinstance(propio, bool) else ""
+    contrato = propio if any(c.isalnum() for c in propio) else ""
+    contrato = contrato or _contrato_por_defecto("hyundai", avisar=avisar)
+    return contrato if any(c.isalnum() for c in contrato) else ""
 
 
 def _operadores_sin_contrato(cfg):
@@ -9616,6 +9659,7 @@ def _hmm_reintentar_paso2(page, reg, fila):
 @_con_la_nave_de_la_fila
 @_con_la_ruta_de_la_fila
 @_sin_clic_a_ciegas("hmm")
+@_hmm_con_el_contrato
 def reservar_hyundai(page, reserva, creds, reg, on_pausa=None):
     f = reserva["fila"]
     nave_pedida = (reserva.get("nave") or "").strip()
@@ -14495,6 +14539,15 @@ def ejecutar_reservas(usuario, naviera_clave, cfg=None, on_log=None, on_pausa=No
                  f"no abro el navegador ni entro al portal.")
         resumen()
         return resultados, str(carpeta)
+    # Sin contrato de HYUNDAI (_falta_el_contrato), ninguna de sus filas abre el portal: quedan NO ENVIADA con el
+    # motivo (decisión de Marcelo, encargo 95: sin un contrato real, el portal no deja armar la reserva).
+    sin_contrato = _falta_el_contrato(naviera_clave, creds)
+    if sin_contrato:
+        for i, rsv in con_nave:
+            anotar(i, rsv, *_sin_el_contrato(reg, rsv["fila"], sin_contrato))
+        reg.paso(f"El operador no tiene un contrato de {nombre}: no abro el navegador ni entro al portal.")
+        resumen()
+        return resultados, str(carpeta)
 
     with sync_playwright() as p:
         ctx = _lanzar_navegador(p, perfil_dir, headless, canal, reg)
@@ -15531,6 +15584,18 @@ def _web_worker(hoja, usuario, filas_pedidas):
             if not sub_elegidas:
                 reg.paso(f"De las filas de {nombre} con nave y ruta, ninguna pide el contenedor "
                          f"«{CONTENEDOR_DE_LAS_FILAS}»: no abro el navegador ni entro al portal.")
+                continue
+            # Sin contrato de HYUNDAI (_falta_el_contrato), ninguna de sus filas abre el portal: quedan NO ENVIADA con el
+            # motivo (decisión de Marcelo, encargo 95: sin un contrato real, el portal no deja armar la reserva).
+            sin_contrato = _falta_el_contrato(nav, creds)
+            if sin_contrato:
+                for rsv in sub_elegidas:
+                    estado, detalle = _sin_el_contrato(reg, rsv["fila"], sin_contrato)
+                    with _LOCK:
+                        _WEB["resultados"][str(rsv["fila"])] = {
+                            "estado": estado, "detalle": detalle, "booking": "", "nave": rsv.get("nave", ""),
+                            "hora": _dt.datetime.now().strftime("%H:%M")}
+                reg.paso(f"El operador no tiene un contrato de {nombre}: no abro el navegador ni entro al portal.")
                 continue
 
             reg.paso(f"===== INICIANDO {nombre.upper()} ({len(sub_elegidas)} reserva(s)) =====")
@@ -17166,7 +17231,8 @@ async function verFilas() {
 
 // ---------- el contrato de HYUNDAI, antes de correr ----------
 // Sin un contrato de HYUNDAI (ni en las credenciales del operador ni en contratos_por_defecto), su portal no deja armar
-// la reserva y la fila queda NO ENVIADA (medido el 03-11, en modo prueba). El panel lo dice antes de correr: marca cada
+// la reserva, y la fila queda NO ENVIADA sin entrar al portal (medido el 03-11, en modo prueba; decisión de Marcelo,
+// encargo 95). El panel lo dice antes de correr: marca cada
 // fila de HYUNDAI que llega a pedirlo (f.pide_contrato, de /api/filas) si el operador elegido no tiene uno
 // (SIN_CONTRATO, de /api/config), y lo dice a la vista, con dónde se escribe (decisión de Marcelo, encargo 95). Al
 // cambiar de operador, o al guardar las credenciales, se vuelve a pintar; al armar, con las filas elegidas y quién no
@@ -17180,9 +17246,9 @@ async function leerSinContrato() {
 function avisoDeContrato(filas, operador) {
   const n = filas.filter(f => f.pide_contrato).length;
   if (!n || !SIN_CONTRATO.has(operador)) return "";
-  return n + " reserva(s) de HYUNDAI quedan NO ENVIADA: el operador «" + operador + "» no tiene un contrato de " +
-         "HYUNDAI, y sin él el portal no deja armarlas. Escríbelo en Credenciales (la llave, arriba a la derecha) → " +
-         "HYUNDAI → columna Contrato.";
+  return n + " reserva(s) de HYUNDAI quedan NO ENVIADA, sin entrar al portal: el operador «" + operador + "» no " +
+         "tiene un contrato de HYUNDAI, y sin él el portal no deja armarlas. Escríbelo en Credenciales (la llave, " +
+         "arriba a la derecha) → HYUNDAI → columna Contrato.";
 }
 function pintarContrato(filas) {
   const operador = $("#usuario").value;

@@ -280,13 +280,15 @@ class TestSinClicACiegas(ConRegistro):
                 # desde el 54, en CMA, por dentro de todos, el de CMA detenida (CICLO-cma-acceso-restringido.md); y
                 # desde el 55, el de CMA guarda con plazo el HTML del paso sin objetivo
                 # (CICLO-pausa-plazos-y-datadome.md); desde el 63, en MAERSK, por dentro de todos, el de la fila que
-                # pide otro contenedor (CICLO-maersk-otro-contenedor-y-reefer.md).
+                # pide otro contenedor (CICLO-maersk-otro-contenedor-y-reefer.md); desde el 95, en HYUNDAI, por dentro
+                # de todos, el del operador sin contrato (CICLO-one-puerto-y-contrato-hyundai.md).
                 plazo = ", plazo_ms=CMA_PLAZO_MS" if r == "reservar_cma" else ""
                 self.assertEqual(decos, (["_con_el_puerto_de_cosco"] if r == "reservar_cosco" else [])
                                  + ["_con_la_nave_de_la_fila", "_con_la_ruta_de_la_fila",
                                     f"_sin_clic_a_ciegas({prefijo!r}{plazo})"]
                                  + (["_cma_si_se_detuvo"] if r == "reservar_cma" else [])
-                                 + (["_mk_con_el_contenedor_de_la_fila"] if r == "reservar_maersk" else []), r)
+                                 + (["_mk_con_el_contenedor_de_la_fila"] if r == "reservar_maersk" else [])
+                                 + (["_hmm_con_el_contrato"] if r == "reservar_hyundai" else []), r)
         self.assertEqual(sorted(decorados), sorted(self.CORTAN))
 
     CORTAN = ["reservar_cma", "reservar_cosco", "reservar_hyundai", "reservar_maersk", "reservar_msc", "reservar_one"]

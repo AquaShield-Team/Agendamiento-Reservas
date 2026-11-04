@@ -5844,8 +5844,8 @@ MUTACIONES += [
     dict(id="contrato-msc-fijo", pruebas=[CD_NO_LOS_TRAE],
          viejo='or _contrato_por_defecto("msc"))', nuevo='or "XX12345680")'),
     dict(id="contrato-hyundai-fijo", pruebas=[CD_NO_LOS_TRAE],
-         viejo='    return propio or _contrato_por_defecto("hyundai", avisar=avisar)\n',
-         nuevo='    return propio or "XX12345681"\n'),
+         viejo='    contrato = contrato or _contrato_por_defecto("hyundai", avisar=avisar)\n',
+         nuevo='    contrato = contrato or "XX12345681"\n'),
     dict(id="contrato-comentario-con-codigo", pruebas=[CD_NO_LOS_TRAE],
          viejo="    # Contrato inteligente: USA u Otros Mercados (_determinar_contrato_one).\n",
          nuevo="    # Contrato inteligente (USA = XX12345682, Otros Mercados = XX12345683)\n"),
@@ -7954,7 +7954,8 @@ MUTACIONES += [
     # El aviso y el estado.
     dict(id="e63-sin-aviso", pruebas=[OC_DECORADOR, OC_WEB, OC_CONSOLA], viejo=AVISO_OC, nuevo=""),
     dict(id="e63-omitida", pruebas=[OC_DECORADOR, OC_WEB, OC_CONSOLA],
-         viejo="    return (NO_ENVIADA, motivo)\n", nuevo='    return ("OMITIDO", motivo)\n'),
+         viejo='la fila pide «{CONTENEDOR_DE_LAS_FILAS}».")\n    return (NO_ENVIADA, motivo)\n',
+         nuevo='la fila pide «{CONTENEDOR_DE_LAS_FILAS}».")\n    return ("OMITIDO", motivo)\n'),
     # El decorador: deja pasar la fila, mira otra naviera, pierde on_pausa, su nombre o su documentación, no está, o
     # va por fuera de los de la nave y la ruta.
     dict(id="e63-el-decorador-deja-pasar", pruebas=[OC_DECORADOR],
@@ -11133,9 +11134,9 @@ CT_FILAS_E95 = "test_web.TestPanelCorridas.test_filas_dicen_si_piden_contrato"
 CT_PAGINA_E95 = "test_envio.TestLecturaDelPanel.test_avisa_si_falta_el_contrato_de_hyundai"
 MUTACIONES += [
     dict(id="e95-contrato-con-sus-espacios", pruebas=[CT_AYUDANTE_E95],
-         viejo='.get("contrato") or "").strip()\n    return propio', nuevo='.get("contrato") or "")\n    return propio'),
+         viejo='    propio = str(propio).strip() if', nuevo='    propio = str(propio) if'),
     dict(id="e95-contrato-sin-el-por-defecto", pruebas=[CT_AYUDANTE_E95, CT_QUIEN_E95],
-         viejo='    return propio or _contrato_por_defecto("hyundai", avisar=avisar)\n', nuevo="    return propio\n"),
+         viejo='    contrato = contrato or _contrato_por_defecto("hyundai", avisar=avisar)\n', nuevo="    contrato = contrato\n"),
     dict(id="e95-contrato-quien-al-reves", pruebas=[CT_QUIEN_E95],
          viejo='            if not _hmm_contrato(datos.get("hyundai")', nuevo='            if _hmm_contrato(datos.get("hyundai")'),
     dict(id="e95-contrato-config-sin-la-lista", pruebas=[CT_CONFIG_E95],
@@ -11197,4 +11198,91 @@ MUTACIONES += [
          viejo="«{_destino_a_la_vista(ciudad)[:60]}» antes de su primera coma", nuevo="«{ciudad}» antes de su primera coma"),
     dict(id="e95-one-pais-sin-coma", pruebas=[ONE_CORTA_E95],
          viejo='if len(partes) > 1 else ""\n', nuevo='if len(partes) > 0 else ""\n'),
+]
+
+# --- Encargo 95, segunda parte (decisión de Marcelo después del cierre): una fila de HYUNDAI, si el operador no tiene
+# contrato, queda NO ENVIADA sin entrar al portal, como la fila sin nave: los dos orquestadores la apartan y un
+# decorador de reservar_hyundai cuida cualquier otro camino. El aviso de la página dice «sin entrar al portal».
+SC_E95 = "test_ayudantes.TestSinContratoHyundai."
+SC_WEB_E95 = "test_web.TestPanelCorridas.test_hyundai_sin_contrato_no_abre_el_portal"
+SC_CONSOLA_E95 = "test_consola.TestEjecutarReservas.test_hyundai_sin_contrato_no_abre_el_portal"
+DECORADOS_E95 = "test_clics.TestSinClicACiegas.test_cada_reservador_que_corta_esta_decorado"
+MUTACIONES += [
+    dict(id="e95b-falta-el-contrato-en-todas", pruebas=[SC_E95 + "test_falta_el_contrato"],
+         viejo='    if nav != "hyundai" or _hmm_contrato(creds, avisar=False):\n',
+         nuevo="    if _hmm_contrato(creds, avisar=False):\n"),
+    dict(id="e95b-falta-el-contrato-nunca", pruebas=[SC_E95 + "test_falta_el_contrato", SC_WEB_E95, SC_CONSOLA_E95],
+         viejo='    if nav != "hyundai" or _hmm_contrato(creds, avisar=False):\n        return ""\n',
+         nuevo='    if True:\n        return ""\n'),
+    dict(id="e95b-el-motivo-sin-donde", pruebas=[SC_E95 + "test_falta_el_contrato", SC_WEB_E95],
+         viejo='f"el {HMM_DONDE_VA_EL_CONTRATO}")\n\n\ndef _sin_el_contrato',
+         nuevo='f"el panel")\n\n\ndef _sin_el_contrato'),
+    dict(id="e95b-sin-contrato-omitida", pruebas=[SC_E95 + "test_hyundai_no_abre_el_portal_sin_contrato", SC_WEB_E95],
+         viejo='No entro al portal por ella.")\n    return (NO_ENVIADA, motivo)\n',
+         nuevo='No entro al portal por ella.")\n    return ("OMITIDO", motivo)\n'),
+    dict(id="e95b-sin-contrato-sin-linea",
+         pruebas=[SC_E95 + "test_hyundai_no_abre_el_portal_sin_contrato", SC_CONSOLA_E95],
+         viejo='    reg.paso(f"✗ fila {fila}: {NO_ENVIADA} · {motivo}. No entro al portal por ella.")\n', nuevo=""),
+    dict(id="e95b-el-decorador-deja-pasar", pruebas=[SC_E95 + "test_hyundai_no_abre_el_portal_sin_contrato"],
+         viejo='        motivo = _falta_el_contrato("hyundai", creds)\n        if motivo:\n',
+         nuevo='        motivo = _falta_el_contrato("hyundai", creds)\n        if False:\n'),
+    dict(id="e95b-el-decorador-pierde-on-pausa", pruebas=[SC_E95 + "test_con_contrato_pasa_igual"],
+         viejo=('            return _sin_el_contrato(reg, (reserva or {}).get("fila"), motivo)\n'
+                '        return reservar(page, reserva, creds, reg, on_pausa=on_pausa)\n'),
+         nuevo=('            return _sin_el_contrato(reg, (reserva or {}).get("fila"), motivo)\n'
+                '        return reservar(page, reserva, creds, reg)\n')),
+    dict(id="e95b-el-decorador-pierde-el-nombre", pruebas=[SC_E95 + "test_con_contrato_pasa_igual"],
+         viejo="    reservar_con_el_contrato.__name__ = reservar.__name__\n", nuevo=""),
+    dict(id="e95b-hyundai-sin-el-decorador",
+         pruebas=[SC_E95 + "test_hyundai_no_abre_el_portal_sin_contrato", DECORADOS_E95],
+         viejo='@_sin_clic_a_ciegas("hmm")\n@_hmm_con_el_contrato\n', nuevo='@_sin_clic_a_ciegas("hmm")\n'),
+    dict(id="e95b-decorador-por-fuera", pruebas=[SC_E95 + "test_sin_nave_o_sin_ruta_dicen_eso", DECORADOS_E95],
+         viejo='@_con_la_nave_de_la_fila\n@_con_la_ruta_de_la_fila\n@_sin_clic_a_ciegas("hmm")\n@_hmm_con_el_contrato\n',
+         nuevo='@_hmm_con_el_contrato\n@_con_la_nave_de_la_fila\n@_con_la_ruta_de_la_fila\n@_sin_clic_a_ciegas("hmm")\n'),
+    dict(id="e95b-consola-entra-al-portal", pruebas=[SC_CONSOLA_E95],
+         viejo="    sin_contrato = _falta_el_contrato(naviera_clave, creds)\n", nuevo='    sin_contrato = ""\n'),
+    dict(id="e95b-consola-sin-el-resultado", pruebas=[SC_CONSOLA_E95],
+         viejo='            anotar(i, rsv, *_sin_el_contrato(reg, rsv["fila"], sin_contrato))\n',
+         nuevo='            _sin_el_contrato(reg, rsv["fila"], sin_contrato)\n'),
+    dict(id="e95b-panel-entra-al-portal", pruebas=[SC_WEB_E95],
+         viejo="            sin_contrato = _falta_el_contrato(nav, creds)\n", nuevo='            sin_contrato = ""\n'),
+    dict(id="e95b-panel-sin-el-resultado", pruebas=[SC_WEB_E95],
+         viejo=('                    estado, detalle = _sin_el_contrato(reg, rsv["fila"], sin_contrato)\n'
+                '                    with _LOCK:\n'),
+         nuevo=('                    estado, detalle = _sin_el_contrato(reg, rsv["fila"], sin_contrato)\n'
+                '                    if False:\n')),
+    dict(id="e95b-panel-sigue-con-el-portal", pruebas=[SC_WEB_E95],
+         viejo=('                reg.paso(f"El operador no tiene un contrato de {nombre}: no abro el navegador ni entro '
+                'al portal.")\n                continue\n'),
+         nuevo=('                reg.paso(f"El operador no tiene un contrato de {nombre}: no abro el navegador ni entro '
+                'al portal.")\n')),
+    dict(id="e95b-aviso-sin-decir-sin-portal", pruebas=[CT_PAGINA_E95],
+         viejo="quedan NO ENVIADA, sin entrar al portal: el operador «", nuevo="quedan NO ENVIADA: el operador «"),
+]
+
+# --- Encargo 95, segunda parte, la revisión de código: CONSOLIDADO solo aparta las filas de HYUNDAI, y la fila que no
+# entra pregunta el contrato sin avisar.
+MUTACIONES += [
+    dict(id="e95b-panel-mira-hyundai-siempre", pruebas=[SC_WEB_E95],
+         viejo="            sin_contrato = _falta_el_contrato(nav, creds)\n",
+         nuevo='            sin_contrato = _falta_el_contrato("hyundai", creds)\n'),
+    dict(id="e95b-consola-mira-hyundai-siempre", pruebas=[SC_CONSOLA_E95],
+         viejo="    sin_contrato = _falta_el_contrato(naviera_clave, creds)\n",
+         nuevo='    sin_contrato = _falta_el_contrato("hyundai", creds)\n'),
+    dict(id="e95b-falta-el-contrato-avisa", pruebas=[SC_E95 + "test_falta_el_contrato"],
+         viejo="_hmm_contrato(creds, avisar=False):\n", nuevo="_hmm_contrato(creds):\n"),
+]
+
+# --- Encargo 95, segunda parte, la revisión de seguridad: un contrato que no es un texto ni un número, o sin ninguna
+# letra ni cifra, no cuenta.
+MUTACIONES += [
+    dict(id="e95b-contrato-cualquier-valor", pruebas=[CT_AYUDANTE_E95],
+         viejo="    propio = str(propio).strip() if isinstance(propio, (str, int)) and not isinstance(propio, bool) else \"\"\n",
+         nuevo="    propio = str(propio or \"\").strip()\n"),
+    dict(id="e95b-contrato-booleano", pruebas=[CT_AYUDANTE_E95],
+         viejo=" and not isinstance(propio, bool) else", nuevo=" else"),
+    dict(id="e95b-contrato-invisible", pruebas=[CT_AYUDANTE_E95],
+         viejo="    contrato = propio if any(c.isalnum() for c in propio) else \"\"\n", nuevo="    contrato = propio\n"),
+    dict(id="e95b-contrato-por-defecto-invisible", pruebas=[CT_AYUDANTE_E95],
+         viejo="    return contrato if any(c.isalnum() for c in contrato) else \"\"\n", nuevo="    return contrato\n"),
 ]
