@@ -238,6 +238,9 @@ class TestCadaReservadorLaDeja(soporte.CasoAQ):
                                           # (test_clics.TestRetiroMaersk, CICLO-maersk-retiro-y-terminos.md); y con la
                                           # casilla de los términos, antes de marcarla (test_clics.TestTerminosMaersk).
                                           + ["_mk_fecha_de_retiro", "_mk_comprobar_retiro", "_mk_marcar_terminos"]
+                                          # Desde el encargo 97, MAERSK con el calendario en el mes siguiente, antes
+                                          # de elegir (test_clics.TestRetiroMaersk).
+                                          + ["_mk_mes_siguiente"]
                                           # Desde el encargo 37, MAERSK en «Booking Information» sin avanzar
                                           # (test_clics.TestMaersk, CICLO-maersk-ultimos-puntos.md).
                                           + ["_mk_booking_sin_avanzar"]

@@ -10989,14 +10989,29 @@ def _mk_continuar_a_la_nave(page, reg, det, f, textos):
 # (CICLO-maersk-ultimos-puntos.md y CICLO-maersk-shipper-y-cortes.md; hasta el encargo 37, el siguiente habilitado,
 # aunque fuera fin de semana, y hasta el 38, los feriados contaban como hábiles). Se elige con tres clics, cada uno por
 # lo que es: «Choose another date» (el único botón a la vista con ese nombre accesible, medido en
-# mk_f10_sin_objetivo.html del 27-09), el día del calendario por su fecha, y «Done». Del 24-09 (0f1507e) al encargo 36
+# mk_f10_sin_objetivo.html del 27-09), el día del calendario por su fecha, y «Done»; desde el encargo 97, con un cuarto,
+# «Next month», solo si el día cae en el mes siguiente (abajo). Del 24-09 (0f1507e) al encargo 36
 # no se elegía: la definía la naviera, y el portal no pasaba a la revisión sin ella (CICLO-maersk-fecha-de-retiro.md).
 # Hasta 0f1507e se pulsaba el primer día del calendario que no se viera deshabilitado, sin mirar su fecha: así llegaron
 # a la revisión las 5 filas del 21-09.
+# Si el día que toca cae en el mes siguiente al que muestra el calendario (a fin de mes, y en diciembre, del año
+# siguiente), o si en el que muestra no queda un día hábil habilitado desde él, pasa al mes siguiente con su único
+# «Next month», a lo más MK_MESES_ADELANTE veces y nunca hacia atrás, y comprueba que el calendario muestre el día que
+# sigue al último que mostraba (decisión de Marcelo, encargo 97, CICLO-retiro-maersk-mes-siguiente.md). Hasta ahí era un
+# clic que no estaba permitido (FRENO de Marcelo, encargo 36), y la fila quedaba NO ENVIADA: así, según Marcelo, a fines
+# de octubre no se pudo emitir. Medido en los 35 calendarios guardados (del 14-10 al 04-11, con el de diciembre de la
+# sonda en el portal): cada uno abre en el mes de su corrida, con solo los días de ese mes, y trae un solo «Next month»
+# a la vista, sin disabled. En el portal, el 04-11, pulsarlo pasó de noviembre a diciembre en 0,5 s.
 MK_OTRA_FECHA = "Choose another date"
 MK_LISTO = "Done"
+MK_MES_SIGUIENTE = "Next month"
+# Un mes basta: el día que toca cae, a lo más, en el mes que sigue al de hoy, y el calendario abre en el de hoy. Un
+# segundo «Next month» serviría solo si en todo ese mes no hubiera un día hábil habilitado, y entonces el plazo de
+# entrega de la salida ya pasó (_mk_plazo_no_deja).
+MK_MESES_ADELANTE = 1
 MK_ESPERA_CALENDARIO = 10      # s que espera el calendario después de «Choose another date» (hipótesis, sin medir)
 _MK_NADA_MAS = "no pulsé nada más y la reserva no se envió"
+_MK_SIN_VOLVER = f"y el calendario no se pasa más de un mes adelante («{MK_MES_SIGUIENTE}») ni hacia atrás"
 _DIAS_ES = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 
 # Las fechas escritas en un texto, sin ambigüedad: AAAA-MM-DD (o con barras), «29 September 2026» y «September 29,
@@ -11143,7 +11158,32 @@ _JS_MK_DIAS = r"""
         const [done] = unicos;
         const botones = todos.filter(y => y.anc.includes(done.el) && mkTag(y.el) === 'button');
         const listo = botones.find(b => !botones.some(o => o.el !== b.el && o.anc.includes(b.el))) || done;
-        return {listos: 1, raiz: true, meses: [...new Set(leyendas.map(l => l.clave))], dias, listo: listo.el};
+        // «Next month», para pasar al mes siguiente (encargo 97): el único control a la vista de la raíz del calendario
+        // que se llama así (su label, su aria-label o su texto); el button de adentro de un mc-button es el mismo
+        // control. Se pulsa su botón de más adentro, y solo si ni él ni lo de adentro está deshabilitado. Medido en los
+        // 35 calendarios guardados (del 14-10 al 04-11): un solo mc-button con label «Next month», id nextButton, y su
+        // button de adentro con ese aria-label, a la vista y sin disabled.
+        const sigs = todos.filter(x => enRaiz(x) && esBoton(x.el) && mkVisible(x.el) && nombre(x.el) === 'next month');
+        const deSigs = new Set(sigs.map(x => x.el));
+        const sigsAfuera = sigs.filter(x => !x.anc.some(a => deSigs.has(a)));
+        let siguiente = null;
+        if (sigsAfuera.length === 1) {
+            const s = sigsAfuera[0].el;
+            const adentro = todos.filter(y => y.el === s || y.anc.includes(s));
+            // Deshabilitado, con la misma regla de los días: el atributo, aria-disabled, o la clase o el part.
+            const apagado = adentro.some(y => y.el.hasAttribute('disabled') || mkAtr(y.el, 'aria-disabled') === 'true'
+                                              || APAGADO.test(mkAtr(y.el, 'class') + ' ' + mkAtr(y.el, 'part')));
+            const bs = adentro.filter(y => mkTag(y.el) === 'button');
+            const hojas = bs.filter(y => !bs.some(o => o.el !== y.el && o.anc.includes(y.el)));
+            // Se pulsa su button de más adentro solo si es uno solo, se ve y se llama «Next month» o no tiene nombre; sin
+            // ninguno, el control mismo; si no, nada (revisión de seguridad del encargo 97: se tomaba el primero, sin
+            // mirar su nombre ni si se veía).
+            const b = hojas.length === 1 && mkVisible(hojas[0].el) && ['next month', ''].includes(nombre(hojas[0].el))
+                ? hojas[0].el : hojas.length ? null : s;
+            siguiente = apagado ? null : b;
+        }
+        return {listos: 1, raiz: true, meses: [...new Set(leyendas.map(l => l.clave))], dias, listo: listo.el,
+                siguientes: sigsAfuera.length, siguiente};
     }
     // Lo que se pulsa de una celda: su botón de más adentro, si tiene; si no, la celda.
     const mkPulsable = c => {
@@ -11156,7 +11196,15 @@ _JS_MK_DIAS = r"""
 _JS_MK_CALENDARIO = "() => {" + _JS_MK_RECORRER + _JS_MK_FECHAS + _JS_MK_DIAS + r"""
     const r = mkCalendario();
     return {listos: r.listos, raiz: r.raiz, meses: r.meses,
-            dias: r.dias.map(d => ({dia: d.dia, fecha: d.fecha, como: d.como, habilitado: d.habilitado}))};
+            dias: r.dias.map(d => ({dia: d.dia, fecha: d.fecha, como: d.como, habilitado: d.habilitado})),
+            siguientes: r.siguientes};
+}"""
+
+# «Next month» del calendario, para pulsarlo (encargo 97): vuelve a leer el calendario, y lo da solo si es uno solo y
+# está habilitado (mkCalendario).
+_JS_MK_MES_SIGUIENTE = "() => {" + _JS_MK_RECORRER + _JS_MK_FECHAS + _JS_MK_DIAS + r"""
+    const r = mkCalendario();
+    return r.raiz ? r.siguiente : null;
 }"""
 
 # El día elegido, para pulsarlo: vuelve a leer el calendario, y lo da solo si esa fecha está en una sola celda
@@ -11282,17 +11330,17 @@ def _mk_elegir_dia_de_retiro(dias, objetivo, feriados=()):
     (_mk_dia_habil): nunca un sábado, un domingo ni un feriado de 'feriados' (decisión de Marcelo,
     CICLO-maersk-ultimos-puntos.md y CICLO-maersk-shipper-y-cortes.md; hasta el encargo 37, el siguiente habilitado,
     aunque fuera fin de semana). 'dias' es lo que da _JS_MK_CALENDARIO: cada uno
-    con su fecha («AAAA-MM-DD», o vacía si no se pudo identificar) y si está habilitado. 'objetivo' tiene que estar a
-    la vista, y cada día hábil desde él hasta el elegido, identificado por su fecha: cambiar de mes sería un clic que no
-    está entre los permitidos. Devuelve (fecha, "") o (fecha, por qué no es 'objetivo'); o (None, por qué no se puede
-    elegir)."""
+    con su fecha («AAAA-MM-DD», o vacía si no se pudo identificar) y si está habilitado; con el mes siguiente, los de
+    los dos meses (encargo 97), y si una fecha está en los dos, manda la última lectura. 'objetivo' tiene que estar en
+    ellos, y cada día hábil desde él hasta el elegido, identificado por su fecha. Devuelve (fecha, "") o (fecha, por qué
+    no es 'objetivo'); o (None, por qué no se puede elegir)."""
     fechas = _mk_fechas_del_calendario(dias)
     if not fechas:
         return None, "no pude identificar por su fecha ningún día del calendario"
     primero, ultimo = min(fechas), max(fechas)
     if not primero <= objetivo <= ultimo:
         return None, (f"el día que toca, el {objetivo:%d-%m-%Y}, no está a la vista: el calendario muestra del "
-                      f"{primero:%d-%m-%Y} al {ultimo:%d-%m-%Y}, y cambiar de mes es un clic que no está permitido")
+                      f"{primero:%d-%m-%Y} al {ultimo:%d-%m-%Y}, {_MK_SIN_VOLVER}")
     d = objetivo
     while d <= ultimo:
         if not _mk_dia_habil(d, feriados):
@@ -11306,7 +11354,119 @@ def _mk_elegir_dia_de_retiro(dias, objetivo, feriados=()):
                                                 f"({_DIAS_ES[d.weekday()]})")
         d += datetime.timedelta(days=1)
     return None, (f"no hay un día hábil habilitado del {objetivo:%d-%m-%Y} al {ultimo:%d-%m-%Y}, el último que muestra "
-                  f"el calendario, y cambiar de mes es un clic que no está permitido")
+                  f"el calendario, {_MK_SIN_VOLVER}")
+
+
+def _mk_falta_otro_mes(dias, objetivo, feriados=()):
+    """Si para elegir con la regla (_mk_elegir_dia_de_retiro) hacen falta días después del último que muestra el
+    calendario ('dias', de _JS_MK_CALENDARIO): 'objetivo' cae después de él, o todos los días hábiles desde 'objetivo'
+    hasta él están identificados por su fecha y deshabilitados (encargo 97). Con 'objetivo' antes del primero que
+    muestra, no: el calendario nunca se pasa hacia atrás. Con un día hábil sin su fecha en medio, tampoco: la regla
+    corta ahí, sin otro clic."""
+    fechas = _mk_fechas_del_calendario(dias)
+    if not fechas or objetivo < min(fechas):
+        return False
+    d, ultimo = objetivo, max(fechas)
+    while d <= ultimo:
+        if _mk_dia_habil(d, feriados) and (d not in fechas or fechas[d]):
+            return False
+        d += datetime.timedelta(days=1)
+    return True
+
+
+def _mk_mismos_dias(a, b):
+    """Si dos lecturas de _JS_MK_CALENDARIO dicen lo mismo: el calendario, y cada día con su fecha y si está
+    habilitado."""
+    def dias(c):
+        c = c if isinstance(c, dict) else {}
+        return (bool(c.get("raiz")), [(str(d.get("fecha") or ""), bool(d.get("habilitado")))
+                                      for d in (c.get("dias") or []) if isinstance(d, dict)])
+    return dias(a) == dias(b)
+
+
+def _mk_leer_calendario(page):
+    """Una lectura de _JS_MK_CALENDARIO; {} si no se pudo leer."""
+    try:
+        cal = page.evaluate(_JS_MK_CALENDARIO)
+    except Exception:
+        cal = {}
+    return cal if isinstance(cal, dict) else {}
+
+
+def _mk_calendario_quieto(page, cal):
+    """Vuelve a leer el calendario cada 0,5 s, hasta MK_ESPERA_CALENDARIO s, hasta que dos lecturas seguidas digan lo
+    mismo (_mk_mismos_dias), empezando por 'cal'. Antes de pasar de mes (revisión de seguridad del encargo 97): si el
+    portal pintara los días antes de su disponibilidad, una sola lectura podría verlos todos deshabilitados, y el
+    programa pasaría al mes siguiente sin que hiciera falta (no medido). Devuelve (la última lectura, si se quedó
+    quieto)."""
+    previa = cal
+    for _ in range(MK_ESPERA_CALENDARIO * 2):
+        esperar(page, 0.5)
+        nueva = _mk_leer_calendario(page)
+        if _mk_mismos_dias(nueva, previa):
+            return nueva, True
+        previa = nueva
+    return previa, False
+
+
+def _mk_despues_de(dias, ultimo):
+    """Los días de 'dias' (de _JS_MK_CALENDARIO) cuya fecha es posterior a 'ultimo'. Del mes siguiente se suman solo esos
+    (revisión de seguridad del encargo 97): una celda de otro mes con su fecha no pisa la del mes propio."""
+    out = []
+    for d in dias or []:
+        try:
+            if datetime.date.fromisoformat(str(d.get("fecha") or "")) > ultimo:
+                out.append(d)
+        except (AttributeError, ValueError):
+            continue
+    return out
+
+
+def _mk_mes_siguiente(page, reg, f, cal):
+    """Pasa el calendario de la fecha de retiro al mes siguiente (decisión de Marcelo, encargo 97): pulsa su único «Next
+    month» habilitado (_JS_MK_MES_SIGUIENTE, que vuelve a leer el calendario) y espera, hasta MK_ESPERA_CALENDARIO s, que
+    el calendario muestre el día que sigue al último que mostraba 'cal', identificado por su fecha, en dos lecturas
+    seguidas iguales (_mk_mismos_dias; revisión de seguridad del encargo 97: el mes nuevo se lee justo después del clic,
+    cuando es más probable que esté a medio cargar). Deja la evidencia mk_f<fila>_calendario_siguiente, antes de elegir.
+    Devuelve (el calendario nuevo, None), o (None, el corte, NO ENVIADA sin otro clic): sin un solo «Next month»
+    habilitado, si falla el clic, si el calendario no pasó al mes siguiente o si no se quedó quieto."""
+    ultimo = max(_mk_fechas_del_calendario(cal.get("dias")))
+    hasta = f"el calendario de la fecha de retiro muestra hasta el {ultimo:%d-%m-%Y}"
+    try:
+        boton = page.evaluate_handle(_JS_MK_MES_SIGUIENTE).as_element()
+    except Exception as e:
+        return None, _no_enviada(reg, f"MAERSK: {hasta}, y no pude buscar su «{MK_MES_SIGUIENTE}» "
+                                      f"({_texto_error(e)}); {_MK_NADA_MAS}")
+    if boton is None:
+        n = cal.get("siguientes")
+        n = n if isinstance(n, int) and not isinstance(n, bool) else 0
+        return None, _no_enviada(reg, f"MAERSK: {hasta}, y no encontré un solo «{MK_MES_SIGUIENTE}» habilitado para "
+                                      f"pasar al mes siguiente (había {n}); {_MK_NADA_MAS}")
+    try:
+        boton.click(timeout=4000)
+    except Exception as e:
+        return None, _no_enviada(reg, f"MAERSK: {hasta}, y falló el clic en su «{MK_MES_SIGUIENTE}» "
+                                      f"({_texto_error(e)}); {_MK_NADA_MAS}")
+    reg.info(f"pulsado '{MK_MES_SIGUIENTE}'")
+    sigue, nuevo, previa, quieto = ultimo + datetime.timedelta(days=1), {}, None, False
+    for _ in range(MK_ESPERA_CALENDARIO * 2):
+        esperar(page, 0.5)
+        nuevo = _mk_leer_calendario(page)
+        quieto = previa is not None and _mk_mismos_dias(nuevo, previa)
+        if quieto and nuevo.get("raiz") and sigue in _mk_fechas_del_calendario(nuevo.get("dias")):
+            break
+        previa = nuevo
+    reg.info(f"calendario de la fecha de retiro, en el mes siguiente: {_mk_resumen_calendario(nuevo)}")
+    _evidencia_antes_de_la_guarda(page, reg, f"mk_f{f}_calendario_siguiente",
+                                  "con el calendario de la fecha de retiro en el mes siguiente", completa=False)
+    if not (nuevo.get("raiz") and sigue in _mk_fechas_del_calendario(nuevo.get("dias"))):
+        return None, _no_enviada(reg, f"MAERSK: pulsé «{MK_MES_SIGUIENTE}» en el calendario de la fecha de retiro, pero "
+                                      f"no pasó al mes siguiente: no muestra el {sigue:%d-%m-%Y}; {_MK_NADA_MAS}")
+    if not quieto:
+        return None, _no_enviada(reg, f"MAERSK: pulsé «{MK_MES_SIGUIENTE}» en el calendario de la fecha de retiro, pero "
+                                      f"el mes siguiente no se quedó quieto en {MK_ESPERA_CALENDARIO} s (dos lecturas "
+                                      f"seguidas distintas); {_MK_NADA_MAS}")
+    return nuevo, None
 
 
 def _mk_plazo_no_deja(dias, objetivo, plazo=""):
@@ -11414,7 +11574,12 @@ def _mk_fecha_de_retiro(page, reg, det, f, hoy=None, plazo=""):
     avisos de cargos y mira la fecha que quedó (_mk_comprobar_retiro). Sin un solo «Choose another date» a la vista, o
     con un «Done» ya en la página, corta sin pulsar nada (ObjetivoNoEncontrado). Después de pulsarlo, si el calendario
     no aparece o el día no se puede elegir por su fecha, devuelve el corte, NO ENVIADA, sin otro clic (FRENO de
-    Marcelo: ningún clic fuera de esos tres, ni cambiar de mes). Si no, None.
+    Marcelo: ningún clic fuera de esos tres y, desde el encargo 97, de «Next month»). Si no, None.
+    Si el día que toca cae después del último que muestra el calendario, o no queda en él un día hábil habilitado desde
+    el día que toca (_mk_falta_otro_mes), pasa al mes siguiente con su «Next month» (_mk_mes_siguiente), a lo más
+    MK_MESES_ADELANTE veces, y elige entre los días de los dos meses (decisión de Marcelo, encargo 97: a fin de mes y en
+    diciembre el día que toca cae en el mes siguiente, y el calendario abre en el de hoy). Si el plazo de entrega de la
+    salida, leído en su tarjeta, es anterior al día que toca, no pasa de mes: ningún día de después serviría.
     Si el calendario no tiene un día que cumpla la regla y el plazo de entrega de la salida elegida ('plazo', que
     reservar_maersk toma de _mk_elegir_nave) lo explica, el motivo dice eso y que hay que usar una salida posterior
     (_mk_plazo_no_deja; decisión de Marcelo, encargo 69, CICLO-plazo-de-entrega-maersk.md), sin otro clic."""
@@ -11446,11 +11611,41 @@ def _mk_fecha_de_retiro(page, reg, det, f, hoy=None, plazo=""):
                                   completa=False)
     if not cal.get("raiz"):
         return _no_enviada(reg, f"MAERSK: pulsé «{MK_OTRA_FECHA}», pero {_mk_sin_calendario(cal)}; {_MK_NADA_MAS}")
-    elegido, por_que = _mk_elegir_dia_de_retiro(cal.get("dias"), objetivo, feriados)
+    vistos, meses, releido, frenado = list(cal.get("dias") or []), 0, False, None
+    plazo_visto = _mk_fecha_salida(" ".join(str(plazo or "").split())[:40])
+    while _mk_falta_otro_mes(vistos, objetivo, feriados) and meses < MK_MESES_ADELANTE:
+        ultimo = max(_mk_fechas_del_calendario(vistos))
+        if plazo_visto is not None and plazo_visto <= ultimo:
+            frenado = ultimo    # el plazo de entrega vence en este mes: ningún día del siguiente serviría
+            break
+        if not releido:
+            # Antes de pasar de mes, el calendario quieto: dos lecturas seguidas iguales (revisión de seguridad del
+            # encargo 97). Con la lectura nueva se vuelve a decidir.
+            cal, quieto = _mk_calendario_quieto(page, cal)
+            reg.info(f"calendario de la fecha de retiro, otra vez antes de pasar de mes: {_mk_resumen_calendario(cal)}")
+            if not quieto:
+                return _no_enviada(reg, f"MAERSK: el calendario de la fecha de retiro no se quedó quieto en "
+                                        f"{MK_ESPERA_CALENDARIO} s (dos lecturas seguidas distintas), y no paso de mes "
+                                        f"con una lectura así; {_MK_NADA_MAS}")
+            vistos, releido = list(cal.get("dias") or []), True
+            continue
+        meses += 1
+        cal, corte = _mk_mes_siguiente(page, reg, f, cal)
+        if corte:
+            return corte
+        vistos += _mk_despues_de(cal.get("dias"), ultimo)
+    elegido, por_que = _mk_elegir_dia_de_retiro(vistos, objetivo, feriados)
     if elegido is None:
-        no_deja = _mk_plazo_no_deja(cal.get("dias"), objetivo, plazo)
+        no_deja = _mk_plazo_no_deja(vistos, objetivo, plazo)
         if no_deja:
             return _no_enviada(reg, f"MAERSK: {no_deja}; {_MK_NADA_MAS}")
+        if frenado is not None:
+            visto = " ".join(str(plazo or "").split())[:40]
+            return _no_enviada(reg, f"MAERSK: abrí el calendario de la fecha de retiro, pero no hay un día hábil "
+                                    f"habilitado del {objetivo:%d-%m-%Y} al {frenado:%d-%m-%Y}, el último que muestra el "
+                                    f"calendario, y no paso al mes siguiente: el plazo de entrega de la salida elegida "
+                                    f"(«{MK_PLAZO_DE_ENTREGA}»: {visto}) vence antes; hay que usar una salida posterior; "
+                                    f"{_MK_NADA_MAS}")
         return _no_enviada(reg, f"MAERSK: abrí el calendario de la fecha de retiro, pero {por_que}; {_MK_NADA_MAS}")
     if por_que:
         reg.paso(f"Fecha de retiro: {por_que}.")

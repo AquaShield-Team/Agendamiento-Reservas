@@ -1589,7 +1589,9 @@ MUTACIONES += [
          nuevo="    d = hoy\n    while not _mk_dia_habil(d, feriados):"),
     dict(id="mk-retiro-no-salta-el-deshabilitado", pruebas=[RT_REGLA, RT_SIGUIENTE],
          viejo="        if fechas[d]:\n", nuevo="        if True:\n"),
-    dict(id="mk-retiro-cambia-de-mes", pruebas=[RT_REGLA, RT_SIN_DIA],
+    # Desde el encargo 97, el día que toca después del último a la vista pasa de mes: el caso de RT_SIN_DIA salió, y el
+    # del calendario que abre en un mes posterior lo recorre test_cortes_al_pasar_de_mes.
+    dict(id="mk-retiro-cambia-de-mes", pruebas=[RT_REGLA, RT + "test_cortes_al_pasar_de_mes"],
          viejo="    if not primero <= objetivo <= ultimo:\n", nuevo="    if False:\n"),
     dict(id="mk-retiro-salta-lo-no-identificado", pruebas=[RT_REGLA],
          viejo="        if d not in fechas:\n            return None, f\"no pude identificar por su fecha el",
@@ -1622,8 +1624,8 @@ MUTACIONES += [
          viejo="    _evidencia_antes_de_la_guarda(page, reg, f\"mk_f{f}_calendario\", \"con el calendario de la fecha de "
                "retiro\",\n                                  completa=False)\n", nuevo=""),
     dict(id="mk-retiro-no-espera-el-calendario", pruebas=[RT_TRES, RT_CALENDARIO],
-         viejo="    for _ in range(MK_ESPERA_CALENDARIO * 2):\n        esperar(page, 0.5)\n",
-         nuevo="    for _ in range(MK_ESPERA_CALENDARIO * 2):\n"),
+         viejo="    cal = {}\n    for _ in range(MK_ESPERA_CALENDARIO * 2):\n        esperar(page, 0.5)\n",
+         nuevo="    cal = {}\n    for _ in range(MK_ESPERA_CALENDARIO * 2):\n"),
     dict(id="mk-retiro-espera-menos", pruebas=[RT_CALENDARIO],
          viejo="MK_ESPERA_CALENDARIO = 10 ", nuevo="MK_ESPERA_CALENDARIO = 5 "),
     dict(id="mk-retiro-sigue-sin-calendario", pruebas=[RT_CALENDARIO],
@@ -4557,8 +4559,8 @@ MUTACIONES += [
     dict(id="mk-feriados-la-fecha-no-los-usa", pruebas=[RT_USA],
          viejo="    objetivo = _mk_dia_de_retiro(hoy, feriados)\n", nuevo="    objetivo = _mk_dia_de_retiro(hoy)\n"),
     dict(id="mk-feriados-el-calendario-no-los-usa", pruebas=[RT_USA],
-         viejo="_mk_elegir_dia_de_retiro(cal.get(\"dias\"), objetivo, feriados)\n",
-         nuevo="_mk_elegir_dia_de_retiro(cal.get(\"dias\"), objetivo)\n"),
+         viejo="_mk_elegir_dia_de_retiro(vistos, objetivo, feriados)\n",
+         nuevo="_mk_elegir_dia_de_retiro(vistos, objetivo)\n"),
     dict(id="mk-feriados-no-lo-dice", pruebas=[RT_USA],
          viejo="({_DIAS_ES[objetivo.weekday()]}){_mk_feriados_saltados(hoy, objetivo, feriados)}.\")\n",
          nuevo="({_DIAS_ES[objetivo.weekday()]}).\")\n"),
@@ -11349,4 +11351,108 @@ MUTACIONES += [
     dict(id="e96-guardar-toma-el-gris", pruebas=[CR_GUARDAR_E96],
          viejo='      contrato: g("contrato").trim(),\n',
          nuevo='      contrato: (g("contrato") || tr.querySelector(\'[data-c="contrato"]\').placeholder).trim(),\n'),
+]
+
+# --- Encargo 97: la fecha de retiro de MAERSK en el mes siguiente: el calendario pasa con su único «Next month» a lo
+# más un mes adelante, nunca hacia atrás, y comprueba que muestre el día que sigue (_mk_falta_otro_mes,
+# _mk_mes_siguiente y _JS_MK_MES_SIGUIENTE).
+PASA_E97 = RT + "test_pasa_al_mes_siguiente"
+NORMAL_E97 = RT + "test_el_caso_normal_no_pasa_de_mes"
+FALTA_E97 = RT + "test_falta_otro_mes"
+CORTES_E97 = RT + "test_cortes_al_pasar_de_mes"
+JS_E97 = RT + "test_js_mes_siguiente"
+SIN_DIA_E97 = RT + "test_sin_el_dia_por_su_fecha_no_pulsa_el_dia"
+PLAZO_E97 = RT + "test_el_motivo_dice_el_plazo_de_entrega"
+SOLO_AHI_E97 = "test_evidencia.TestCadaReservadorLaDeja.test_solo_ahi"
+QUIETO_E97 = RT + "test_lecturas_a_medio_cargar"
+FRENA_E97 = RT + "test_el_plazo_frena_el_paso_de_mes"
+_FALTA_E97 = "        if _mk_dia_habil(d, feriados) and (d not in fechas or fechas[d]):\n"
+_SIGS_E97 = "x => enRaiz(x) && esBoton(x.el) && mkVisible(x.el) && nombre(x.el) === 'next month'"
+MUTACIONES += [
+    dict(id="e97-nunca-pasa-de-mes", pruebas=[PASA_E97],
+         viejo="    while _mk_falta_otro_mes(vistos, objetivo, feriados) and meses < MK_MESES_ADELANTE:\n",
+         nuevo="    while False and _mk_falta_otro_mes(vistos, objetivo, feriados) and meses < MK_MESES_ADELANTE:\n"),
+    dict(id="e97-cero-meses", pruebas=[PASA_E97], viejo="MK_MESES_ADELANTE = 1\n", nuevo="MK_MESES_ADELANTE = 0\n"),
+    dict(id="e97-dos-meses", pruebas=[SIN_DIA_E97], viejo="MK_MESES_ADELANTE = 1\n", nuevo="MK_MESES_ADELANTE = 2\n"),
+    dict(id="e97-solo-el-mes-nuevo", pruebas=[PASA_E97],
+         viejo='        vistos += _mk_despues_de(cal.get("dias"), ultimo)\n',
+         nuevo='        vistos = _mk_despues_de(cal.get("dias"), ultimo)\n'),
+    dict(id="e97-mezcla-sin-filtro", pruebas=[PASA_E97],
+         viejo='        vistos += _mk_despues_de(cal.get("dias"), ultimo)\n',
+         nuevo='        vistos += list(cal.get("dias") or [])\n'),
+    dict(id="e97-sin-el-plazo-visto", pruebas=[PLAZO_E97, FRENA_E97],
+         viejo="        if plazo_visto is not None and plazo_visto <= ultimo:\n", nuevo="        if False:\n"),
+    dict(id="e97-plazo-antes-del-que-toca", pruebas=[FRENA_E97],
+         viejo="        if plazo_visto is not None and plazo_visto <= ultimo:\n",
+         nuevo="        if plazo_visto is not None and plazo_visto < objetivo:\n"),
+    dict(id="e97-plazo-hasta-el-que-toca", pruebas=[FRENA_E97],
+         viejo="        if plazo_visto is not None and plazo_visto <= ultimo:\n",
+         nuevo="        if plazo_visto is not None and plazo_visto <= max(ultimo, objetivo):\n"),
+    dict(id="e97-frenado-sin-su-motivo", pruebas=[FRENA_E97],
+         viejo="        if frenado is not None:\n            visto = ", nuevo="        if False:\n            visto = "),
+    dict(id="e97-sin-quieto-antes", pruebas=[QUIETO_E97], viejo="        if not releido:\n", nuevo="        if False:\n"),
+    dict(id="e97-quieto-antes-sin-cortar", pruebas=[QUIETO_E97],
+         viejo="            if not quieto:\n                return _no_enviada(reg, f\"MAERSK: el calendario",
+         nuevo="            if False:\n                return _no_enviada(reg, f\"MAERSK: el calendario"),
+    dict(id="e97-mes-nuevo-sin-quieto", pruebas=[QUIETO_E97],
+         viejo="        quieto = previa is not None and _mk_mismos_dias(nuevo, previa)\n",
+         nuevo="        quieto = True\n"),
+    dict(id="e97-mes-nuevo-sin-cortar", pruebas=[QUIETO_E97],
+         viejo="    if not quieto:\n        return None, _no_enviada(",
+         nuevo="    if False:\n        return None, _no_enviada("),
+    dict(id="e97-mismos-solo-la-raiz", pruebas=[QUIETO_E97],
+         viejo="    return dias(a) == dias(b)\n", nuevo="    return dias(a)[0] == dias(b)[0]\n"),
+    dict(id="e97-sin-break-del-mes", pruebas=[PASA_E97],
+         viejo=('        if quieto and nuevo.get("raiz") and sigue in _mk_fechas_del_calendario(nuevo.get("dias")):\n'
+                '            break\n'),
+         nuevo=('        if quieto and nuevo.get("raiz") and sigue in _mk_fechas_del_calendario(nuevo.get("dias")):\n'
+                '            pass\n')),
+    dict(id="e97-siguientes-sin-entero", pruebas=[CORTES_E97],
+         viejo="        n = n if isinstance(n, int) and not isinstance(n, bool) else 0\n", nuevo=""),
+    dict(id="e97-hueco-no-corta", pruebas=[FALTA_E97], viejo=_FALTA_E97,
+         nuevo="        if _mk_dia_habil(d, feriados) and d in fechas and fechas[d]:\n"),
+    dict(id="e97-finde-cuenta", pruebas=[FALTA_E97], viejo=_FALTA_E97,
+         nuevo="        if d not in fechas or fechas[d]:\n"),
+    dict(id="e97-habilitado-no-para", pruebas=[NORMAL_E97, FALTA_E97], viejo=_FALTA_E97,
+         nuevo="        if _mk_dia_habil(d, feriados) and d not in fechas:\n"),
+    dict(id="e97-sin-buscar-el-boton", pruebas=[CORTES_E97], viejo="    if boton is None:\n", nuevo="    if False:\n"),
+    dict(id="e97-sin-comprobar-el-mes", pruebas=[CORTES_E97],
+         viejo='    if not (nuevo.get("raiz") and sigue in _mk_fechas_del_calendario(nuevo.get("dias"))):\n',
+         nuevo='    if not nuevo.get("raiz"):\n'),
+    dict(id="e97-sin-evidencia", pruebas=[PASA_E97, CORTES_E97, SOLO_AHI_E97],
+         viejo=('    _evidencia_antes_de_la_guarda(page, reg, f"mk_f{f}_calendario_siguiente",\n'
+                '                                  "con el calendario de la fecha de retiro en el mes siguiente", '
+                'completa=False)\n'),
+         nuevo=""),
+    dict(id="e97-texto-sin-volver", pruebas=[RT_REGLA],
+         viejo='_MK_SIN_VOLVER = f"y el calendario no se pasa más de un mes adelante («{MK_MES_SIGUIENTE}») ni hacia atrás"',
+         nuevo='_MK_SIN_VOLVER = "y cambiar de mes es un clic que no está permitido"'),
+    dict(id="e97-js-otro-nombre", pruebas=[JS_E97], viejo="nombre(x.el) === 'next month');",
+         nuevo="nombre(x.el) === 'previous month');"),
+    dict(id="e97-js-apagado", pruebas=[JS_E97], viejo="            siguiente = apagado ? null : b;\n",
+         nuevo="            siguiente = b;\n"),
+    dict(id="e97-js-el-de-afuera", pruebas=[JS_E97],
+         viejo="                ? hojas[0].el : hojas.length ? null : s;\n", nuevo="                ? s : hojas.length ? null : s;\n"),
+    dict(id="e97-js-hoja-con-otro-nombre", pruebas=[JS_E97],
+         viejo="['next month', ''].includes(nombre(hojas[0].el))", nuevo="true"),
+    dict(id="e97-js-hoja-oculta", pruebas=[JS_E97],
+         viejo="hojas.length === 1 && mkVisible(hojas[0].el) &&", nuevo="hojas.length === 1 &&"),
+    dict(id="e97-js-dos-hojas", pruebas=[JS_E97],
+         viejo="hojas.length === 1 && mkVisible(hojas[0].el) &&", nuevo="hojas.length >= 1 && mkVisible(hojas[0].el) &&"),
+    dict(id="e97-js-apagado-sin-clase", pruebas=[JS_E97],
+         viejo="\n                                              || APAGADO.test(mkAtr(y.el, 'class') + ' ' + mkAtr(y.el, 'part'))",
+         nuevo=""),
+    dict(id="e97-js-dos", pruebas=[JS_E97], viejo="        if (sigsAfuera.length === 1) {\n",
+         nuevo="        if (sigsAfuera.length >= 1) {\n"),
+    dict(id="e97-js-oculto", pruebas=[JS_E97], viejo=_SIGS_E97,
+         nuevo="x => enRaiz(x) && esBoton(x.el) && nombre(x.el) === 'next month'"),
+    dict(id="e97-js-afuera", pruebas=[JS_E97], viejo=_SIGS_E97,
+         nuevo="x => esBoton(x.el) && mkVisible(x.el) && nombre(x.el) === 'next month'"),
+    dict(id="e97-js-sin-cuenta", pruebas=[JS_E97], viejo="            siguientes: r.siguientes};\n",
+         nuevo="            };\n"),
+    dict(id="e97-sin-esperar-el-mes", pruebas=[CORTES_E97],
+         viejo=("    sigue, nuevo, previa, quieto = ultimo + datetime.timedelta(days=1), {}, None, False\n"
+                "    for _ in range(MK_ESPERA_CALENDARIO * 2):\n        esperar(page, 0.5)\n"),
+         nuevo=("    sigue, nuevo, previa, quieto = ultimo + datetime.timedelta(days=1), {}, None, False\n"
+                "    for _ in range(MK_ESPERA_CALENDARIO * 2):\n")),
 ]

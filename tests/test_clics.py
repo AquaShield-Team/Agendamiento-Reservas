@@ -7699,19 +7699,36 @@ class PaginaRetiro(soporte.PaginaFalsa):
     'dia'; después de pulsarlo, _JS_MK_LISTO da el «Done» del calendario si 'listo', y si no, hay 'listos_despues' «Done»
     a la vista. _JS_MK_AVISOS_CARGOS responde 'avisos' antes de elegir el día y 'avisos_despues' después;
     _JS_MK_RETIRO_PUESTO, 'puesto' (con una lista, una respuesta por lectura, y la última se repite); _JS_MK_LO_QUE_PIDE,
-    'pide'. Cada clic queda en 'clics'. Otro JavaScript hace caer la prueba."""
+    'pide'. Cada clic queda en 'clics'. Otro JavaScript hace caer la prueba.
+    Con 'calendario' en una lista, un mes por elemento (encargo 97): abre en el primero, y _JS_MK_MES_SIGUIENTE da su
+    «Next month» si 'siguiente' (con «error», buscarlo falla; con «falla», su clic); pulsarlo pasa al mes que sigue, si
+    'pasa' y hay otro. _JS_MK_DIA_DE_RETIRO da el día solo si está habilitado en el mes a la vista."""
     SIN_CALENDARIO = {"listos": 0, "raiz": False, "meses": [], "dias": []}
 
     def __init__(self, mod, calendario, otra=1, otra_tarda=0, listos_antes=0, tarda=0, dia=True, listo=True,
-                 listos_despues=0, avisos=(), avisos_despues=None, puesto=None, pide=None):
+                 listos_despues=0, avisos=(), avisos_despues=None, puesto=None, pide=None, siguiente=True, pasa=True):
         super().__init__(url="https://portal.invalid/book/additional-details")
-        self.mod, self.calendario, self.otra, self.otra_tarda = mod, calendario, otra, otra_tarda
+        self.mod, self.otra, self.otra_tarda = mod, otra, otra_tarda
+        self.meses, self.mes = (list(calendario) if isinstance(calendario, list) else [calendario]), 0
         self.listos_antes, self.tarda, self.dia, self.listo = listos_antes, tarda, dia, listo
         self.listos_despues, self.avisos = listos_despues, list(avisos)
         self.avisos_despues = list(self.avisos if avisos_despues is None else avisos_despues)
         puesto = puesto if puesto is not None else {"tarjeta": True, "vacia": False, "fechas": [], "valor": ""}
         self.puestos = list(puesto) if isinstance(puesto, list) else [puesto]
         self.pide, self.clics, self.etapa = pide, [], "cerrado"
+        self.siguiente, self.pasa, self.leidas, self.vista = siguiente, pasa, {}, None
+
+    @property
+    def calendario(self):
+        """El mes a la vista. Un mes en una tupla es una lectura por vez (la última se repite): así una lectura a medio
+        cargar puede venir antes de la buena (revisión de seguridad del encargo 97)."""
+        m = self.meses[self.mes]
+        if isinstance(m, tuple):
+            i = self.leidas.get(self.mes, 0)
+            self.leidas[self.mes] = i + 1
+            m = m[min(i, len(m) - 1)]
+        self.vista = m
+        return m
 
     def get_by_role(self, rol, name=None, exact=False):
         if rol != "button" or not exact:
@@ -7753,10 +7770,25 @@ class PaginaRetiro(soporte.PaginaFalsa):
             pagina.clics.append(("boton", pagina.mod.MK_LISTO))
             pagina.etapa = "listo"
 
+        def pulsar_siguiente(**k):
+            if pagina.siguiente == "falla":
+                raise RuntimeError("no acepta el clic")
+            pagina.clics.append(("boton", pagina.mod.MK_MES_SIGUIENTE))
+            if pagina.pasa and pagina.mes + 1 < len(pagina.meses):
+                pagina.mes += 1
+
+        if js == self.mod._JS_MK_MES_SIGUIENTE and self.siguiente == "error":
+            raise RuntimeError("la página se cerró")
+
         if js == self.mod._JS_MK_DIA_DE_RETIRO:
-            el = types.SimpleNamespace(click=pulsar_dia) if self.dia else None
+            vista = self.vista if self.vista is not None else self.calendario
+            dias = vista.get("dias", []) if isinstance(vista, dict) else []
+            a_la_vista = any(x.get("fecha") == arg["fecha"] and x.get("habilitado") for x in dias)
+            el = types.SimpleNamespace(click=pulsar_dia) if self.dia and a_la_vista else None
         elif js == self.mod._JS_MK_LISTO:
             el = types.SimpleNamespace(click=pulsar_listo) if self.listo and self.etapa == "elegido" else None
+        elif js == self.mod._JS_MK_MES_SIGUIENTE:
+            el = types.SimpleNamespace(click=pulsar_siguiente) if self.siguiente and self.etapa == "abierto" else None
         else:
             raise AssertionError("JavaScript inesperado")
         return types.SimpleNamespace(as_element=lambda: el)
@@ -7789,12 +7821,25 @@ class TestRetiroMaersk(ConRegistro):
                 "dias": [{"dia": n, "fecha": f"2026-09-{n:02d}", "como": "mes", "habilitado": n >= desde}
                          for n in range(1, 31)]}
 
+    @staticmethod
+    def mes(anio, m, habilitados=()):
+        """Lo que responde _JS_MK_CALENDARIO con el calendario medido (encargo 97): un mes entero por su cabecera, con
+        un solo «Next month», y habilitados los días 'habilitados'."""
+        ultimo = (datetime.date(anio + m // 12, m % 12 + 1, 1) - datetime.timedelta(days=1)).day
+        return {"listos": 1, "raiz": True, "meses": [], "siguientes": 1,
+                "dias": [{"dia": n, "fecha": f"{anio}-{m:02d}-{n:02d}", "como": "cabecera",
+                          "habilitado": n in habilitados} for n in range(1, ultimo + 1)]}
+
     def puesto(self, *fechas, valor=""):
         return dict(self.SIN_FECHA, fechas=list(fechas), valor=valor)
 
+    n_corridas = 0
+
     def retirar(self, pagina, hoy=datetime.date(2026, 9, 28), **k):
-        self.n = getattr(self, "n", 0) + 1
-        reg, vistas, log = self.corrida(f"retiro_{self.n}")
+        # Una carpeta por corrida en toda la clase, para que su log.txt traiga solo lo suyo (encargo 97: con un contador
+        # por prueba, las pruebas compartían el log de «retiro_1»).
+        TestRetiroMaersk.n_corridas += 1
+        reg, vistas, log = self.corrida(f"retiro_{TestRetiroMaersk.n_corridas}")
         det = []
         r = self.mod._mk_fecha_de_retiro(pagina, reg, det, 30, hoy, **k)
         return r, det, log.read_text(encoding="utf-8")
@@ -7923,21 +7968,34 @@ class TestRetiroMaersk(ConRegistro):
         sin_sabado = [x for x in self.septiembre(desde=28)["dias"] if x["fecha"] != "2026-09-26"]
         self.assertEqual(f(sin_sabado, d(2026, 9, 22))[0], d(2026, 9, 28))
         # Si del que toca al último a la vista solo están habilitados el sábado y el domingo, no hay día que elegir.
+        sin_volver = "y el calendario no se pasa más de un mes adelante («Next month») ni hacia atrás"
         finde = [dict(x, habilitado=x["fecha"] in ("2026-09-26", "2026-09-27")) for x in sep]
         self.assertEqual(f(finde, d(2026, 9, 22)),
                          (None, "no hay un día hábil habilitado del 22-09-2026 al 30-09-2026, el último que muestra "
-                                "el calendario, y cambiar de mes es un clic que no está permitido"))
-        # No está a la vista: cambiar de mes es un clic que no está permitido.
+                                f"el calendario, {sin_volver}"))
+        # No está entre los días leídos: ni en el mes siguiente, ni antes del primero (encargo 97: el calendario pasa a
+        # lo más un mes adelante, y nunca hacia atrás; hasta ahí, cambiar de mes era un clic que no estaba permitido).
         oct_ = [{"fecha": f"2026-10-{n:02d}", "habilitado": True} for n in range(1, 32)]
         for dias, objetivo, primero, ultimo in ((sep, d(2026, 10, 1), "01-09-2026", "30-09-2026"),
                                                 (oct_, d(2026, 9, 30), "01-10-2026", "31-10-2026")):
             with self.subTest(objetivo=objetivo):
                 self.assertEqual(f(dias, objetivo), (None, f"el día que toca, el {objetivo:%d-%m-%Y}, no está a la vista: "
-                                                           f"el calendario muestra del {primero} al {ultimo}, y cambiar "
-                                                           "de mes es un clic que no está permitido"))
+                                                           f"el calendario muestra del {primero} al {ultimo}, "
+                                                           + sin_volver))
         self.assertEqual(f(self.septiembre(desde=31)["dias"], d(2026, 9, 22)),
                          (None, "no hay un día hábil habilitado del 22-09-2026 al 30-09-2026, el último que muestra "
-                                "el calendario, y cambiar de mes es un clic que no está permitido"))
+                                f"el calendario, {sin_volver}"))
+        # Con los días de los dos meses (septiembre y octubre): elige en el siguiente, y si una fecha está en los dos,
+        # manda la última lectura.
+        dos = sep + [dict(x, habilitado=x["fecha"] >= "2026-10-02") for x in oct_]
+        self.assertEqual(f(dos, d(2026, 10, 1)), (d(2026, 10, 2), "el 01-10-2026 no está habilitado en el calendario: "
+                                                                  "elijo el siguiente día hábil habilitado, el "
+                                                                  "02-10-2026 (viernes)"))
+        self.assertEqual(f(self.septiembre(desde=31)["dias"] + oct_, d(2026, 9, 29)),
+                         (d(2026, 10, 1), "el 29-09-2026 no está habilitado en el calendario: elijo el siguiente día "
+                                          "hábil habilitado, el 01-10-2026 (jueves)"))
+        repetido = [{"fecha": "2026-09-30", "habilitado": False}, {"fecha": "2026-09-30", "habilitado": True}]
+        self.assertEqual(f(repetido, d(2026, 9, 30)), (d(2026, 9, 30), ""))
         # Un día sin su fecha entre el que toca y el habilitado: no se sabe si está habilitado.
         hueco = [x for x in sep if x["fecha"] != "2026-09-25"]
         self.assertEqual(f(hueco, d(2026, 9, 22)), (None, "no pude identificar por su fecha el 25-09-2026 en el calendario"))
@@ -7976,6 +8034,205 @@ class TestRetiroMaersk(ConRegistro):
         self.assertIn("· Fecha de retiro: el 22-09-2026 no está habilitado en el calendario: elijo el siguiente día "
                       "hábil habilitado, el 28-09-2026 (lunes).", log)
 
+    def test_pasa_al_mes_siguiente(self):
+        # A fin de mes, el día que toca cae en el mes siguiente, y el calendario abre en el de hoy (medido en los 32
+        # calendarios guardados): pasa al siguiente con su «Next month», elige ese día exacto y comprueba que la tarjeta
+        # lo muestre (decisión de Marcelo, encargo 97; hasta ahí, la fila quedaba NO ENVIADA, y según Marcelo así no se
+        # pudo emitir a fines de octubre). Los meses, con la forma medida: por su cabecera, con un solo «Next month».
+        d = datetime.date
+        casos = (
+            # El último día hábil de noviembre, el lunes 30: el martes 1 de diciembre.
+            ("último día hábil del mes", d(2026, 11, 30),
+             [self.mes(2026, 11, range(23, 31)), self.mes(2026, 12, range(1, 5))], d(2026, 12, 1), ""),
+            # Un viernes de fin de mes, el 30-10: el lunes 2 de noviembre; con los días que habilitaban los calendarios
+            # guardados de noviembre (del 9 al 13), el siguiente día hábil habilitado, el 9.
+            ("viernes de fin de mes", d(2026, 10, 30),
+             [self.mes(2026, 10, range(26, 31)), self.mes(2026, 11, range(9, 14))], d(2026, 11, 9),
+             "el 02-11-2026 no está habilitado en el calendario: elijo el siguiente día hábil habilitado, el "
+             "09-11-2026 (lunes)"),
+            ("viernes de fin de mes, con el lunes habilitado", d(2026, 10, 30),
+             [self.mes(2026, 10, range(26, 31)), self.mes(2026, 11, range(2, 7))], d(2026, 11, 2), ""),
+            # El 31 de diciembre: el 1 de enero del año siguiente (esta librería holidays falsa no trae feriados).
+            ("31 de diciembre", d(2026, 12, 31),
+             [self.mes(2026, 12, range(28, 32)), self.mes(2027, 1, range(1, 9))], d(2027, 1, 1), ""),
+            # En el mes que muestra no queda un día hábil habilitado desde el que toca: lo busca en el siguiente.
+            ("sin día en el mes de hoy", d(2026, 11, 25),
+             [self.mes(2026, 11, range(20, 26)), self.mes(2026, 12, range(1, 5))], d(2026, 12, 1),
+             "el 26-11-2026 no está habilitado en el calendario: elijo el siguiente día hábil habilitado, el "
+             "01-12-2026 (martes)"))
+        for que, hoy, meses, elegido, por_que in casos:
+            with self.subTest(que=que):
+                pagina = PaginaRetiro(self.mod, meses, puesto=self.puesto(elegido.isoformat()))
+                r, det, log = self.retirar(pagina, hoy=hoy)
+                self.assertIsNone(r)
+                self.assertEqual(pagina.clics, [("boton", "Choose another date"), ("boton", "Next month"),
+                                                ("dia", elegido.isoformat()), ("boton", "Done")])
+                self.assertEqual(det, [f"retiro={elegido:%d-%m-%Y}"])
+                self.assertEqual(pagina.capturas, [("mk_f30_calendario.png", False),
+                                                   ("mk_f30_calendario_siguiente.png", False)])
+                # Las esperas: el calendario (1), otra lectura antes de pasar de mes (1), dos del mes nuevo, iguales
+                # (2), y después del día y del «Done» (2), como siempre.
+                self.assertEqual(pagina.esperas, 1 + 1 + 2 + 2)
+                n = len(meses[1]["dias"])
+                for texto in ("pulsado 'Next month'",
+                              f"calendario de la fecha de retiro, en el mes siguiente: {n} días, {n} con su fecha",
+                              f"elegido en el calendario: {elegido:%d-%m-%Y}",
+                              f"la tarjeta muestra la fecha de retiro elegida, el {elegido:%d-%m-%Y}"):
+                    self.assertIn(texto, log)
+                if por_que:
+                    self.assertIn(f"· Fecha de retiro: {por_que}.", log)
+        # El 31 de diciembre, con los feriados de Chile: el 1 de enero es feriado, y el sábado 2 y el domingo 3 no son
+        # hábiles: el lunes 4 de enero del año siguiente.
+        libreria = types.SimpleNamespace(country_holidays=lambda pais, years=None: dict(self.FERIADOS))
+        with mock.patch.dict("sys.modules", {"holidays": libreria}):
+            pagina = PaginaRetiro(self.mod, [self.mes(2026, 12, range(28, 32)), self.mes(2027, 1, range(1, 9))],
+                                  puesto=self.puesto("2027-01-04"))
+            r, det, log = self.retirar(pagina, hoy=d(2026, 12, 31))
+        self.assertEqual((r, det, pagina.clics[1:3]), (None, ["retiro=04-01-2027"],
+                                                       [("boton", "Next month"), ("dia", "2027-01-04")]))
+        self.assertIn("· Fecha de retiro: el primer día hábil después de hoy es el 04-01-2027 (lunes); el 01-01-2027 "
+                      "(Año Nuevo) es feriado en Chile.", log)
+        # Una celda de otro mes con su fecha en la vista nueva (no medido: los calendarios guardados traen solo su mes)
+        # no pisa la del mes propio: del mes nuevo se suman solo los días posteriores al último del anterior (revisión
+        # de seguridad del encargo 97). Aquí, el 30-11 habilitado al principio de la vista de diciembre.
+        dic = self.mes(2026, 12, range(1, 5))
+        dic = dict(dic, dias=[{"dia": 30, "fecha": "2026-11-30", "como": "atributo", "habilitado": True}] + dic["dias"])
+        pagina = PaginaRetiro(self.mod, [self.mes(2026, 11, range(23, 28)), dic], puesto=self.puesto("2026-12-01"))
+        r, det, log = self.retirar(pagina, hoy=d(2026, 11, 27))
+        self.assertEqual((r, det), (None, ["retiro=01-12-2026"]))
+        self.assertIn("· Fecha de retiro: el 30-11-2026 no está habilitado en el calendario: elijo el siguiente día "
+                      "hábil habilitado, el 01-12-2026 (martes).", log)
+
+    def test_lecturas_a_medio_cargar(self):
+        # Antes de pasar de mes, y en el mes nuevo, dos lecturas seguidas iguales (revisiones del encargo 97): si el
+        # portal pintara los días antes de su disponibilidad (no medido), una sola lectura los vería todos
+        # deshabilitados.
+        d, nada = datetime.date, "no pulsé nada más y la reserva no se envió"
+        nov_cargando, dic = self.mes(2026, 11), self.mes(2026, 12, range(1, 5))
+        # La primera lectura de noviembre, a medio cargar: la buena trae el 26 habilitado, y no pasa de mes.
+        pagina = PaginaRetiro(self.mod, [(nov_cargando, self.mes(2026, 11, range(20, 28))), dic],
+                              puesto=self.puesto("2026-11-26"))
+        r, det, log = self.retirar(pagina, hoy=d(2026, 11, 25))
+        self.assertEqual((r, det), (None, ["retiro=26-11-2026"]))
+        self.assertEqual(pagina.clics, [("boton", "Choose another date"), ("dia", "2026-11-26"), ("boton", "Done")])
+        self.assertIn("calendario de la fecha de retiro, otra vez antes de pasar de mes: 30 días, 30 con su fecha y 8 de "
+                      "ellos habilitados", log)
+        # La primera lectura de diciembre, a medio cargar: elige con la buena.
+        pagina = PaginaRetiro(self.mod, [self.mes(2026, 11, range(23, 31)), (self.mes(2026, 12), dic)],
+                              puesto=self.puesto("2026-12-01"))
+        r, det, _ = self.retirar(pagina, hoy=d(2026, 11, 30))
+        self.assertEqual((r, det, pagina.clics[1]), (None, ["retiro=01-12-2026"], ("boton", "Next month")))
+        # Si no se queda quieto en 10 s, NO ENVIADA: antes de pasar de mes, sin pulsar «Next month»; en el mes nuevo,
+        # sin elegir.
+        bueno = self.mes(2026, 11, range(20, 28))
+        pagina = PaginaRetiro(self.mod, [tuple([nov_cargando, bueno] * 15), dic])
+        r, det, _ = self.retirar(pagina, hoy=d(2026, 11, 25))
+        self.assertEqual(r, ("NO ENVIADA", "MAERSK: el calendario de la fecha de retiro no se quedó quieto en 10 s (dos "
+                                           "lecturas seguidas distintas), y no paso de mes con una lectura así; "
+                                           + nada))
+        self.assertEqual((pagina.clics, det, pagina.esperas), ([("boton", "Choose another date")], [], 1 + 20))
+        pagina = PaginaRetiro(self.mod, [self.mes(2026, 11, range(23, 31)), tuple([self.mes(2026, 12), dic] * 15)])
+        r, det, _ = self.retirar(pagina, hoy=d(2026, 11, 30))
+        self.assertEqual(r, ("NO ENVIADA", "MAERSK: pulsé «Next month» en el calendario de la fecha de retiro, pero el "
+                                           "mes siguiente no se quedó quieto en 10 s (dos lecturas seguidas distintas); "
+                                           + nada))
+        self.assertEqual((pagina.clics, det), ([("boton", "Choose another date"), ("boton", "Next month")], []))
+
+    def test_el_plazo_frena_el_paso_de_mes(self):
+        # Si el plazo de entrega de la tarjeta vence en el mes que se ve (hasta su último día), no pasa de mes: ningún
+        # día del siguiente serviría (revisiones del encargo 97).
+        d, nada = datetime.date, "no pulsé nada más y la reserva no se envió"
+        nov, dic = self.mes(2026, 11, range(20, 26)), self.mes(2026, 12, range(1, 5))
+        # El plazo, entre el día que toca y fin de mes: el motivo dice que no pasa de mes por el plazo.
+        pagina = PaginaRetiro(self.mod, [nov, dic])
+        r, det, _ = self.retirar(pagina, hoy=d(2026, 11, 25), plazo="28 Nov 2026, 21:00")
+        self.assertEqual(r, ("NO ENVIADA", "MAERSK: abrí el calendario de la fecha de retiro, pero no hay un día hábil "
+                                           "habilitado del 26-11-2026 al 30-11-2026, el último que muestra el calendario, "
+                                           "y no paso al mes siguiente: el plazo de entrega de la salida elegida "
+                                           "(«Gate-in deadline»: 28 Nov 2026, 21:00) vence antes; hay que usar una "
+                                           f"salida posterior; {nada}"))
+        self.assertEqual((pagina.clics, det), ([("boton", "Choose another date")], []))
+        # El plazo el último día que se ve, con el día que toca en el mes siguiente: el motivo del plazo, de siempre.
+        pagina = PaginaRetiro(self.mod, [self.mes(2026, 11, range(23, 31)), dic])
+        r, _, _ = self.retirar(pagina, hoy=d(2026, 11, 30), plazo="30 Nov 2026, 21:00")
+        self.assertEqual(r, ("NO ENVIADA", "MAERSK: el plazo de entrega de la salida elegida («Gate-in deadline»: 30 Nov "
+                                           "2026, 21:00) no deja retirar el contenedor el 01-12-2026, el primer día "
+                                           "hábil después de hoy, ni después (el último día habilitado en el calendario "
+                                           f"de retiro es el 30-11-2026): hay que usar una salida posterior; {nada}"))
+        self.assertEqual(pagina.clics, [("boton", "Choose another date")])
+        # El plazo justo el día que toca, en el mes siguiente: pasa de mes y lo elige.
+        pagina = PaginaRetiro(self.mod, [self.mes(2026, 11, range(23, 31)), dic], puesto=self.puesto("2026-12-01"))
+        r, det, _ = self.retirar(pagina, hoy=d(2026, 11, 30), plazo="1 Dec 2026, 21:00")
+        self.assertEqual((r, det, pagina.clics[1]), (None, ["retiro=01-12-2026"], ("boton", "Next month")))
+
+    def test_el_caso_normal_no_pasa_de_mes(self):
+        # Con el día que toca en el mes que muestra, o el siguiente día hábil habilitado ahí, ningún «Next month»: los
+        # tres clics de siempre. Como la corrida del 04-11: el jueves 5 no estaba habilitado, y eligió el lunes 9.
+        for hoy, elegido in ((datetime.date(2026, 11, 4), "2026-11-09"), (datetime.date(2026, 11, 10), "2026-11-11")):
+            with self.subTest(hoy=hoy):
+                pagina = PaginaRetiro(self.mod, [self.mes(2026, 11, range(9, 14)), self.mes(2026, 12, range(1, 32))],
+                                      puesto=self.puesto(elegido))
+                r, _, log = self.retirar(pagina, hoy=hoy)
+                self.assertIsNone(r)
+                self.assertEqual(pagina.clics, [("boton", "Choose another date"), ("dia", elegido), ("boton", "Done")])
+                self.assertEqual(pagina.capturas, [("mk_f30_calendario.png", False)])
+                self.assertNotIn("Next month", log)
+
+    def test_falta_otro_mes(self):
+        f, d = self.mod._mk_falta_otro_mes, datetime.date
+        nov = self.mes(2026, 11, range(9, 14))["dias"]
+        self.assertFalse(f(nov, d(2026, 11, 5)))         # el siguiente día hábil habilitado está en el mes: el 9
+        self.assertFalse(f(nov, d(2026, 11, 13)))        # está habilitado
+        self.assertTrue(f(nov, d(2026, 11, 16)))         # desde el 16, ninguno hasta el 30
+        self.assertTrue(f(nov, d(2026, 12, 1)))          # después del último que muestra
+        self.assertFalse(f(nov, d(2026, 10, 30)))        # antes del primero: nunca hacia atrás
+        for vacio in ([], None):
+            self.assertFalse(f(vacio, d(2026, 11, 16)))
+        # Un sábado y un domingo habilitados no cuentan; un feriado tampoco, con los feriados.
+        self.assertTrue(f(self.mes(2026, 11, (28, 29))["dias"], d(2026, 11, 27)))
+        solo30 = self.mes(2026, 11, (30,))["dias"]
+        self.assertFalse(f(solo30, d(2026, 11, 30)))
+        self.assertTrue(f(solo30, d(2026, 11, 30), {d(2026, 11, 30): "feriado inventado"}))
+        # Un día hábil sin su fecha en medio: no, y la regla corta ahí.
+        self.assertFalse(f([x for x in nov if x["fecha"] != "2026-11-17"], d(2026, 11, 16)))
+
+    def test_cortes_al_pasar_de_mes(self):
+        nov, dic = self.mes(2026, 11, range(23, 31)), self.mes(2026, 12, range(1, 5))
+        hoy, nada = datetime.date(2026, 11, 30), "no pulsé nada más y la reserva no se envió"
+        hasta = "MAERSK: el calendario de la fecha de retiro muestra hasta el 30-11-2026, y"
+        # Sin un solo «Next month» habilitado, si no se puede buscar, o si falla su clic: NO ENVIADA, sin otro clic.
+        for siguiente, por_que, clics in (
+                (False, "no encontré un solo «Next month» habilitado para pasar al mes siguiente (había 1)", []),
+                ("error", "no pude buscar su «Next month» (RuntimeError: la página se cerró)", []),
+                ("falla", "falló el clic en su «Next month» (RuntimeError: no acepta el clic)", [])):
+            with self.subTest(siguiente=siguiente):
+                pagina = PaginaRetiro(self.mod, [nov, dic], siguiente=siguiente)
+                r, det, _ = self.retirar(pagina, hoy=hoy)
+                self.assertEqual(r, ("NO ENVIADA", f"{hasta} {por_que}; {nada}"))
+                self.assertEqual((pagina.clics, det), ([("boton", "Choose another date")] + clics, []))
+        # El clic que no pasa de mes: lo espera hasta 10 s, deja la evidencia y corta.
+        pagina = PaginaRetiro(self.mod, [nov, dic], pasa=False)
+        r, det, log = self.retirar(pagina, hoy=hoy)
+        self.assertEqual(r, ("NO ENVIADA", "MAERSK: pulsé «Next month» en el calendario de la fecha de retiro, pero no "
+                                           f"pasó al mes siguiente: no muestra el 01-12-2026; {nada}"))
+        self.assertEqual((pagina.clics, det), ([("boton", "Choose another date"), ("boton", "Next month")], []))
+        self.assertEqual(pagina.capturas, [("mk_f30_calendario.png", False), ("mk_f30_calendario_siguiente.png", False)])
+        self.assertEqual(pagina.esperas, 1 + 1 + 20)
+        self.assertIn("calendario de la fecha de retiro, en el mes siguiente: 30 días", log)
+        # Lo que dice el JavaScript de cuántos «Next month» hay va al motivo solo si es un número.
+        pagina = PaginaRetiro(self.mod, [dict(nov, siguientes="<b>dos</b>"), dic], siguiente=False)
+        r, _, _ = self.retirar(pagina, hoy=hoy)
+        self.assertEqual(r, ("NO ENVIADA", f"{hasta} no encontré un solo «Next month» habilitado para pasar al mes "
+                                           f"siguiente (había 0); {nada}"))
+        # Con el día que toca antes del primero que muestra, nunca hacia atrás.
+        pagina = PaginaRetiro(self.mod, [dic, nov])
+        r, _, _ = self.retirar(pagina, hoy=datetime.date(2026, 11, 26))
+        self.assertEqual(r, ("NO ENVIADA", "MAERSK: abrí el calendario de la fecha de retiro, pero el día que toca, el "
+                                           "27-11-2026, no está a la vista: el calendario muestra del 01-12-2026 al "
+                                           "31-12-2026, y el calendario no se pasa más de un mes adelante («Next "
+                                           f"month») ni hacia atrás; {nada}"))
+        self.assertEqual(pagina.clics, [("boton", "Choose another date")])
+
     def test_sin_un_solo_boton_no_pulsa_nada(self):
         # Sin un solo «Choose another date» (lo espera hasta 10 s), o con un «Done» ya en la página antes de abrir el
         # calendario, que se confundiría con el del calendario (revisión del encargo 36).
@@ -8008,21 +8265,31 @@ class TestRetiroMaersk(ConRegistro):
                 self.assertIn(f"calendario de la fecha de retiro: no lo encontré: {por_que}", log)
 
     def test_sin_el_dia_por_su_fecha_no_pulsa_el_dia(self):
-        casos = ((self.septiembre(desde=31), datetime.date(2026, 9, 28),
-                  "no hay un día hábil habilitado del 29-09-2026 al 30-09-2026, el último que muestra el calendario, y "
-                  "cambiar de mes es un clic que no está permitido"),
-                 (self.septiembre(), datetime.date(2026, 9, 30),
-                  "el día que toca, el 01-10-2026, no está a la vista: el calendario muestra del 01-09-2026 al "
-                  "30-09-2026, y cambiar de mes es un clic que no está permitido"),
+        # Ni en el mes siguiente: el calendario pasa a lo más un mes adelante (encargo 97), y después no hay un día
+        # hábil habilitado.
+        casos = (([self.septiembre(desde=31), self.mes(2026, 10)], datetime.date(2026, 9, 28),
+                  "no hay un día hábil habilitado del 29-09-2026 al 31-10-2026, el último que muestra el calendario, y "
+                  "el calendario no se pasa más de un mes adelante («Next month») ni hacia atrás",
+                  [("boton", "Choose another date"), ("boton", "Next month")]),
                  ({"listos": 1, "raiz": True, "dias": [{"dia": 5, "fecha": "", "como": "repetida"}]},
-                  datetime.date(2026, 9, 28), "no pude identificar por su fecha ningún día del calendario"))
-        for calendario, hoy, por_que in casos:
+                  datetime.date(2026, 9, 28), "no pude identificar por su fecha ningún día del calendario",
+                  [("boton", "Choose another date")]))
+        for calendario, hoy, por_que, clics in casos:
             with self.subTest(por_que=por_que):
                 pagina = PaginaRetiro(self.mod, calendario)
                 r, det, _ = self.retirar(pagina, hoy)
                 self.assertEqual(r, ("NO ENVIADA", f"MAERSK: abrí el calendario de la fecha de retiro, pero {por_que}; "
                                                    "no pulsé nada más y la reserva no se envió"))
-                self.assertEqual((pagina.clics, det), ([("boton", "Choose another date")], []))
+                self.assertEqual((pagina.clics, det), (clics, []))
+        # Un día hábil sin su fecha entre el que toca y el último a la vista: corta ahí, sin pasar de mes.
+        hueco = dict(self.septiembre(desde=31), dias=[x for x in self.septiembre(desde=31)["dias"]
+                                                      if x["fecha"] != "2026-09-29"])
+        pagina = PaginaRetiro(self.mod, [hueco, self.mes(2026, 10, range(1, 32))])
+        r, _, _ = self.retirar(pagina, datetime.date(2026, 9, 28))
+        self.assertEqual(r, ("NO ENVIADA", "MAERSK: abrí el calendario de la fecha de retiro, pero no pude identificar "
+                                           "por su fecha el 29-09-2026 en el calendario; no pulsé nada más y la reserva "
+                                           "no se envió"))
+        self.assertEqual(pagina.clics, [("boton", "Choose another date")])
 
     def test_el_plazo_de_entrega_que_no_deja_retirar(self):
         # Si el calendario no tiene un día que cumpla la regla, el motivo dice si es el plazo de entrega de la salida
@@ -8074,22 +8341,30 @@ class TestRetiroMaersk(ConRegistro):
         nada = "no pulsé nada más y la reserva no se envió"
         cola = ("no deja retirar el contenedor el 29-09-2026, el primer día hábil después de hoy, ni después (el "
                 "último día habilitado en el calendario de retiro es el 28-09-2026): hay que usar una salida posterior")
-        for plazo, texto in (("28 Sep 2026, 21:00", "el plazo de entrega de la salida elegida («Gate-in deadline»: 28 "
-                                                    "Sep 2026, 21:00) " + cola),
-                             ("", "el plazo de entrega de la salida elegida " + cola)):
+        # Con el plazo de la tarjeta anterior al día que toca, no pasa de mes: ningún día de después serviría (encargo
+        # 97). Sin él, pasa al mes siguiente, y si ahí tampoco hay uno, el motivo lo deduce del calendario.
+        octubre = self.mes(2026, 10)
+        for plazo, texto, clics, capturas in (
+                ("28 Sep 2026, 21:00", "el plazo de entrega de la salida elegida («Gate-in deadline»: 28 Sep 2026, "
+                                       "21:00) " + cola, [("boton", "Choose another date")], ["mk_f30_calendario.png"]),
+                ("", "el plazo de entrega de la salida elegida " + cola,
+                 [("boton", "Choose another date"), ("boton", "Next month")],
+                 ["mk_f30_calendario.png", "mk_f30_calendario_siguiente.png"])):
             with self.subTest(plazo=plazo):
-                pagina = PaginaRetiro(self.mod, solo28)
+                pagina = PaginaRetiro(self.mod, [solo28, octubre])
                 r, det, log = self.retirar(pagina, plazo=plazo)
                 self.assertEqual(r, ("NO ENVIADA", f"MAERSK: {texto}; {nada}"))
-                self.assertEqual((pagina.clics, det), ([("boton", "Choose another date")], []))
-                self.assertEqual(pagina.capturas, [("mk_f30_calendario.png", False)])
+                self.assertEqual((pagina.clics, det), (clics, []))
+                self.assertEqual(pagina.capturas, [(c, False) for c in capturas])
                 self.assertIn(f"· ✗ NO ENVIADA · MAERSK: {texto}; {nada}", log)
-        # Con el plazo después del día que toca, el motivo de siempre.
-        pagina = PaginaRetiro(self.mod, self.septiembre(desde=31))
+        # Con el plazo después del día que toca, pasa al mes siguiente, y sin un día ahí, el motivo de siempre.
+        pagina = PaginaRetiro(self.mod, [self.septiembre(desde=31), octubre])
         r, _, _ = self.retirar(pagina, plazo="2 Oct 2026, 21:00")
         self.assertEqual(r, ("NO ENVIADA", "MAERSK: abrí el calendario de la fecha de retiro, pero no hay un día hábil "
-                                           "habilitado del 29-09-2026 al 30-09-2026, el último que muestra el "
-                                           f"calendario, y cambiar de mes es un clic que no está permitido; {nada}"))
+                                           "habilitado del 29-09-2026 al 31-10-2026, el último que muestra el "
+                                           "calendario, y el calendario no se pasa más de un mes adelante («Next "
+                                           f"month») ni hacia atrás; {nada}"))
+        self.assertEqual(pagina.clics, [("boton", "Choose another date"), ("boton", "Next month")])
         # Con un día que cumple la regla, lo elige, aunque el plazo sea anterior.
         pagina = PaginaRetiro(self.mod, self.septiembre(), puesto=self.puesto("2026-09-29"))
         r, det, _ = self.retirar(pagina, plazo="28 Sep 2026, 21:00")
@@ -8388,6 +8663,74 @@ r.septiembre = fechados();
         self.assertEqual(r["leyenda"], ["mes"])
         self.assertEqual((r["sinMarca"], r["marcados"], r["ocultos"], r["septiembre"], r["repetido"]),
                          (0, [31, 3], [31, 3], 0, 0))
+
+    def test_js_mes_siguiente(self):
+        # «Next month» (encargo 97): el único control a la vista de la raíz del calendario que se llama así; se pulsa su
+        # botón de más adentro, y solo si nada en él está deshabilitado. La forma es la medida en los 32 calendarios
+        # guardados (del 14-10 al 04-11): un mc-button con label «Next month» y, en su raíz shadow, un button con ese
+        # aria-label, junto al «Previous month» y a los botones del mes y del año.
+        guion = (DOM_AQ + self.CALENDARIO + "const leer = " + self.mod._JS_MK_CALENDARIO + ";\nconst leerSiguiente = "
+                 + self.mod._JS_MK_MES_SIGUIENTE + ";\nconst prueba = e => e && e.getAttribute('data-prueba');\n"
+                 + r"""const r = {};
+// Con 'opciones' {invisible: true}, el mc-button y su button de adentro, como en el navegador (visibility se hereda).
+const boton = (label, atrs = {}, interno = {}, opciones = {}) => el('mc-button', Object.assign({label}, atrs), [],
+  Object.assign({shadow: [el('button', Object.assign({part: 'button', 'aria-label': label,
+    'data-prueba': (atrs['data-prueba'] || label) + '-interno'}, interno), [], opciones)]}, opciones));
+const diaMc = n => el('mc-button', {label: String(n)}, [], {shadow: [el('button',
+  {part: 'button', 'aria-label': String(n)}, [el('div', {class: 'mc-text-and-icon small'}, [String(n)])])]});
+const modal = (cab, extra = []) => el('mc-modal', {open: ''}, [el('div', {}, cab),
+  el('div', {class: 'body-days'}, rango(1, 30, diaMc))].concat(extra, [listo()]));
+const cab = (sig = boton('Next month', {'data-prueba': 'sig'})) => [boton('Previous month'), boton('November'),
+  boton('2026')].concat(sig ? [sig] : []);
+const ver = () => [prueba(leerSiguiente()), leer().siguientes];
+pagina(modal(cab()));
+r.medido = ver();
+r.fechas = leer().dias.filter(d => d.fecha).length;
+pagina(modal(cab(boton('Next month', {'data-prueba': 'sig', disabled: ''}))));
+r.apagado = ver();
+pagina(modal(cab(boton('Next month', {'data-prueba': 'sig'}, {disabled: ''}))));
+r.apagadoAdentro = ver();
+pagina(modal(cab(boton('Next month', {'data-prueba': 'sig', 'aria-disabled': 'true'}))));
+r.ariaApagado = ver();
+pagina(modal(cab(null)));
+r.sin = ver();
+pagina(modal(cab(), [boton('Next month', {'data-prueba': 'otro'})]));
+r.dos = ver();
+pagina(modal(cab(boton('Next month', {'data-prueba': 'sig'}, {}, {invisible: true}))));
+r.oculto = ver();
+pagina(el('div', {}, [boton('Next month', {'data-prueba': 'afuera'})]), modal(cab(null)));
+r.afuera = ver();
+pagina(el('div', {}, [boton('Next month', {'data-prueba': 'afuera'})]));
+r.sinCalendario = [prueba(leerSiguiente()), leer().siguientes === undefined];
+// El botón de adentro (revisión de seguridad del encargo 97): uno solo, a la vista y que se llame «Next month» o no
+// tenga nombre. Uno que se llama «Previous month», uno oculto o dos: nada.
+pagina(modal(cab(el('div', {role: 'button', 'aria-label': 'Next month'}, [el('button',
+  {'aria-label': 'Previous month', 'data-prueba': 'atras'}, [])]))));
+r.otroNombre = ver();
+pagina(modal(cab(el('mc-button', {label: 'Next month'}, [], {shadow: [el('button',
+  {'aria-label': 'Next month', 'data-prueba': 'oculto'}, [], {invisible: true})]}))));
+r.adentroOculto = ver();
+pagina(modal(cab(el('mc-button', {label: 'Next month'}, [], {shadow: [el('button', {'data-prueba': 'uno'}, []),
+  el('button', {'data-prueba': 'otro'}, [])]}))));
+r.dosAdentro = ver();
+pagina(modal(cab(el('mc-button', {label: 'Next month'}, [], {shadow: [el('button', {'data-prueba': 'sin-nombre'},
+  [])]}))));
+r.sinNombre = ver();
+pagina(modal(cab(el('div', {role: 'button', 'aria-label': 'Next month', 'data-prueba': 'solo'}, []))));
+r.sinBoton = ver();
+// Deshabilitado por su clase, como los días.
+pagina(modal(cab(boton('Next month', {'data-prueba': 'sig', class: 'mds-button--disabled'}))));
+r.claseApagada = ver();
+console.log(JSON.stringify(r));
+""")
+        r = correr_node(self, guion)
+        self.assertEqual((r["medido"], r["fechas"]), (["sig-interno", 1], 30))
+        self.assertEqual((r["apagado"], r["apagadoAdentro"], r["ariaApagado"]), ([None, 1], [None, 1], [None, 1]))
+        self.assertEqual((r["sin"], r["dos"], r["oculto"], r["afuera"]), ([None, 0], [None, 2], [None, 0], [None, 0]))
+        self.assertEqual(r["sinCalendario"], [None, True])
+        self.assertEqual((r["otroNombre"], r["adentroOculto"], r["dosAdentro"]), ([None, 1], [None, 1], [None, 1]))
+        self.assertEqual((r["sinNombre"], r["sinBoton"], r["claseApagada"]), (["sin-nombre", 1], ["solo", 1], [None, 1]))
+        self.assertIn(self.mod.MK_MES_SIGUIENTE.lower(), self.mod._JS_MK_DIAS)
 
     def test_js_tarjeta_y_avisos_de_cargos(self):
         guion = DOM_AQ + "const puesto = " + self.mod._JS_MK_RETIRO_PUESTO + ";\nconst avisos = " + \

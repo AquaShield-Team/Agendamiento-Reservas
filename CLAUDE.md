@@ -543,7 +543,8 @@ cerrado:
   pulsar nada (`_JS_MSC_BAJAR`). ONE no amplía: de `05cfdb7` a `924485a` abría su selector «N weeks». En el modal de
   HYUNDAI, la opción «I do not want to choose an alternate vessel» y su «OK» (ver «Solo la nave que la fila pide»). El
   «Book Now» de HYUNDAI, que ya se pulsaba, vuelve a leer su tarjeta antes de pulsarse (`_JS_HMM_CLIC_TARJETA`).
-  Los otros clics nuevos antes de la guarda son los tres de la fecha de retiro de MAERSK y los de su Shipper: dos, el
+  Los otros clics nuevos antes de la guarda son los tres de la fecha de retiro de MAERSK (cuatro, con «Next month»,
+  desde el encargo 97, si el día cae en el mes siguiente) y los de su Shipper: dos, el
   «Close» del buscador solo si la tarjeta ya muestra a AQUACHILE y la casilla del resultado solo si su posición y su
   código apuntan a la misma (abajo).
 - **MAERSK marca los términos por su texto** (decisión de Marcelo, `CICLO-maersk-retiro-y-terminos.md`): la única
@@ -971,7 +972,8 @@ cerrado:
     elegía. El 21-09, el código de antes de `0f1507e` pulsó el primer día que veía habilitado, el domingo 27, en las 5
     filas, y las 5 llegaron a la revisión.
   - `_mk_fecha_de_retiro`, antes de la referencia, con tres clics: «Choose another date» (`MK_OTRA_FECHA`, el único a la
-    vista, y ningún «Done» antes de abrir), el día por su fecha y el «Done» del calendario (`_JS_MK_LISTO`), nunca otro.
+    vista, y ningún «Done» antes de abrir), el día por su fecha y el «Done» del calendario (`_JS_MK_LISTO`), nunca otro;
+    y con un cuarto, «Next month», solo si el día cae en el mes siguiente (desde el encargo 97, abajo).
     Deja `mk_f<fila>_calendario` antes de elegir, anota en `log.txt` los avisos de cargos (la reserva sigue) y comprueba
     la tarjeta (`_mk_comprobar_retiro`, que la espera hasta 5 s mientras siga sin fecha o no la pueda leer): sin fecha,
     con otra o sin poder leerla, NO ENVIADA con `mk_f<fila>_retiro` (hasta el encargo 37, si no se podía leer, avisaba
@@ -980,8 +982,9 @@ cerrado:
     (`CICLO-msc-recarga-y-corrida-02-10.md`). `mkCalendario` (`_JS_MK_DIAS`) lo reconoce por su único «Done» a la vista
     con al menos 28 días alrededor, y da la fecha de cada día por un atributo que la trae entera, por la leyenda de su
     mes o, sin una leyenda, por su cabecera (abajo), sin los números de semana (`/week(?!end)/`) ni los días de otro
-    mes. Si el día no se identifica, no está a la vista o el calendario no aparece, NO ENVIADA sin otro clic: cambiar de
-    mes es un clic que no está permitido (FRENO).
+    mes. Si el día no se identifica o el calendario no aparece, NO ENVIADA sin otro clic. Si el día que toca cae en el
+    mes siguiente, pasa de mes con su «Next month» (desde el encargo 97, abajo; hasta ahí, cambiar de mes era un clic
+    que no estaba permitido, FRENO).
     - Lo medido: va en un `mc-modal` («Container pick-up details»); el mes y el año, en dos `mc-button` de su cabecera
       (`label` «October» y «2026»), sin una leyenda que traiga los dos; cada día, un `mc-button` con su número por
       `label` y, adentro, un `button` con el número por `aria-label` y `disabled` si no se puede elegir.
@@ -1019,6 +1022,50 @@ cerrado:
         `test_la_elegida_guarda_su_plazo_de_entrega`) y `TestRetiroMaersk`
         (`test_el_plazo_de_entrega_que_no_deja_retirar`, `test_el_motivo_dice_el_plazo_de_entrega` y
         `test_reservar_maersk_le_pasa_el_plazo_de_la_elegida`).
+    - **El día que toca en el mes siguiente** (decisión de Marcelo, encargo 97, `CICLO-retiro-maersk-mes-siguiente.md`).
+      A fin de mes, y en diciembre del año siguiente, el primer día hábil después de hoy cae en el mes que sigue, y el
+      calendario abre en el de hoy: hasta ahí la fila quedaba NO ENVIADA, y según Marcelo así no se pudo emitir a fines
+      de octubre. La regla no cambia.
+      - Si el día que toca cae después del último que muestra el calendario, o no queda en él un día hábil habilitado
+        desde ese día (`_mk_falta_otro_mes`), pulsa su único «Next month» habilitado (`_mk_mes_siguiente`,
+        `_JS_MK_MES_SIGUIENTE`, `MK_MES_SIGUIENTE`), espera hasta `MK_ESPERA_CALENDARIO` s que el calendario muestre
+        el día que sigue al último que mostraba, deja `mk_f<fila>_calendario_siguiente` y elige con la regla entre los
+        días de los dos meses. Después, el día y el «Done», y la tarjeta tiene que mostrar ese día
+        (`_mk_comprobar_retiro`), como siempre.
+      - A lo más `MK_MESES_ADELANTE` (1) mes, y nunca hacia atrás: el día que toca cae, a lo más, en el mes que sigue
+        al de hoy. Si el plazo de entrega de la tarjeta vence en el mes que se ve (hasta su último día), no pasa de mes:
+        ningún día del siguiente serviría. El motivo es el del plazo (`_mk_plazo_no_deja`) o, si el plazo no es
+        anterior al día que toca, uno que dice que no pasa de mes por el plazo (revisiones del encargo 97).
+      - **Con dos lecturas quietas** (revisiones del encargo 97): antes de pasar de mes vuelve a leer el calendario hasta
+        que dos lecturas seguidas digan lo mismo (`_mk_calendario_quieto`, `_mk_mismos_dias`), y decide con esa; y en
+        el mes nuevo espera dos lecturas iguales con el día que sigue. Si en `MK_ESPERA_CALENDARIO` s no se queda quieto,
+        NO ENVIADA. Si el portal pintara los días antes de su disponibilidad (no medido), una sola lectura los vería
+        todos deshabilitados, y el programa pasaría de mes sin que hiciera falta. El caso normal, sin pasar de mes, lee
+        como antes.
+      - Del mes nuevo se suman solo los días posteriores al último del anterior (`_mk_despues_de`): una celda de otro
+        mes con su fecha no pisa la del mes propio (no medido: los calendarios guardados traen solo su mes).
+      - Sin un solo «Next month» habilitado, si su clic falla o si el calendario no pasa al mes siguiente: NO ENVIADA,
+        sin otro clic. «Next month» es el único control a la vista de la raíz del calendario que se llama así (su
+        `label`, su `aria-label` o su texto). Se pulsa su `button` de más adentro, solo si es uno solo, se ve y se llama
+        «Next month» o no tiene nombre, y si nada en él está deshabilitado (por atributo, `aria-disabled`, o la clase o
+        el part, como los días).
+      - Medido en los 35 calendarios guardados (del 14-10 al 04-11, con el de diciembre de la sonda;
+        `.trabajo/e97/medir_calendarios.py`): cada uno abre en el mes de su corrida, con solo los días de ese mes, y
+        trae un solo `mc-button` «Next month» (`#nextButton`), a la vista y sin `disabled`, con un `button` de adentro
+        de ese `aria-label`; `_JS_MK_MES_SIGUIENTE` da ese `button` en los 35. Con HTML real y las funciones del
+        programa, el recorrido de un viernes 30-10 (el calendario de octubre del 23-10 o del 15-10, «Next month», el de
+        noviembre del 04-11) elige el lunes 9, y su botón está. No hay ninguna corrida de MAERSK del 29 al 31 de octubre
+        guardada en este equipo.
+      - **Probado en el portal, en modo prueba, el 04-11:** con la fecha de hoy, OK-EJEMPLO sin pasar de mes (eligió el
+        lunes 9, como la corrida de las 11:01). Con «hoy» simulado el 30-11, solo en la memoria del panel de prueba y sin
+        el plazo de la tarjeta: el programa pulsó «Next month» con el calendario recién abierto, sin elegir nada antes,
+        y en 0,5 s el calendario mostró diciembre (31 días por su cabecera); como esa salida no habilita ningún día de
+        diciembre, la fila quedó NO ENVIADA con el motivo del plazo. Elegir un día después de pasar de mes no se pudo
+        probar en el portal: hace falta que el día que toca esté habilitado en el mes siguiente.
+      - Lo vigilan `test_clics.TestRetiroMaersk` (`test_pasa_al_mes_siguiente`, con el último día hábil de noviembre,
+        un viernes de fin de mes y el 31 de diciembre; `test_el_caso_normal_no_pasa_de_mes`, `test_falta_otro_mes`,
+        `test_cortes_al_pasar_de_mes`, `test_lecturas_a_medio_cargar`, `test_el_plazo_frena_el_paso_de_mes` y, en Node,
+        `test_js_mes_siguiente`).
   - «Review booking» es el único mc-button a la vista con ese texto (`_mk_pulsar_revision`, `MK_REVISION`; en el HTML
     del 27-09, el mc-button y su botón interno son el mismo control), buscado hasta `MK_INTENTOS_REVISION` veces. Sin
     uno solo, NO ENVIADA (`ObjetivoNoEncontrado`, con lo que el portal pide); si está pero no acepta el clic, NO ENVIADA
@@ -1344,7 +1391,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 1115 pruebas al 2026-11-04 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 1122 pruebas al 2026-11-04 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
