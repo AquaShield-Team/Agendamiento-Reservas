@@ -121,11 +121,14 @@ class TestModoDeCadaCorrida(soporte.CasoAQ):
     def test_la_linea_de_cada_modo(self):
         # Lo que dice cada corrida al empezar (_anotar_candado): modo prueba, sin llaves; o modo EMISIÓN, y por
         # cuáles, en el orden en que las mira el candado. Las llaves las da _llaves_abiertas, mirándolas todas.
+        # Después, la versión del programa que muestra el panel (VERSION_GIT; encargo 95), o que no hay datos de git.
         reg = self.mod.Registro(self.sb / "modo" / "log.txt")
+        version = {"rama": "rama-x", "commit": "abc1234"}
         try:
-            for llaves in ([], ["la primera"], ["la primera", "la segunda"]):
+            for llaves, ver in (([], version), (["la primera"], version), (["la primera", "la segunda"], None)):
                 abiertas = (lambda todas=False, dadas=llaves: list(dadas) if todas else [])
-                with mock.patch.object(self.mod, "_llaves_abiertas", abiertas):
+                with mock.patch.object(self.mod, "_llaves_abiertas", abiertas), \
+                        mock.patch.object(self.mod, "VERSION_GIT", ver):
                     self.mod._anotar_candado(reg)
         finally:
             reg.cerrar()
@@ -136,8 +139,11 @@ class TestModoDeCadaCorrida(soporte.CasoAQ):
             "· 🛡️ Candado de emisión cerrado: modo prueba, sin ninguna de sus tres llaves abierta (la variable "
             "AQUASHIELD_EMITIR, un argumento emitir o produccion, y emitir_reservas en config.json). Cada reserva se "
             "detiene antes del botón final, sin emitir.",
+            "· Versión del programa: rama-x · abc1234",
             f"· 🔴 Candado de emisión abierto: modo EMISIÓN, por la primera. {fin}",
-            f"· 🔴 Candado de emisión abierto: modo EMISIÓN, por la primera y la segunda. {fin}"])
+            "· Versión del programa: rama-x · abc1234",
+            f"· 🔴 Candado de emisión abierto: modo EMISIÓN, por la primera y la segunda. {fin}",
+            "· Versión del programa: sin datos de git"])
 
 
 if __name__ == "__main__":

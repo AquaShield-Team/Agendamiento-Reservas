@@ -21,6 +21,7 @@ import _winapi
 import ast
 import datetime
 import itertools
+import json
 import os
 import re
 import stat
@@ -2014,11 +2015,11 @@ class TestListaDeSugerencias(ConRegistro):
                                       ["PUERTO ALFA NORTE", [1, 0]], ["", [0]], ["PUERTO ALFA NORTE", [0, 0]]])
 
     def test_js_one_elige_la_que_dice_la_celda_entera(self):
-        # Con [texto, celda, marca], si una opción de la lista (role=option) dice la celda entera (sin distinguir
-        # mayúsculas y con los espacios de a uno), ONE elige entre esas; si ninguna, la de siempre: la de más arriba que
-        # trae el texto. Así, con la celda «<puerto>, CHILE (CY)», ya no elige el lugar de otro país que empieza igual y
-        # que ONE ofrecía más arriba (encargo 94). Con [texto, marca] o el texto solo, como antes. La de más arriba es la
-        # última de la lista (su top es el menor).
+        # Con [texto, celda, lugar, marca] (los puertos), si una opción de la lista (role=option) dice la celda entera
+        # (sin distinguir mayúsculas y con los espacios de a uno), ONE elige entre esas (encargo 94); si ninguna, la
+        # regla de MAERSK (encargo 95; su prueba, la que sigue). Así, con la celda «<puerto>, CHILE (CY)», ya no elige el
+        # lugar de otro país que empieza igual y que ONE ofrecía más arriba. Con [texto, marca] (el commodity) o el texto
+        # solo, la de siempre: la de más arriba que trae el texto, que es la última de la lista (su top es el menor).
         guion = (
             "const el = (t, i) => ({tagName: 'BUTTON', className: 'opcion', textContent: t, offsetParent: {}, clics: 0,\n"
             "  children: {length: 0}, getBoundingClientRect: () => ({top: 300 - 100 * i, height: 20}),\n"
@@ -2031,12 +2032,15 @@ class TestListaDeSugerencias(ConRegistro):
             f"const one = {self.mod._JS_PICK_SUGGESTION};\n"
             "const lista = ['PUERTO ALFA, CHILE (CY)', 'PUERTO ALFA, CHILE (DOOR)', 'PUERTO ALFA DE ARRIBA, OTRO (DOOR)'];\n"
             "const r = [\n"
-            "  correr(one, lista, ['PUERTO ALFA', 'PUERTO ALFA, CHILE (CY)', true]),\n"
-            "  correr(one, lista, ['PUERTO ALFA', ' puerto  alfa, chile (cy) ', false]),\n"
-            "  correr(one, lista, ['PUERTO ALFA', 'PUERTO ALFA, CHILE', true]),\n"
+            "  correr(one, lista, ['PUERTO ALFA', 'PUERTO ALFA, CHILE (CY)', 'origen', true]),\n"
+            "  correr(one, lista, ['PUERTO ALFA', ' puerto  alfa, chile (cy) ', 'origen', false]),\n"
+            "  correr(one, lista, ['PUERTO ALFA', 'PUERTO ALFA, CHILE', 'origen', true]),\n"
             "  correr(one, lista, ['PUERTO ALFA', true]),\n"
-            "  correr(one, lista, ['PUERTO ALFA', '', true]),\n"
+            "  correr(one, lista, ['PUERTO ALFA', '', 'destino', true]),\n"
             "  correr(one, lista, 'PUERTO ALFA'),\n"
+            # La celda entera sin distinguir mayúsculas y con los espacios de a uno: la elige por ella (« ENTERA»), no
+            # por la regla de MAERSK, que daría la misma opción con « REGLA».
+            "  correr(one, lista, ['PUERTO ALFA', ' puerto  alfa, chile (cy) ', 'destino', true]),\n"
             "];\n"
             # La lista puede dejar la de la celda más abajo de los 850 px que miran las candidatas de siempre: en el
             # portal, el 03-11, la 7.ª de 9, a 866 px. Una tarjeta de reservas frecuentes con el mismo texto no cuenta,
@@ -2044,7 +2048,8 @@ class TestListaDeSugerencias(ConRegistro):
             # la página que dice lo mismo, sin role=option), tampoco: más abajo de los 850 px, queda la de siempre
             # (revisión de código del encargo 94). Tampoco una tarjeta (la clase de una tarjeta, como en la regla de
             # siempre), aunque fuera una opción (revisión de seguridad). Al pulsar con la celda, el JavaScript termina
-            # con « ENTERA» si eligió por ella, y con « SIN-ENTERA» si eligió con la regla de siempre.
+            # con « ENTERA» si eligió por ella; sin ella, elige con la regla de MAERSK, y si ninguna opción la cumple,
+            # termina con « SIN-REGLA:0», sin pulsar nada (encargo 95: hasta ahí, « SIN-ENTERA», con la de siempre).
             "const conTop = (t, top, o = {}) => ({tagName: 'BUTTON', className: o.clase || 'opcion',\n"
             "  textContent: t, offsetParent: {}, clics: 0, children: {length: 0},\n"
             "  getBoundingClientRect: () => ({top, height: 20}),\n"
@@ -2052,7 +2057,7 @@ class TestListaDeSugerencias(ConRegistro):
             "  closest: (s) => (o.dentro && /Frequent/.test(s) ? {} : null), click() { this.clics++; }});\n"
             "const conTops = (f, els, arg) => { global.document = {querySelectorAll: () => els};\n"
             "  return [f(arg), els.map(e => e.clics)]; };\n"
-            "const celda = ['PUERTO ALFA', 'PUERTO ALFA, CHILE (CY)', true];\n"
+            "const celda = ['PUERTO ALFA', 'PUERTO ALFA, CHILE (CY)', 'origen', true];\n"
             "const abajo = [\n"
             "  conTops(one, [conTop('PUERTO ALFA DE ARRIBA, OTRO (DOOR)', 626), conTop('PUERTO ALFA, CHILE (CY)', 866)],\n"
             "          celda),\n"
@@ -2072,10 +2077,106 @@ class TestListaDeSugerencias(ConRegistro):
         exacta, arriba = "BUTTON.opcion#300 «PUERTO ALFA, CHILE (CY)»", "BUTTON.opcion#100 «PUERTO ALFA DE ARRIBA, OTRO (DOOR)»"
         cands = "CANDS[BUTTON.opcion#300  BUTTON.opcion#200  BUTTON.opcion#100]"
         self.assertEqual(r, [[f"CLICK[{exacta}] {cands} ENTERA", [1, 0, 0]], [exacta, [0, 0, 0]],
-                             [f"CLICK[{arriba}] {cands} SIN-ENTERA", [0, 0, 1]], [f"CLICK[{arriba}] {cands}", [0, 0, 1]],
-                             [f"CLICK[{arriba}] {cands}", [0, 0, 1]], [f"CLICK[{arriba}] {cands}", [0, 0, 1]]])
+                             [f"CLICK[{exacta}] {cands} REGLA", [1, 0, 0]], [f"CLICK[{arriba}] {cands}", [0, 0, 1]],
+                             [f"CLICK[{exacta}] {cands} REGLA", [1, 0, 0]], [f"CLICK[{arriba}] {cands}", [0, 0, 1]],
+                             [f"CLICK[{exacta}] {cands} ENTERA", [1, 0, 0]]])
         la_866 = "CLICK[BUTTON.opcion#866 «PUERTO ALFA, CHILE (CY)»]"
-        la_626 = "CLICK[BUTTON.opcion#626 «PUERTO ALFA DE ARRIBA, OTRO (DOOR)»]"
         self.assertEqual([(x[0].split(" CANDS")[0], x[0].rsplit("]", 1)[1], x[1]) for x in abajo],
                          [(la_866, " ENTERA", [0, 1]), (la_866, " ENTERA", [0, 0, 1]), (la_866, " ENTERA", [0, 0, 1]),
-                          (la_626, " SIN-ENTERA", [1, 0]), (la_866, " ENTERA", [0, 1])])
+                          ("CLICK[]", " SIN-REGLA:0", [0, 0]), (la_866, " ENTERA", [0, 1])])
+
+    def test_js_one_con_la_ciudad_sola_la_regla_de_maersk(self):
+        # Sin una opción que diga la celda entera (la celda trae solo la ciudad, o la lista no la ofrece así), ONE elige
+        # con la regla de MAERSK (decisión de Marcelo, encargo 95): la única opción de la lista a la vista (role=option,
+        # ni tarjeta ni dentro de una de reservas frecuentes) cuyo texto antes de la primera coma es la ciudad escrita,
+        # sin tildes, en mayúsculas y con los espacios de a uno (como _mk_plano), y que es de patio de contenedores
+        # «(CY)»; en el origen, además, de CHILE (la última parte, antes del paréntesis), porque todas las reservas
+        # salen de un puerto chileno. Si no queda una sola, no pulsa nada y dice cuántas ganaban. Mira las opciones de
+        # la lista, no las candidatas de siempre: una ciudad escrita con tilde, o una opción de más de 55 caracteres,
+        # también calzan. El 03-11, con la celda «<puerto>» sola, ONE eligió un lugar de otro país que empezaba igual.
+        # Los textos con tildes o espacios raros van desde Python (json.dumps), sin escapes escritos a mano.
+        NB = chr(0xA0)
+        pares = [("Sán  Alfa", "SAN ALFA"), ("ñandú" + chr(9) + "sur", "NANDU SUR"), ("SAN" + NB + "ALFA", "san alfa"),
+                 ("straße", "STRASSE"), ("Ålfa", "ALFA"), (chr(0xFB01) + "n", "FIN"), ("ALFA", "ALFA-"),
+                 (chr(0xD8), "O"), ("ALFA", "ALFA BETA")]
+        guion = (
+            f"const NB = {json.dumps(NB)}, pares = {json.dumps(pares)};\n"
+            "const op = (t, top, o = {}) => ({tagName: 'BUTTON', className: o.clase || 'opcion', textContent: t,\n"
+            "  offsetParent: o.oculta ? null : {}, clics: 0, children: {length: 0},\n"
+            "  getBoundingClientRect: () => ({top, height: 20}),\n"
+            "  getAttribute: (n) => (n === 'role' ? (o.rol === undefined ? 'option' : o.rol) : null),\n"
+            "  closest: (s) => (o.dentro && /Frequent/.test(s) ? {} : null), click() { this.clics++; }});\n"
+            "const correr = (els, tok, lugar) => { global.document = {querySelectorAll: () => els};\n"
+            "  const leida = one([tok, '', lugar, false]);\n"
+            "  const dicha = one([tok, '', lugar, true]);\n"
+            "  return [leida, dicha.replace(/ CANDS\\[.*\\]/, ''), els.map(e => e.clics)]; };\n"
+            f"const one = {self.mod._JS_PICK_SUGGESTION};\n"
+            # La lista del 03-11, inventada: el lugar de otro país primero, la de Chile más abajo.
+            "const lista = () => [op('SAN ALFA, PAIS UNO (CY)', 100), op('SAN ALFA NORTE, CHILE (CY)', 140),\n"
+            "  op('SAN ALFA, CHILE (DOOR)', 180), op('SAN ALFA, CHILE' + NB + '(CY)', 220)];\n"
+            "const r = {\n"
+            "  origen: correr(lista(), 'SAN ALFA', 'origen'),\n"
+            "  destino: correr(lista(), 'SAN ALFA', 'destino'),\n"
+            "  tilde: correr(lista(), 'Sán  Alfa', 'origen'),\n"
+            "  opcion_con_tilde: correr([op('Sán Alfa, Chile (CY)', 100)], 'SAN ALFA', 'origen'),\n"
+            "  larga: correr([op('SAN ALFA, UNA REGION CON UN NOMBRE MUY LARGO DEL SUR, CHILE (CY)', 100)],\n"
+            "                'SAN ALFA', 'origen'),\n"
+            "  oculta: correr([op('SAN ALFA, CHILE (CY)', 100, {oculta: true})], 'SAN ALFA', 'origen'),\n"
+            "  no_opcion: correr([op('SAN ALFA, CHILE (CY)', 100, {rol: null})], 'SAN ALFA', 'origen'),\n"
+            "  tarjeta: correr([op('SAN ALFA, CHILE (CY)', 100, {clase: 'BookingCard_item'})], 'SAN ALFA', 'origen'),\n"
+            "  frecuente: correr([op('SAN ALFA, CHILE (CY)', 100, {dentro: true})], 'SAN ALFA', 'origen'),\n"
+            "  sin_cy: correr([op('SAN ALFA, CHILE (CY) (DOOR)', 100), op('SAN ALFA, CHILE', 140)], 'SAN ALFA',\n"
+            "                 'origen'),\n"
+            "  otro_pais: correr([op('SAN ALFA, NO CHILE (CY)', 100), op('SAN ALFA, CHILE, OTRO (CY)', 140)],\n"
+            "                    'SAN ALFA', 'origen'),\n"
+            "  dos_chile: correr([op('SAN ALFA, CHILE (CY)', 100), op('SAN ALFA, CHILE (CY)', 140)], 'SAN ALFA',\n"
+            "                    'origen'),\n"
+            "  ciudad_repetida: correr([op('ALFA, ALFA, PAIS DOS (CY)', 100), op('ALFA BETA, PAIS DOS (CY)', 140)],\n"
+            "                          'ALFA', 'destino'),\n"
+            "};\n"
+            # Con la celda que trae país, la opción también tiene que ser de ese país (decisión de Marcelo tras la
+            # revisión de seguridad): la misma ciudad de otro país no gana. Sin tildes y sin el paréntesis del final.
+            "const conCelda = (els, tok, celda, lugar) => { global.document = {querySelectorAll: () => els};\n"
+            "  return [one([tok, celda, lugar, true]).replace(/ CANDS\\[.*\\]/, ''), els.map(e => e.clics)]; };\n"
+            "const valencia = () => [op('VALENCIA, CARABOBO, VENEZUELA (CY)', 100), op('VALENCIA, ESPAÑA (CY)', 140)];\n"
+            "const p = {\n"
+            "  otro_pais: conCelda([op('VALENCIA, CARABOBO, VENEZUELA (CY)', 100)], 'VALENCIA', 'VALENCIA, SPAIN', 'destino'),\n"
+            "  su_pais: conCelda(valencia(), 'VALENCIA', 'Valencia,  Espana', 'destino'),\n"
+            "  sin_pais: conCelda(valencia(), 'VALENCIA', '', 'destino'),\n"
+            "  con_parentesis: conCelda(valencia(), 'VALENCIA', 'VALENCIA, ESPAÑA (DOOR)', 'destino'),\n"
+            "  origen_chile: conCelda(lista(), 'SAN ALFA', 'SAN ALFA, CHILE', 'origen'),\n"
+            "  origen_otro: conCelda(lista(), 'SAN ALFA', 'SAN ALFA, PAIS UNO', 'origen'),\n"
+            "};\n"
+            "const mk = pares.map(([tok, nombre]) => { global.document = {querySelectorAll: () =>\n"
+            "  [op(nombre + ', CHILE (CY)', 100)]}; return one([tok, '', 'origen', false]) !== ''; });\n"
+            "console.log(JSON.stringify([r, mk, p]));\n")
+        r, mk, p = correr_node(self, guion)
+        espana = "CLICK[BUTTON.opcion#140 «VALENCIA, ESPAÑA (CY)»] REGLA"
+        self.assertEqual(p, {"otro_pais": ["CLICK[] SIN-REGLA:0", [0]], "su_pais": [espana, [0, 1]],
+                             "sin_pais": ["CLICK[] SIN-REGLA:2", [0, 0]], "con_parentesis": [espana, [0, 1]],
+                             "origen_chile": [f"CLICK[BUTTON.opcion#220 «SAN ALFA, CHILE{NB}(CY)»] REGLA",
+                                              [0, 0, 0, 1]],
+                             "origen_otro": ["CLICK[] SIN-REGLA:0", [0, 0, 0, 0]]})
+        chile = f"BUTTON.opcion#220 «SAN ALFA, CHILE{NB}(CY)»"
+        self.assertEqual(r["origen"], [chile, f"CLICK[{chile}] REGLA", [0, 0, 0, 1]])
+        self.assertEqual(r["destino"], ["", "CLICK[] SIN-REGLA:2", [0, 0, 0, 0]])
+        self.assertEqual(r["tilde"], [chile, f"CLICK[{chile}] REGLA", [0, 0, 0, 1]])
+        self.assertEqual(r["opcion_con_tilde"][1:], ["CLICK[BUTTON.opcion#100 «Sán Alfa, Chile (CY)»] REGLA", [1]])
+        self.assertEqual(r["larga"][2], [1])
+        self.assertTrue(r["larga"][1].endswith("] REGLA"), r["larga"])
+        for caso in ("oculta", "no_opcion", "tarjeta", "frecuente", "sin_cy"):
+            with self.subTest(caso=caso):
+                self.assertEqual(r[caso][:2], ["", "CLICK[] SIN-REGLA:0"])
+                self.assertNotIn(1, r[caso][2])
+        self.assertEqual(r["otro_pais"], ["", "CLICK[] SIN-REGLA:0", [0, 0]])
+        self.assertEqual(r["dos_chile"], ["", "CLICK[] SIN-REGLA:2", [0, 0]])
+        self.assertEqual(r["ciudad_repetida"][1:], ["CLICK[BUTTON.opcion#100 «ALFA, ALFA, PAIS DOS (CY)»] REGLA", [1, 0]])
+        # La comparación sin tildes del JavaScript da lo mismo que _mk_plano, la de MAERSK, en estos pares (con los dos
+        # lados: los que calzan y los que no).
+        python = [self.mod._mk_plano(tok) == self.mod._mk_plano(nombre) for tok, nombre in pares]
+        self.assertEqual(mk, python)
+        self.assertEqual((True in python, False in python), (True, True))
+        # El país del origen sale de una sola constante: la que dice el motivo (_one_regla_del_puerto).
+        self.assertIn(f"=== '{self.mod.ONE_PAIS_DEL_ORIGEN}'", self.mod._JS_PICK_SUGGESTION)
+        self.assertIn(f"y de {self.mod.ONE_PAIS_DEL_ORIGEN}", self.mod._one_regla_del_puerto("X", "origen"))
+        self.assertNotIn(self.mod.ONE_PAIS_DEL_ORIGEN, self.mod._one_regla_del_puerto("X", "destino"))

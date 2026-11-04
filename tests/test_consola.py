@@ -624,6 +624,7 @@ class TestEjecutarReservas(ConPlanilla):
         lineas = (Path(carpeta) / "log.txt").read_text(encoding="utf-8").splitlines()
         self.assertIn("· INICIO RESERVAS · CMA-CGM · usuario=op_prueba", lineas[0])
         self.assertIn("· 🛡️ Candado de emisión cerrado: modo prueba", lineas[1])
+        self.assertIn("· Versión del programa: ", lineas[2])            # encargo 95
         llaves = (lambda todas=False: ["la llave de prueba"] if todas else [])
         with soporte.Navieras(self.mod), mock.patch.object(self.mod, "_llaves_abiertas", llaves):
             _, carpeta = self.mod.ejecutar_reservas("op_prueba", "cma", esperar_cierre=lambda: None)
@@ -693,6 +694,7 @@ class TestEjecutarLogin(ConPlanilla):
         lineas = (Path(carpeta) / "log.txt").read_text(encoding="utf-8").splitlines()
         self.assertIn("· INICIO · usuario=op_vacio · navieras=one", lineas[0])
         self.assertIn("· 🛡️ Candado de emisión cerrado: modo prueba", lineas[1])
+        self.assertIn("· Versión del programa: ", lineas[2])            # encargo 95
 
     def test_solo_login_con_detener_no_sigue(self):
         # Decisión de Marcelo, encargo 57 (CICLO-cortes-de-cma-y-pausas.md): con «Detener» (se_detuvo), no sigue con los

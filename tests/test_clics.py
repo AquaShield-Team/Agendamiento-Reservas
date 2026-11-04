@@ -837,12 +837,13 @@ console.log(JSON.stringify([
         self.assertIn("Origen ('LIRQUEN'): sin sugerencia | CLICK[] CANDS[]", log.read_text(encoding="utf-8"))
 
     def test_el_puerto_con_la_celda_entera(self):
-        # El puerto escribe la ciudad (la parte de la celda antes de su primera coma), y si la celda trae algo después
-        # de la coma, se la pasa entera, con los espacios de a uno, al JavaScript que elige (_JS_PICK_SUGGESTION), en la
-        # lectura sin pulsar y en el clic: si una sugerencia la dice entera, elige esa (encargo 94). Sin nada después
-        # de la coma, como antes: [ciudad, marca]. La ciudad va con los espacios de a uno: un salto de línea sería la
-        # tecla Enter en la lista (revisión de seguridad). Y si ninguna sugerencia dice la celda entera (el JavaScript
-        # termina con « SIN-ENTERA»), log.txt lo dice: eligió con la regla de siempre.
+        # El puerto escribe la ciudad (la parte de la celda antes de su primera coma), y le pasa al JavaScript que elige
+        # (_JS_PICK_SUGGESTION), en la lectura sin pulsar y en el clic, la celda entera, con los espacios de a uno, si
+        # trae algo después de la coma (si no, vacía), y el lugar: [ciudad, celda, lugar, marca]. Si una sugerencia
+        # dice la celda entera, elige esa (encargo 94); si no, la única con la regla de MAERSK, y en el origen, de
+        # CHILE (decisión de Marcelo, encargo 95), y log.txt lo dice, con la regla (el JavaScript termina con
+        # « REGLA»). La ciudad va con los espacios de a uno: un salto de línea sería la tecla Enter en la lista
+        # (revisión de seguridad del encargo 94).
         def evaluar(llamadas, fin):
             def f(js, *a):
                 if js == self.mod._JS_ONE_CERRAR_MODAL:
@@ -851,26 +852,97 @@ console.log(JSON.stringify([
                 return "CLICK[BUTTON.x#100 «PUERTO ALFA, CHILE (CY)»] CANDS[]" + fin if a[0][-1] is True else "X"
             return f
         reg, _, log = self.corrida()
-        aviso = "Origen: ninguna sugerencia dice la celda entera «PUERTO ALFA, CHILE (CY)»; elegí con la regla de "
+        regla = ("Origen: elegí con la regla de MAERSK, una sola sugerencia de la lista con «PUERTO ALFA» antes de su "
+                 "primera coma, de patio de contenedores «(CY)» y de CHILE")
         for celda, ciudad, entera, fin in (
                 ("PUERTO ALFA, CHILE (CY)", "PUERTO ALFA", "PUERTO ALFA, CHILE (CY)", " ENTERA"),
                 (" PUERTO ALFA ,  CHILE ", "PUERTO ALFA", "PUERTO ALFA , CHILE", " ENTERA"),
                 ("PUERTO\nALFA, CHILE (CY)", "PUERTO ALFA", "PUERTO ALFA, CHILE (CY)", " ENTERA"),
-                ("PUERTO  ALFA", "PUERTO ALFA", None, ""), ("PUERTO ALFA,", "PUERTO ALFA", None, ""),
-                ("PUERTO ALFA, CHILE (CY)", "PUERTO ALFA", "PUERTO ALFA, CHILE (CY)", " SIN-ENTERA")):
+                ("PUERTO  ALFA", "PUERTO ALFA", "", " REGLA"), ("PUERTO ALFA,", "PUERTO ALFA", "", " REGLA"),
+                ("PUERTO ALFA, CHILE (CY)", "PUERTO ALFA", "PUERTO ALFA, CHILE (CY)", " REGLA")):
             with self.subTest(celda=celda, fin=fin):
                 hechos, llamadas = [], []
                 pagina = soporte.PaginaFalsa(texto=evaluar(llamadas, fin))
                 pagina.locator = lambda sel: CampoFalso(hechos)
-                antes = log.read_text(encoding="utf-8").count(aviso) if log.exists() else 0
+                antes = log.read_text(encoding="utf-8").count(regla) if log.exists() else 0
                 with mock.patch.object(self.mod, "_evidencia_antes_de_la_guarda", lambda *a, **k: None):
                     self.assertIs(self.mod._fill_port(pagina, "input[placeholder*='Origin' i]", celda, reg, "Origen",
-                                                      evidencia="one_f5_origen"), True)
-                con = [ciudad, entera] if entera else [ciudad]
+                                                      evidencia="one_f5_origen", lugar="origen"), True)
+                con = [ciudad, entera, "origen"]
                 self.assertEqual(hechos, ["clic", ciudad])
                 self.assertEqual(llamadas, [con + [False], con + [True]])
-                self.assertEqual(log.read_text(encoding="utf-8").count(aviso) - antes, int(fin == " SIN-ENTERA"))
-        self.assertIn(aviso + "siempre, la de más arriba que trae «PUERTO ALFA»", log.read_text(encoding="utf-8"))
+                self.assertEqual(log.read_text(encoding="utf-8").count(regla) - antes, int(fin == " REGLA"))
+        texto = log.read_text(encoding="utf-8")
+        self.assertIn(regla + "; ninguna dice la celda entera «PUERTO ALFA, CHILE (CY)»\n", texto)
+        self.assertIn(regla + "\n", texto)
+
+    def test_el_puerto_sin_una_sola_con_la_regla_corta(self):
+        # Si ninguna sugerencia dice la celda entera y no queda una sola con la regla de MAERSK (el JavaScript termina
+        # con « SIN-REGLA:<n>», sin pulsar), la reserva corta sin pulsar nada (NO ENVIADA), y el motivo dice la regla
+        # y cuántas la cumplían; en el origen, con CHILE, y en el destino, sin él (encargo 95). El commodity, sin
+        # lugar, sigue con [texto, marca] y el motivo de siempre.
+        def evaluar(llamadas, ganan):
+            def f(js, *a):
+                if js == self.mod._JS_ONE_CERRAR_MODAL:
+                    return False
+                llamadas.append(list(a[0]))
+                return f"CLICK[] CANDS[] SIN-REGLA:{ganan}" if a[0][-1] is True else ""
+            return f
+        reg, _, _ = self.corrida()
+        for lugar, etiqueta, ganan, buscaba in (
+                ("origen", "Origen", 2, "una sola sugerencia de la lista con «PUERTO ALFA» antes de su primera coma, de "
+                                         "patio de contenedores «(CY)» y de CHILE (hay 2)"),
+                ("destino", "Destino", 0, "una sola sugerencia de la lista con «PUERTO ALFA» antes de su primera coma, "
+                                          "de patio de contenedores «(CY)» (hay 0)")):
+            with self.subTest(lugar=lugar):
+                hechos, llamadas, sin = [], [], []
+                pagina = soporte.PaginaFalsa(texto=evaluar(llamadas, ganan))
+                pagina.locator = lambda sel: CampoFalso(hechos)
+                with mock.patch.object(self.mod, "_evidencia_sin_sugerencia", lambda *a, **k: sin.append(a[2])), \
+                        self.assertRaises(self.mod.ObjetivoNoEncontrado) as e:
+                    self.mod._fill_port(pagina, "input#x", "PUERTO ALFA", reg, etiqueta,
+                                        evidencia=f"one_f5_{lugar}", lugar=lugar)
+                self.assertEqual((e.exception.paso, e.exception.buscaba), (f"{etiqueta} de ONE", buscaba))
+                self.assertEqual(llamadas[-1], ["PUERTO ALFA", "", lugar, True])
+                self.assertEqual(sin, [f"one_f5_{lugar}"])
+        # Con la celda que trae país, el motivo lo dice (decisión de Marcelo tras la revisión de seguridad); y la
+        # ciudad y el país van como se muestran: el motivo va a la planilla, y openpyxl no escribe un carácter de
+        # control (revisión de seguridad del encargo 95).
+        for celda, buscaba in (
+                ("PUERTO ALFA, PAIS DOS", "una sola sugerencia de la lista con «PUERTO ALFA» antes de su primera coma, "
+                                          "de patio de contenedores «(CY)» y de PAIS DOS (hay 0)"),
+                ("PUERTO" + chr(27) + "ALFA, PA" + chr(0) + "IS", "una sola sugerencia de la lista con «PUERTO?ALFA» antes "
+                                                              "de su primera coma, de patio de contenedores «(CY)» y de "
+                                                              "PA?IS (hay 0)")):
+            with self.subTest(celda=celda):
+                hechos, llamadas = [], []
+                pagina = soporte.PaginaFalsa(texto=evaluar(llamadas, 0))
+                pagina.locator = lambda sel: CampoFalso(hechos)
+                with mock.patch.object(self.mod, "_evidencia_sin_sugerencia", lambda *a, **k: None), \
+                        self.assertRaises(self.mod.ObjetivoNoEncontrado) as e:
+                    self.mod._fill_port(pagina, "input#x", celda, reg, "Destino", evidencia="one_f5_destino",
+                                        lugar="destino")
+                self.assertEqual(e.exception.buscaba, buscaba)
+        f = self.mod._one_pais_de_la_celda
+        self.assertEqual([f("SAN ALFA"), f("SAN ALFA, CHILE (CY)"), f("Alfa, Beta, Japán"), f("X,"), f("X, (CY)"),
+                          f("")], ["", "CHILE", "JAPAN", "", "", ""])
+        hechos, llamadas = [], []
+        pagina = soporte.PaginaFalsa(texto=evaluar(llamadas, 0))
+        pagina.locator = lambda sel: CampoFalso(hechos)
+        with self.assertRaises(self.mod.ObjetivoNoEncontrado) as e:
+            self.mod._fill_autocomplete(pagina, "input#x", "SALMON", reg, "Commodity")
+        self.assertEqual(e.exception.buscaba, "la sugerencia «SALMON» en la lista del autocompletado")
+        self.assertEqual(llamadas[-1], ["SALMON", True])
+
+    def test_reservar_one_dice_el_lugar_de_cada_puerto(self):
+        # reservar_one le dice a _fill_port qué puerto llena: el origen, que elige con la regla de MAERSK y de CHILE, y
+        # el destino, sin el país (encargo 95). Leído del código: la reserva entera no corre sin el portal.
+        tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
+        f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_one")
+        llamadas = sorted((ast.unparse(c.args[4]), next((ast.unparse(k.value) for k in c.keywords if k.arg == "lugar"),
+                                                        None))
+                          for c in ast.walk(f) if isinstance(c, ast.Call) and ast.unparse(c.func) == "_fill_port")
+        self.assertEqual(llamadas, [("'Destino'", "'destino'"), ("'Origen'", "'origen'")])
 
     def test_detenida_deja_captura_y_html_sin_esperar(self):
         reg, vistas, log = self.corrida()

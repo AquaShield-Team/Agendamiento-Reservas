@@ -147,7 +147,10 @@ def _anotar_candado(reg):
     dicen con qué candado corre: modo prueba, o modo EMISIÓN y por cuál llave (_llaves_abiertas, que las mira todas).
     Decisión de Marcelo, encargo 51: la corrida de CMA-CGM del 2026-10-02 a las 18:52, que se tomó por la primera
     emisión real, no lo decía, y el panel lo pinta solo al cargar la página. Solo lo dice: cada reservador consulta el
-    candado en su guarda, con la misma regla (es_modo_emision)."""
+    candado en su guarda, con la misma regla (es_modo_emision).
+    Después dice con qué versión del programa corre, la que muestra el panel (VERSION_GIT, leída al cargar el programa;
+    decisión de Marcelo, encargo 95): la del encargo 94 se tuvo que deducir de los tiempos de ONE, porque log.txt no la
+    decía."""
     llaves = _llaves_abiertas(todas=True)
     if llaves:
         reg.paso(f"🔴 Candado de emisión abierto: modo EMISIÓN, por {' y '.join(llaves)}. Cada reserva que llegue al "
@@ -156,6 +159,8 @@ def _anotar_candado(reg):
         reg.paso("🛡️ Candado de emisión cerrado: modo prueba, sin ninguna de sus tres llaves abierta (la variable "
                  "AQUASHIELD_EMITIR, un argumento emitir o produccion, y emitir_reservas en config.json). Cada reserva "
                  "se detiene antes del botón final, sin emitir.")
+    reg.paso(f"Versión del programa: {VERSION_GIT['rama']} · {VERSION_GIT['commit']}" if VERSION_GIT
+             else "Versión del programa: sin datos de git")
 
 
 # Forma del número en la pantalla de confirmación, medida en las capturas de logs/
@@ -825,17 +830,21 @@ def _avisar_opcion_reefer(llave, valor, por_defecto):
                               f"como número.", una_vez=llave)
 
 
-def _contrato_por_defecto(clave):
+def _contrato_por_defecto(clave, avisar=True):
     """El contrato que va cuando ni la fila ni las credenciales traen uno: config.json → opciones →
     contratos_por_defecto → <clave> («one_usa», «one_otros», «msc» o «hyundai»). Hasta el encargo 44 estaban escritos
     en el programa, y salieron para publicar el repo (decisión de Marcelo, CICLO-publicar-el-repo.md). Sin la llave, o
-    si no es un texto, devuelve vacío y lo avisa una vez por corrida (_avisar_en_pantalla_y_log)."""
+    si no es un texto, devuelve vacío y lo avisa una vez por corrida (_avisar_en_pantalla_y_log). Con avisar=False no
+    lo avisa: el panel lo pregunta para su aviso de antes de correr (_operadores_sin_contrato), y su aviso caería en el
+    log.txt de una corrida en curso (revisión de código del encargo 95)."""
     try:
         valor = cargar_config().get("opciones", {}).get("contratos_por_defecto", {}).get(clave, _FALTA)
     except Exception:
         valor = _FALTA
     if isinstance(valor, str):
         return valor.strip()
+    if not avisar:
+        return ""
     que = (f"config.json no trae «{clave}» en «opciones → contratos_por_defecto»" if valor is _FALTA
            else f"En config.json, «contratos_por_defecto → {clave}» no es un texto")
     _avisar_en_pantalla_y_log(f"⚠ {que}: sigo sin contrato por defecto. Si quieres uno, escríbelo ahí.",
@@ -3463,7 +3472,9 @@ def _con_su_marca(fila, nav):
     Desde el encargo 87, «destino_aparte»: si trae nave y ruta, es de MSC o de CMA-CGM y va a un puerto de descarga y
     después a otro destino final, los dos textos que dé _destino_separado (el puerto y el destino final), como se
     muestran (_destino_a_la_vista), que la página pinta en la celda del destino; si no, None (decisión de Marcelo,
-    CICLO-destino-final-normalizado.md)."""
+    CICLO-destino-final-normalizado.md). Desde el encargo 95, «pide_contrato»: si trae nave y ruta y es de HYUNDAI,
+    que pide un contrato en su paso 3; la página la marca si el operador elegido no tiene uno (sin_contrato de
+    /api/config; decisión de Marcelo)."""
     nave = fila.get("nave")
     falta = "" if _fila_sin_nave(nave) else _falta_en_la_fila(fila)
     otro = "" if _fila_sin_nave(nave) or falta else _otro_contenedor(nav, fila)
@@ -3472,7 +3483,8 @@ def _con_su_marca(fila, nav):
     return dict(fila, sin_nave=_fila_sin_nave(nave) and not _fila_manual(nave), manual=_fila_manual(nave),
                 otro_contenedor=bool(otro), contenedor_a_la_vista=_contenedor_a_la_vista(fila) if otro else "",
                 sin_puerto=falta == FILA_SIN_PUERTO, sin_destino=falta == FILA_SIN_DESTINO,
-                destino_aparte=[_destino_a_la_vista(t) for t in aparte] if aparte else None)
+                destino_aparte=[_destino_a_la_vista(t) for t in aparte] if aparte else None,
+                pide_contrato=nav == "hyundai" and not _fila_sin_nave(nave) and not falta)
 
 
 def _destino_a_la_vista(texto):
@@ -4006,14 +4018,21 @@ def _cerrar_modal_one(page, reg, antes_de_la_guarda=True):
 # Diagnóstico + clic de la sugerencia real (excluye tarjetas frecuentes/patrón). Pulsa solo con [texto, true] (o con
 # el texto solo, como antes); con [texto, false] solo lee y devuelve la que pulsaría ('' si ninguna), sin pulsarla, para
 # dejar antes la evidencia de la lista (CICLO-origen-y-destino.md). La describe con su etiqueta, su clase, su posición y
-# su texto. Con [texto, celda, marca], si una de las candidatas dice la celda entera (sin distinguir mayúsculas y con
-# los espacios de a uno), elige entre esas: la regla de siempre, la de más arriba que trae el texto, eligió un lugar de
+# su texto. Con la celda, si una opción de la lista dice la celda entera (sin distinguir mayúsculas y con los espacios
+# de a uno), elige entre esas: la regla de siempre, la de más arriba que trae el texto, eligió un lugar de
 # otro país que empieza igual con la celda «<puerto>, CHILE (CY)», que ONE ofrecía más abajo (encargo 94,
-# CICLO-msc-puertos-del-portal.md). Con la celda, al pulsar dice al final si eligió por ella (« ENTERA») o, sin ninguna
-# que la diga entera, con la regla de siempre (« SIN-ENTERA»), para que log.txt lo diga (revisión de seguridad).
+# CICLO-msc-puertos-del-portal.md). Desde el encargo 95 los puertos pasan [texto, celda, lugar, marca] ('lugar':
+# «origen» o «destino»), y sin una opción que diga la celda entera no hay regla de siempre: la regla de MAERSK
+# (decisión de Marcelo, encargo 95, CICLO-one-puerto-y-contrato-hyundai.md), la única opción de la lista con el texto
+# antes de su primera coma, sin tildes, en mayúsculas y con los espacios de a uno, y de patio de contenedores «(CY)»;
+# en el origen, además, de CHILE (la última parte del nombre, antes del paréntesis); y si la celda trae país (lo que va
+# después de su última coma, sin el paréntesis del final), de ese país (decisión de Marcelo tras la revisión de
+# seguridad del encargo 95: la ciudad sola de otro país no gana). Si no queda una sola, no pulsa nada. Al pulsar dice al final por cuál eligió (« ENTERA» o « REGLA»), o cuántas ganaban con la regla
+# (« SIN-REGLA:<n>»), para que log.txt y el motivo lo digan. El commodity ([texto, marca]) sigue con la regla de
+# siempre: la de más arriba que trae el texto.
 _JS_PICK_SUGGESTION = """(a) => {
-    const [tok, pulsar, celda] = !Array.isArray(a) ? [a, true, '']
-        : a.length > 2 ? [a[0], a[2] === true, a[1] || ''] : [a[0], a[1] === true, ''];
+    const [tok, pulsar, celda, lugar] = !Array.isArray(a) ? [a, true, '', '']
+        : a.length > 3 ? [a[0], a[3] === true, a[1] || '', a[2] || ''] : [a[0], a[1] === true, '', ''];
     const T = tok.toUpperCase();
     const plano = (s) => (s || '').replace(/\\s+/g, ' ').trim().toUpperCase();
     const E = plano(celda);
@@ -4042,8 +4061,34 @@ _JS_PICK_SUGGESTION = """(a) => {
         && !/frequent|pattern|summaryinfo|infobox|card/i.test((e.className||'').toString())
         && !e.closest('[class*=Frequent i],[class*=pattern i]') && plano(e.textContent) === E) : [];
     enteras.sort((a,b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
-    if (enteras.length) cand = enteras;
-    const entera = E ? (enteras.length ? ' ENTERA' : ' SIN-ENTERA') : '';
+    let entera = '';
+    if (enteras.length) { cand = enteras; entera = ' ENTERA'; }
+    else if (lugar) {
+        // Sin tildes, en mayúsculas y con los espacios de a uno, como _mk_plano (MAERSK), entre las opciones de la lista
+        // a la vista: no entre las candidatas de siempre, que traen lo escrito tal cual (con sus tildes) y no pasan de
+        // 55 caracteres.
+        const mk = (s) => (s || '').normalize('NFKD').replace(/\\p{M}/gu, '').toUpperCase().replace(/\\s+/g, ' ').trim();
+        const C = mk(tok);
+        // El país de un nombre: lo que va después de su última coma, sin el paréntesis del final; vacío sin coma. El de
+        // la celda (P), si lo trae, también lo tiene que decir la opción (_one_pais_de_la_celda lo calcula igual).
+        const paisDe = (t) => {
+            const p = mk(t).split(',');
+            return p.length > 1 ? mk(p.pop().replace(/\\([^()]*\\)$/, '')) : '';
+        };
+        const P = paisDe(celda);
+        const ganan = [...document.querySelectorAll('[role=option]')].filter(e => {
+            if (!e.offsetParent || !(e.getAttribute && e.getAttribute('role') === 'option')
+                || /frequent|pattern|summaryinfo|infobox|card/i.test((e.className||'').toString())
+                || e.closest('[class*=Frequent i],[class*=pattern i]')) return false;
+            const t = mk(e.textContent);
+            const partes = t.split(',');
+            if (mk(partes[0]) !== C || !/\\(CY\\)$/.test(t)) return false;
+            const pais = paisDe(t);
+            return (lugar !== 'origen' || pais === 'CHILE') && (!P || pais === P);
+        });
+        cand = ganan.length === 1 ? ganan : [];
+        entera = ganan.length === 1 ? ' REGLA' : ' SIN-REGLA:' + ganan.length;
+    }
     let clicked = '';
     if (cand.length) {
         const r = cand[0].getBoundingClientRect();
@@ -4065,7 +4110,7 @@ def _texto_de_la_sugerencia(descripcion):
     return descripcion[i + 2:-1] if i >= 0 and descripcion.endswith("»") else descripcion
 
 
-def _fill_autocomplete(page, css, keyword, reg, etiqueta, evidencia="", celda=""):
+def _fill_autocomplete(page, css, keyword, reg, etiqueta, evidencia="", celda="", lugar=""):
     """Escribe 'keyword' en un autocompletado (mag-list) y clica la sugerencia apenas aparece. Si no aparece, no
     pulsa nada y corta la reserva (ObjetivoNoEncontrado): hasta fb63271 elegía con el teclado (flecha abajo y Enter)
     la sugerencia que quedara primera, fuera cual fuera (CICLO-cola-nueve-items.md). Anota cuál pulsó.
@@ -4074,8 +4119,11 @@ def _fill_autocomplete(page, css, keyword, reg, etiqueta, evidencia="", celda=""
     de Marcelo, CICLO-origen-y-destino.md); y después del clic, _avisar_lista_distinta, con solo el texto de cada una
     (_texto_de_la_sugerencia). Sin una palabra antes de la primera coma (_ciudad_de: vacío, «-», «X») no escribe ni
     pulsa nada: corta (_TEXTO_DE_LA_FILA; encargo 42), porque calzaba con cualquier sugerencia que lo trajera.
-    Con 'celda' (la del puerto, cuando trae algo después de su primera coma), si una sugerencia la dice entera, elige
-    esa (_JS_PICK_SUGGESTION; encargo 94); si ninguna, elige con la regla de siempre, y log.txt lo dice."""
+    Con 'lugar' («origen» o «destino»: los puertos), y 'celda' si la del puerto trae algo después de su primera coma:
+    si una opción de la lista dice la celda entera, elige esa (encargo 94); si no, la única con la regla de MAERSK, y en
+    el origen, de CHILE (decisión de Marcelo, encargo 95; _JS_PICK_SUGGESTION). Si no queda una sola, no pulsa nada y
+    corta, con la regla y cuántas ganaban en el motivo (_one_regla_del_puerto). log.txt dice por cuál eligió. Sin
+    'lugar' (el commodity), la regla de siempre: la de más arriba que trae el texto."""
     if not _ciudad_de(keyword):
         raise ObjetivoNoEncontrado(f"{etiqueta} de ONE", _TEXTO_DE_LA_FILA)
     try:
@@ -4094,7 +4142,7 @@ def _fill_autocomplete(page, css, keyword, reg, etiqueta, evidencia="", celda=""
         except Exception: pass
         inp.type(keyword, delay=80)
         tok = keyword.split(",")[0].strip()
-        con = [tok, celda] if celda else [tok]
+        con = [tok, celda, lugar] if lugar else [tok]
         # Sondea hasta ~3.5s: avanza apenas la sugerencia es clicable
         info = ""; clic_ok = False; pendiente = bool(evidencia); vista = ""
         for _ in range(9):
@@ -4115,12 +4163,17 @@ def _fill_autocomplete(page, css, keyword, reg, etiqueta, evidencia="", celda=""
             reg.info(f"{etiqueta} ('{keyword}'): sin sugerencia | {info[:80]}")
             if pendiente:
                 _evidencia_sin_sugerencia(page, reg, evidencia, etiqueta)
-            raise ObjetivoNoEncontrado(f"{etiqueta} de ONE", f"la sugerencia «{tok}» en la lista del autocompletado")
+            ganan = _re_mk.search(r" SIN-REGLA:(\d+)$", info) if lugar else None
+            if ganan:
+                raise ObjetivoNoEncontrado(f"{etiqueta} de ONE", f"{_one_regla_del_puerto(tok, lugar, celda)} (hay "
+                                                                 f"{ganan.group(1)})")
+            raise ObjetivoNoEncontrado(f"{etiqueta} de ONE",
+                                       f"la sugerencia «{_destino_a_la_vista(tok)[:60]}» en la lista del autocompletado")
         pulsada = " ".join(info[info.index("CLICK[") + 6:info.rfind("] CANDS[")].split())
         reg.info(f"{etiqueta} ('{keyword}'): sugerencia seleccionada: {pulsada}")
-        if celda and info.endswith(" SIN-ENTERA"):
-            reg.info(f"{etiqueta}: ninguna sugerencia dice la celda entera «{celda[:60]}»; elegí con la regla de "
-                     f"siempre, la de más arriba que trae «{tok}»")
+        if lugar and info.endswith(" REGLA"):
+            reg.info(f"{etiqueta}: elegí con la regla de MAERSK, {_one_regla_del_puerto(tok, lugar, celda)}"
+                     + (f"; ninguna dice la celda entera «{_destino_a_la_vista(celda)[:60]}»" if celda else ""))
         _avisar_lista_distinta(reg, etiqueta, evidencia, _texto_de_la_sugerencia(vista),
                                _texto_de_la_sugerencia(pulsada), pendiente)
         esperar(page, 0.4)
@@ -4130,14 +4183,41 @@ def _fill_autocomplete(page, css, keyword, reg, etiqueta, evidencia="", celda=""
         return False
 
 
-def _fill_port(page, css, valor, reg, etiqueta, evidencia=""):
+def _one_regla_del_puerto(ciudad, lugar, celda=""):
+    """La regla con que ONE elige un puerto sin una opción que diga la celda entera, para log.txt y para el motivo de la
+    NO ENVIADA (decisión de Marcelo, encargo 95): la de MAERSK, en el origen de Chile, y si la celda trae país
+    (_one_pais_de_la_celda), de ese país. La ciudad y el país van como se muestran (_destino_a_la_vista): el motivo va a
+    la planilla, y openpyxl no escribe un carácter de control (revisión de seguridad del encargo 95)."""
+    paises = [ONE_PAIS_DEL_ORIGEN] if lugar == "origen" else []
+    pais = _destino_a_la_vista(_one_pais_de_la_celda(celda))[:40]
+    if pais and pais not in paises:
+        paises.append(pais)
+    return (f"una sola sugerencia de la lista con «{_destino_a_la_vista(ciudad)[:60]}» antes de su primera coma, de patio "
+            f"de contenedores «(CY)»" + "".join(f" y de {p}" for p in paises))
+
+
+def _one_pais_de_la_celda(celda):
+    """El país que dice la celda de un puerto de ONE, como lo compara _JS_PICK_SUGGESTION: lo que va después de su
+    última coma, sin el paréntesis del final, sin tildes, en mayúsculas y con los espacios de a uno (_mk_plano); vacío si
+    no trae coma (decisión de Marcelo, encargo 95)."""
+    partes = _mk_plano(celda).split(",")
+    return _mk_plano(_re_mk.sub(r"\([^()]*\)$", "", partes[-1])) if len(partes) > 1 else ""
+
+
+# El país del origen de ONE: todas las reservas salen de puertos chilenos (decisión de Marcelo, encargo 95). Lo repite
+# _JS_PICK_SUGGESTION, y test_evidencia los compara.
+ONE_PAIS_DEL_ORIGEN = "CHILE"
+
+
+def _fill_port(page, css, valor, reg, etiqueta, evidencia="", lugar=""):
     """Escribe la CIUDAD del puerto para disparar el autocompletado y clica la sugerencia; con 'evidencia', antes deja
     la de la lista (_fill_autocomplete). Si la celda trae algo después de su primera coma, se la pasa entera: una
-    sugerencia que la dice entera gana (encargo 94). La ciudad va con los espacios de a uno: un salto de línea en la
-    celda sería la tecla Enter en la lista (revisión de seguridad del encargo 94)."""
+    sugerencia que la dice entera gana (encargo 94); si no, la regla de MAERSK, y en el origen, de Chile ('lugar';
+    encargo 95). La ciudad va con los espacios de a uno: un salto de línea en la celda sería la tecla Enter en la lista
+    (revisión de seguridad del encargo 94)."""
     ciudad, _, despues = valor.partition(",")
     return _fill_autocomplete(page, css, " ".join(ciudad.split()), reg, etiqueta, evidencia=evidencia,
-                              celda=" ".join(valor.split()) if despues.strip() else "")
+                              celda=" ".join(valor.split()) if despues.strip() else "", lugar=lugar)
 
 
 def _fill_texto_por_label(page, regex_label, valor, reg, etiqueta):
@@ -4912,12 +4992,12 @@ def reservar_one(page, reserva, creds, reg, on_pausa=None):
     # encargo 42, CICLO-maersk-y-fila-sin-ruta.md). _fill_autocomplete ya cortaba si no veía ninguna; si fallaba al
     # escribir, la reserva seguía.
     if not _fill_port(page, "input[placeholder*='Origin' i], input[placeholder*='Origen' i]",
-                      reserva["pol"], reg, "Origen", evidencia=f"one_f{f}_origen"):
+                      reserva["pol"], reg, "Origen", evidencia=f"one_f{f}_origen", lugar="origen"):
         raise ObjetivoNoEncontrado("Origen de ONE", _sugerencia_que_elegir(reserva["pol"]))
     esperar(page, 0.3)
     dest = reserva["destino_final"] or reserva["destino_orig"]
     if not _fill_port(page, "input[placeholder*='Destination' i], input[placeholder*='Destino' i]",
-                      dest, reg, "Destino", evidencia=f"one_f{f}_destino"):
+                      dest, reg, "Destino", evidencia=f"one_f{f}_destino", lugar="destino"):
         raise ObjetivoNoEncontrado("Destino de ONE", _sugerencia_que_elegir(dest))
     esperar(page, 0.3)
     reg.captura(page, f"one_f{f}_2_ruta")
@@ -8771,6 +8851,29 @@ HMM_DONDE_VA_EL_CONTRATO = "panel → Credenciales → HYUNDAI → columna Contr
 HMM_NO_SON_CONTRATO = ("select", "dummy", "direct input")
 HMM_LECTURAS_CONTRATO = 15
 
+
+def _hmm_contrato(creds, avisar=True):
+    """El contrato de HYUNDAI de un operador ('creds', sus credenciales de HYUNDAI): el suyo o, sin él, el de config.json
+    → opciones → contratos_por_defecto → hyundai (_contrato_por_defecto, que con avisar=False no avisa si falta la
+    llave), sin los espacios de los extremos; vacío si no hay ninguno. Lo usan los pasos 2 y 3 de reservar_hyundai y el
+    panel, que avisa antes de correr si falta (_operadores_sin_contrato; decisión de Marcelo, encargo 95): una sola
+    regla."""
+    propio = str((creds if isinstance(creds, dict) else {}).get("contrato") or "").strip()
+    return propio or _contrato_por_defecto("hyundai", avisar=avisar)
+
+
+def _operadores_sin_contrato(cfg):
+    """Los operadores de 'cfg' (config.json) sin un contrato de HYUNDAI (_hmm_contrato), para que el panel avise antes
+    de correr qué falta y dónde se escribe (decisión de Marcelo, encargo 95). Sin uno, la fila de HYUNDAI queda NO
+    ENVIADA: medido el 03-11 en el portal, en modo prueba, sin un contrato real su búsqueda de la mercancía vuelve
+    vacía y no deja pasar a «Additional Information», también con «Dummy» (CICLO-one-puerto-y-contrato-hyundai.md).
+    Solo dice quién: el contrato no sale del proceso. No avisa si falta la llave de contratos_por_defecto: su aviso
+    caería en el log.txt de una corrida en curso (revisión de código del encargo 95)."""
+    usuarios = cfg.get("usuarios") if isinstance(cfg, dict) else None
+    return [u for u, datos in (usuarios if isinstance(usuarios, dict) else {}).items()
+            if not _hmm_contrato(datos.get("hyundai") if isinstance(datos, dict) else None, avisar=False)]
+
+
 # Las listas de contrato de los pasos 2 y 3 se leen y se eligen con _hmm_una_lista (desde el encargo 92): de cada
 # opción, su texto, su valor y su etiqueta (desde el encargo 91, para no elegir una opción cuyo valor comparte otra), y
 # la elegida, en una sola lectura del mismo elemento con que se elige. Hasta el encargo 91 las leían _JS_HMM_CONTRATOS
@@ -9553,7 +9656,7 @@ def reservar_hyundai(page, reserva, creds, reg, on_pausa=None):
     # no elige nada (encargo 44). El de las credenciales va sin los espacios de sus extremos, como en el paso 3
     # (decisión de Marcelo, encargo 89): uno de solo espacios cuenta como ninguno. Con uno, solo la opción que calza
     # exacto, como el paso 3 (encargo 91, _hmm_contrato_paso2); si no, queda el del portal.
-    ctto = str(creds.get("contrato") or "").strip() or _contrato_por_defecto("hyundai")
+    ctto = _hmm_contrato(creds)
     if ctto:
         _hmm_contrato_paso2(page, ctto, reg)
     else:
@@ -9778,10 +9881,12 @@ def reservar_hyundai(page, reserva, creds, reg, on_pausa=None):
         reg.info(f"shipper err: {str(e)[:50]}")
 
     # 2. Contract No: esperar a que carguen las opciones del contrato tras fijar Shipper. Sin contrato (ni en las
-    # credenciales ni en config.json) la reserva no sigue: elegir uno sería por su posición (encargo 44). Con uno, solo
-    # la única opción cuyo código o cuyo texto completo es el contrato entero, y comprobando después que quedó elegida;
-    # si no, tampoco sigue (encargos 89 y 90, _hmm_elegir_contrato).
-    ctto = str(creds.get("contrato") or "").strip() or _contrato_por_defecto("hyundai")
+    # credenciales ni en config.json: _hmm_contrato) la reserva no sigue: elegir uno sería por su posición (encargo 44),
+    # y sin uno real el portal no deja armarla (medido el 03-11, encargo 95: su búsqueda de la mercancía vuelve vacía, y
+    # con «Dummy» también; decisión de Marcelo: se exige, y el panel lo avisa antes de correr). Con uno, solo la única
+    # opción cuyo código o cuyo texto completo es el contrato entero, y comprobando después que quedó elegida; si no,
+    # tampoco sigue (encargos 89 y 90, _hmm_elegir_contrato).
+    ctto = _hmm_contrato(creds)
     if not ctto:
         raise ObjetivoNoEncontrado("Contract No de HYUNDAI",
                                    f"un contrato (se escribe en el {HMM_DONDE_VA_EL_CONTRATO})")
@@ -16148,6 +16253,8 @@ def lanzar_web(puerto=8765, abrir=True):
                         "modo_emision": es_modo_emision(),
                         "aviso": _CONFIG["creada"] or "",
                         "usuarios": list(cfg.get("usuarios", {}).keys()),
+                        # Quién no tiene un contrato de HYUNDAI, para avisarlo antes de correr (encargo 95).
+                        "sin_contrato": _operadores_sin_contrato(cfg),
                         "navieras": [{"clave": k, "nombre": v[0],
                                       "reserva": k in RESERVADORES}
                                      for k, v in NAVIERAS.items()]})
@@ -17035,7 +17142,9 @@ async function verFilas() {
                           : esc(f.destino_final)}</td>
       <td class="nave">${f.sin_nave ? "<span class='sin-nave'>sin nave</span> " + esc(f.nave) : esc(f.nave)}</td>
       <td>${esc(f.viaje)}</td>
-      <td style="font-size:11px;font-family:var(--font-mono);">${esc(f.cotizacion || '')}</td>
+      <td style="font-size:11px;font-family:var(--font-mono);">${
+        f.pide_contrato ? "<span class='sin-contrato' data-contrato hidden>sin contrato de HYUNDAI</span> " : ""}${
+        esc(f.cotizacion || '')}</td>
       <td id="bkg-${f.fila}" style="white-space:nowrap;"><span class="badge-bkg-vacio">—</span></td>
       <td id="e${f.fila}"><span class="chip pend">pendiente</span></td>
     </tr>`;
@@ -17051,8 +17160,39 @@ async function verFilas() {
   if (otroCont) feed(otroCont + " reserva(s) de MAERSK piden otro contenedor que «40 HC REEFER»: quedan NO ENVIADA, " +
                      "sin entrar al portal. Resérvalas a mano en el portal, o corrige el contenedor en la planilla.",
                      "f-info", "AVISO");
+  pintarContrato();
   marcarTabla();
 }
+
+// ---------- el contrato de HYUNDAI, antes de correr ----------
+// Sin un contrato de HYUNDAI (ni en las credenciales del operador ni en contratos_por_defecto), su portal no deja armar
+// la reserva y la fila queda NO ENVIADA (medido el 03-11, en modo prueba). El panel lo dice antes de correr: marca cada
+// fila de HYUNDAI que llega a pedirlo (f.pide_contrato, de /api/filas) si el operador elegido no tiene uno
+// (SIN_CONTRATO, de /api/config), y lo dice a la vista, con dónde se escribe (decisión de Marcelo, encargo 95). Al
+// cambiar de operador, o al guardar las credenciales, se vuelve a pintar; al armar, con las filas elegidas y quién no
+// tiene contrato leído en ese momento (config.json pudo cambiar con la página abierta). El aviso que pinta, con todas
+// las filas o con las elegidas, queda anotado (AVISO_CONTRATO): si sigue a la vista, se borra al cambiar a un operador
+// que lo tiene (revisión de código del encargo 95).
+let SIN_CONTRATO = new Set(), AVISO_CONTRATO = "";
+async function leerSinContrato() {
+  try { SIN_CONTRATO = new Set((await api("/api/config")).sin_contrato || []); } catch (e) { /* queda el de antes */ }
+}
+function avisoDeContrato(filas, operador) {
+  const n = filas.filter(f => f.pide_contrato).length;
+  if (!n || !SIN_CONTRATO.has(operador)) return "";
+  return n + " reserva(s) de HYUNDAI quedan NO ENVIADA: el operador «" + operador + "» no tiene un contrato de " +
+         "HYUNDAI, y sin él el portal no deja armarlas. Escríbelo en Credenciales (la llave, arriba a la derecha) → " +
+         "HYUNDAI → columna Contrato.";
+}
+function pintarContrato(filas) {
+  const operador = $("#usuario").value;
+  document.querySelectorAll("[data-contrato]").forEach(s => { s.hidden = !SIN_CONTRATO.has(operador); });
+  const texto = avisoDeContrato(filas || FILAS, operador);
+  if (texto) avisoFijo(texto, "f-info", "AVISO");
+  else if (AVISO_CONTRATO && ($("#aviso-panel") || {}).textContent === "⚠ " + AVISO_CONTRATO) notaVisible("");
+  AVISO_CONTRATO = texto;
+}
+$("#usuario").onchange = () => pintarContrato();
 $("#todas").onclick = (e) => {
   e.preventDefault();
   document.querySelectorAll("[data-chk]").forEach((c, i) => { c.checked = marcadaPorDefecto(FILAS[i]); });
@@ -17097,6 +17237,9 @@ $("#wg-armar").onclick = async () => {
   notaVisible("");
   if (!(await mismoModo())) return;
   $("#log").innerHTML = ""; CURSOR = 0;
+  // Las filas de HYUNDAI elegidas, si el operador no tiene contrato, lo dicen otra vez a la vista (encargo 95).
+  await leerSinContrato();
+  pintarContrato(FILAS.filter(f => filas.includes(f.fila)));
 
   filas.forEach((f, idx) => {
     if (idx === 0) {
@@ -17395,6 +17538,7 @@ function chip(fila, tipo, txt) {
       }
     }
     notaVisible(d.aviso || (d.usuarios.length ? "" : SIN_OPERADOR));
+    SIN_CONTRATO = new Set(d.sin_contrato || []);
     const u = $("#usuario");
     u.innerHTML = "";
     d.usuarios.forEach(x => {
@@ -17538,6 +17682,8 @@ $("#cred-guardar").onclick = async () => {
     });
     sel.value = r.operadores.includes(previo) ? previo : usuario;
     feed("Credenciales guardadas para « " + usuario + " »", "f-ok", "OK");
+    await leerSinContrato();
+    pintarContrato();
     setTimeout(() => dlg.close(), 500);
   } catch (e) {
     $("#cred-estado").textContent = "No pude guardar: " + e.message;
@@ -18129,6 +18275,7 @@ body:not(.light-theme) tbody tr.fila-emitida td {
 }
 tbody td.nave { font-family: var(--font-mono); font-size: 12px; }
 .sin-nave, .sin-ruta, .otro-contenedor { color: var(--text-muted); font-style: italic; }
+.sin-contrato { color: var(--text-muted); font-style: italic; }
 .destino-aparte { color: var(--text-muted); font-style: italic; }
 
 .chip {

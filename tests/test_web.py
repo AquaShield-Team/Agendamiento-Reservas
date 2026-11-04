@@ -83,6 +83,14 @@ class TestPanelRutas(PanelBase):
         self.assertEqual(self.srv.get("/api/no-existe"), (404, b"no existe"))
         self.assertEqual(self.srv.post("/api/no-existe"), (404, b"no existe"))
 
+    def test_config_dice_quien_no_tiene_contrato_de_hyundai(self):
+        # /api/config dice qué operadores no tienen un contrato de HYUNDAI (_operadores_sin_contrato), para que la
+        # página lo avise antes de correr (decisión de Marcelo, encargo 95). En la configuración sintética, op_vacio
+        # no tiene credenciales; op_prueba, sí. El contrato no sale.
+        st, cfg = self.srv.json("/api/config")
+        self.assertEqual((st, cfg["sin_contrato"]), (200, ["op_vacio"]))
+        self.assertNotIn("CT-PRUEBA", json.dumps(cfg))
+
     def test_config_del_panel(self):
         st, cfg = self.srv.json("/api/config")
         self.assertEqual(st, 200)
@@ -643,8 +651,10 @@ class TestPanelCorridas(PanelBase):
         self.assertIn("· INICIO · ONE · operador op_prueba · 1 reserva(s)", e["lineas"][0])
         self.assertIn("· 🛡️ Candado de emisión cerrado: modo prueba, sin ninguna de sus tres llaves abierta",
                       e["lineas"][1])
+        # Y con qué versión del programa (encargo 95).
+        self.assertIn("· Versión del programa: ", e["lineas"][2])
         log = (Path(self.mod._WEB["carpeta"]) / "log.txt").read_text(encoding="utf-8").splitlines()
-        self.assertEqual(log[:2], e["lineas"][:2])
+        self.assertEqual(log[:3], e["lineas"][:3])
         llaves = (lambda todas=False: ["la primera", "la segunda"] if todas else [])
         with Navieras(self.mod), mock.patch.object(self.mod, "_llaves_abiertas", llaves):
             e = self.correr("ONE", [5])
@@ -909,6 +919,20 @@ class TestPanelCorridas(PanelBase):
         self.assertEqual(marcas, {5: (False, False, False, False), 6: (True, False, False, False),
                                   7: (False, True, False, False), 9: (False, False, True, False),
                                   10: (False, False, False, True)})
+
+    def test_filas_dicen_si_piden_contrato(self):
+        # /api/filas marca la fila de HYUNDAI que llega a pedir un contrato (con nave y ruta): la página la marca si el
+        # operador elegido no tiene uno (decisión de Marcelo, encargo 95; test_envio.TestLecturaDelPanel). En HYUNDAI,
+        # la 6 va sin nave; en CONSOLIDADO, cuenta la naviera de su columna: la 9 es de HYUNDAI (HMM).
+        self.subir_celdas({("HYUNDAI", "E6"): None})
+
+        def marcas(hoja):
+            st, d = self.srv.json(f"/api/filas?hoja={hoja}")
+            self.assertEqual(st, 200)
+            return {f["fila"]: f["pide_contrato"] for f in d["filas"]}
+        self.assertEqual(marcas("HYUNDAI"), {5: True, 6: False})
+        self.assertEqual(marcas("ONE"), {5: False, 6: False, 7: False, 9: False, 10: False})
+        self.assertEqual(marcas("CONSOLIDADO"), {5: False, 6: False, 7: False, 8: False, 9: True, 10: False, 11: False})
 
     def test_filas_dicen_si_piden_otro_contenedor(self):
         # /api/filas marca, con la regla del programa (_otro_contenedor), la fila de MAERSK que pide otro contenedor que

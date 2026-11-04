@@ -81,7 +81,10 @@ terminales del mismo puerto, por ejemplo), la fila queda NO ENVIADA con la lista
 del que corresponde.
 
 En ONE, si la celda del puerto dice la sugerencia entera del portal («PUERTO ALFA, CHILE (CY)»), el programa elige esa.
-Con la ciudad sola, elige la primera de la lista que la trae, que puede ser de otro país.
+Con la ciudad sola, elige la única sugerencia que dice esa ciudad antes de su primera coma y es de patio de
+contenedores («(CY)»); en el origen, además, la de Chile; y si la celda trae el país después de la coma, la de ese país.
+Si el portal no ofrece una sola así, la fila queda NO ENVIADA y el motivo lo dice: escribe la celda entera de la que
+corresponde.
 
 Cuando el panel te pide resolver algo en el navegador («Te toca a ti»), `log.txt` anota cuándo empezó la pausa, por
 qué, y cuándo terminó: si pulsaste «Ya lo resolví» o «Detener», si pasaron 10 minutos sin respuesta o, con el
@@ -179,11 +182,14 @@ recárgala (F5).
 
 Usuario, clave y contrato de cada naviera se guardan en `config.json`, junto al programa y en texto plano. Se
 editan desde el panel, en **Credenciales de los portales** (la llave, arriba a la derecha). **El contrato de HYUNDAI
-va ahí, en la columna «Contrato» de la fila de HYUNDAI, del operador con que corres:** sin él, cada reserva de
-HYUNDAI queda NO ENVIADA en «Contract No», en modo seguro y en emisión, y el motivo lo dice. `config.example.json` es
-la plantilla, sin credenciales: si falta `config.json`, el panel lo crea desde ella. Si `config.json` no se puede leer
-(por ejemplo, después de editarlo a mano), el panel lo dice, con la línea donde está el error, y no arma reservas hasta
-que se corrija.
+va ahí, en la columna «Contrato» de la fila de HYUNDAI, del operador con que corres:** sin un contrato real, el portal
+de HYUNDAI no deja armar la reserva (no encuentra la mercancía), así que cada reserva de HYUNDAI queda NO ENVIADA en
+«Contract No», en modo seguro y en emisión, y el motivo lo dice. El panel te lo avisa antes de correr: marca las filas
+de HYUNDAI con «sin contrato de HYUNDAI» y dice, arriba, dónde se escribe. Con un contrato, el programa elige solo la
+opción del portal con ese contrato, y si no la encuentra, la reserva queda NO ENVIADA con el motivo.
+`config.example.json` es la plantilla, sin credenciales: si falta `config.json`, el panel lo crea desde ella. Si
+`config.json` no se puede leer (por ejemplo, después de editarlo a mano), el panel lo dice, con la línea donde está el
+error, y no arma reservas hasta que se corrija.
 
 En `config.json`, dentro de «opciones», están también el peso bruto por contenedor reefer (`peso_reefer_kg`,
 22500) y la temperatura reefer (`temperatura_reefer_c`, -20). La temperatura de la planilla, si la fila la trae,

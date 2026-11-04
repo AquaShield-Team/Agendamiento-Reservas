@@ -46,7 +46,7 @@ def con_contratos(caso, contratos):
 # Dónde pide cada naviera su contrato por defecto (función, llave): una por cada valor que estaba escrito en el
 # programa hasta el encargo 44 (HYUNDAI, en sus dos pasos).
 LLAMADAS_CONTRATO = [("_determinar_contrato_one", "one_otros"), ("_determinar_contrato_one", "one_usa"),
-                     ("reservar_hyundai", "hyundai"), ("reservar_hyundai", "hyundai"), ("reservar_msc", "msc")]
+                     ("_hmm_contrato", "hyundai"), ("reservar_msc", "msc")]
 
 
 class TestONE(soporte.CasoAQ):
@@ -1251,6 +1251,48 @@ class TestContratosPorDefecto(soporte.CasoAQ):
                          (1, 1, 1, 0, 1))
         self.assertLess(cortes[0], elegir[0])
 
+    def test_el_contrato_de_hyundai_sale_de_un_solo_ayudante(self):
+        # Los pasos 2 y 3 de reservar_hyundai y el panel (_operadores_sin_contrato) piden el contrato a _hmm_contrato: el
+        # de las credenciales, sin los espacios de los extremos, o, sin él, el de contratos_por_defecto (encargo 95: una
+        # sola regla, para que el aviso del panel diga lo mismo que la reserva).
+        f = self.mod._hmm_contrato
+        con_contratos(self, {"hyundai": " CT-DEF-HMM "})
+        self.assertEqual([f({"contrato": " CT-1 "}), f({"contrato": "  "}), f({}), f(None), f("texto")],
+                         ["CT-1", "CT-DEF-HMM", "CT-DEF-HMM", "CT-DEF-HMM", "CT-DEF-HMM"])
+        con_contratos(self, {"hyundai": ""})
+        self.assertEqual([f({"contrato": " CT-1 "}), f({"contrato": "  "}), f({}), f({"contrato": None})],
+                         ["CT-1", "", "", ""])
+        tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
+        r = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_hyundai")
+        self.assertEqual([ast.unparse(n.value) for n in ast.walk(r)
+                          if isinstance(n, ast.Assign) and ast.unparse(n.targets[0]) == "ctto"],
+                         ["_hmm_contrato(creds)"] * 2)
+
+    def test_el_panel_sabe_quien_no_tiene_contrato_de_hyundai(self):
+        # Qué operadores no tienen un contrato de HYUNDAI (_hmm_contrato), para que el panel lo avise antes de correr
+        # (decisión de Marcelo, encargo 95). Uno sin la naviera, o con sus credenciales rotas, tampoco lo tiene; con un
+        # contrato por defecto, nadie le falta. Solo los nombres: el contrato no sale.
+        cfg = {"usuarios": {"con": {"hyundai": {"contrato": "CT-1"}}, "sin": {"hyundai": {"contrato": " "}},
+                            "sin_hyundai": {"one": {"contrato": "CT-2"}}, "roto": "texto", "nada": {},
+                            "hmm_roto": {"hyundai": "CT-3"}}}
+        con_contratos(self, {"hyundai": ""})
+        self.assertEqual(self.mod._operadores_sin_contrato(cfg), ["sin", "sin_hyundai", "roto", "nada", "hmm_roto"])
+        con_contratos(self, {"hyundai": "CT-DEF"})
+        self.assertEqual(self.mod._operadores_sin_contrato(cfg), [])
+        for vacia in ({}, {"usuarios": []}, None, "texto"):
+            with self.subTest(cfg=vacia):
+                self.assertEqual(self.mod._operadores_sin_contrato(vacia), [])
+        # Sin la llave de contratos_por_defecto, el panel pregunta sin avisar: su aviso caería en el log.txt de una
+        # corrida en curso (revisión de código del encargo 95). La reserva sí avisa.
+        con_contratos(self, None)
+        avisos = []
+        with mock.patch.object(self.mod, "_avisar_en_pantalla_y_log", lambda *a, **k: avisos.append(a[0])):
+            self.assertEqual(self.mod._operadores_sin_contrato(cfg), ["sin", "sin_hyundai", "roto", "nada", "hmm_roto"])
+            self.assertEqual(avisos, [])
+            self.assertEqual(self.mod._hmm_contrato({}), "")
+        self.assertEqual(len(avisos), 1)
+        self.assertIn("«hyundai»", avisos[0])
+
     def test_la_plantilla_trae_las_llaves_vacias(self):
         opciones = json.loads((soporte.FUENTES / "config.example.json").read_text(encoding="utf-8"))["opciones"]
         self.assertEqual(opciones.get("contratos_por_defecto"),
@@ -1763,7 +1805,7 @@ class TestContratoDeHyundai(soporte.CasoAQ):
         # dos que se corrigen escribiendo el contrato dicen dónde; y ninguno muestra el contrato sin sanear (ctto). Sin
         # contrato: «no encontré un contrato (se escribe en el panel → Credenciales → HYUNDAI → columna Contrato)». Y
         # reservar_hyundai le quita los espacios al de las credenciales, en el paso 2 y en el 3, como ONE, MSC y
-        # CMA-CGM.
+        # CMA-CGM: desde el encargo 95, con _hmm_contrato, que usa también el panel para avisar si falta.
         self.assertEqual(self.mod.HMM_DONDE_VA_EL_CONTRATO, self.DONDE)
         tree = ast.parse(Path(self.mod.__file__).read_text(encoding="utf-8"))
         cortes = [(f.name, n.exc.args[1]) for f in tree.body if isinstance(f, ast.FunctionDef) for n in ast.walk(f)
@@ -1782,7 +1824,8 @@ class TestContratoDeHyundai(soporte.CasoAQ):
         f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "reservar_hyundai")
         ctto = [ast.unparse(n.value) for n in ast.walk(f) if isinstance(n, ast.Assign)
                 and ast.unparse(n.targets[0]) == "ctto"]
-        self.assertEqual(ctto, ["str(creds.get('contrato') or '').strip() or _contrato_por_defecto('hyundai')"] * 2)
+        self.assertEqual(ctto, ["_hmm_contrato(creds)"] * 2)
+        self.assertEqual(self.mod._hmm_contrato({"contrato": "  CT-1 "}), "CT-1")
 
 
 class TestContratoPaso2DeHyundai(soporte.CasoAQ):

@@ -164,6 +164,11 @@ aviso («no se emite ninguna reserva») quedaba justo encima de «modo EMISIÓN�
 - `test_candado.test_llamadas_al_candado` fija quién llama a `es_modo_emision`: los reservadores y el panel. Por eso la
   línea de la corrida no lo llama: pregunta a `_llaves_abiertas`.
 - Hasta el encargo 51, log.txt no lo decía, y el panel lo pinta solo al cargar la página (`/api/config`).
+- **Después dice con qué versión del programa corre** (decisión de Marcelo, encargo 95,
+  `CICLO-one-puerto-y-contrato-hyundai.md`): «Versión del programa: <rama> · <commit>», la misma que muestra el panel
+  (`VERSION_GIT`, leída al cargar el programa), o «sin datos de git». Hasta ahí, la versión de una corrida se deducía de
+  sus tiempos (la del colega del 03-11, en el encargo 94). Lo vigilan `test_modo.test_la_linea_de_cada_modo` y las
+  pruebas del candado al empezar de `test_web` y `test_consola`.
 - **Antes de armar, el panel vuelve a leer su modo** (decisión de Marcelo, encargo 52,
   `CICLO-puerto-libre-y-modo-al-armar.md`). La página guarda el modo con que pintó su aviso al cargar (`MODO_PAGINA`) y,
   al pulsar armar, vuelve a leer `/api/config` (`mismoModo`): si no es el que muestra, o el panel no dice uno, no arma
@@ -1100,27 +1105,53 @@ cerrado:
       Yard viene repetida, con el mismo texto, como Store Door (medido el 30-09, `CICLO-maersk-y-fila-sin-ruta.md`). Las
       otras cinco navieras eligen como antes: CMA, la primera con los mismos 5 caracteres, que desde el encargo 48 arma
       como MAERSK, sin tildes y con la Ñ como N (`_prefijo_de_la_lista`; decisión de Marcelo,
-      `CICLO-calendario-cosco-y-cma.md`), y el lugar de entrega, la primera con «ramp»; ONE, la que trae la ciudad y
-      está más arriba (desde el encargo 94, si una sugerencia dice la celda entera, esa: abajo); HYUNDAI, la primera que
-      la trae; MSC, la más corta a la vista que la trae (desde el encargo 94, con el código del portal en la celda, la
-      que la dice entera); y COSCO, en el origen la que dice Chile y en el destino la que empieza con la ciudad y una
-      coma, o la primera.
+      `CICLO-calendario-cosco-y-cma.md`), y el lugar de entrega, la primera con «ramp»; ONE, la que dice la celda entera
+      (encargo 94) o, si no, la única con la regla de MAERSK, y en el origen, de Chile (encargo 95: abajo); HYUNDAI, la
+      primera que la trae; MSC, la más corta a la vista que la trae (desde el encargo 94, con el código del portal en la
+      celda, la que la dice entera); y COSCO, en el origen la que dice Chile y en el destino la que empieza con la ciudad
+      y una coma, o la primera.
     - **ONE, con la celda entera** (encargo 94, `CICLO-msc-puertos-del-portal.md`): `_fill_port` escribe la ciudad, como
       antes, y si la celda trae algo después de su primera coma se la pasa entera a `_JS_PICK_SUGGESTION`
-      (`[texto, celda, marca]`): si una opción de la lista (`role="option"`) dice la celda entera, sin distinguir
+      (desde el encargo 95, `[texto, celda, lugar, marca]`): si una opción de la lista (`role="option"`) dice la celda
+      entera, sin distinguir
       mayúsculas y con los espacios de a uno, elige entre esas, también si la lista la deja más abajo de los 850 px que
       miran las candidatas de siempre (en el portal, la 7.ª de 9 estaba a 866 px), y nunca una tarjeta ni una dentro de
-      una de reservas frecuentes (con el filtro de clases de la regla de siempre); si no, la de siempre, y log.txt dice
-      que ninguna sugerencia dice la celda entera (el JavaScript termina con « ENTERA» o « SIN-ENTERA»). En los 23 HTML
+      una de reservas frecuentes (con el filtro de clases de la regla de siempre); si no, desde el encargo 95, la regla
+      de MAERSK (abajo; el JavaScript termina con « ENTERA», « REGLA» o « SIN-REGLA:<n>»). En los 23 HTML
       de ONE guardados, `role="option"` lo llevan solo los botones de su lista. La ciudad va con los espacios de a uno:
       un salto de línea sería la tecla Enter (revisiones de código y de seguridad del encargo 94).
       Probado en el portal, en modo prueba, el 03-11 desde este equipo: con la celda entera elige la de Chile (CY),
       encuentra la nave y llega a OK-EJEMPLO; con la ciudad sola, como antes. El 03-11, en el equipo de un colega, con la celda «<puerto de carga>,
       CHILE (CY)», ONE eligió un lugar de España cuyo nombre empieza igual, la primera de 9 sugerencias con esas palabras
       (6 de España; la de la celda era la 7.ª), y la fila quedó REVISAR, «nave no encontrada», en 5 corridas (en 4, con
-      la ciudad sola en la celda). **Con la ciudad sola sigue eligiendo esa:** cambiar la regla para la ciudad sola es
-      una decisión de Marcelo (el informe trae las opciones). Lo vigilan `test_evidencia.TestListaDeSugerencias
+      la ciudad sola en la celda). Lo vigilan `test_evidencia.TestListaDeSugerencias
       .test_js_one_elige_la_que_dice_la_celda_entera` (en Node) y `test_clics.TestOne.test_el_puerto_con_la_celda_entera`.
+    - **ONE, con la ciudad sola: la regla de MAERSK, y en el origen, de Chile** (decisión de Marcelo, encargo 95,
+      `CICLO-one-puerto-y-contrato-hyundai.md`; `_JS_PICK_SUGGESTION`, `_fill_autocomplete`, `_one_regla_del_puerto`).
+      Los puertos le pasan al JavaScript su lugar (`reservar_one`: «origen» o «destino»). Sin una opción que diga la
+      celda entera, elige la única opción de la lista a la vista (`role="option"`, ni tarjeta ni dentro de una de
+      reservas frecuentes) cuyo texto antes de la primera coma es la ciudad escrita, sin tildes, en mayúsculas y con los
+      espacios de a uno (como `_mk_plano`), y que termina en «(CY)», el patio de contenedores; en el origen, además, la
+      última parte del nombre, antes del paréntesis, tiene que ser `ONE_PAIS_DEL_ORIGEN` («CHILE»): todas las reservas
+      salen de un puerto chileno. Y si la celda trae país (lo que va después de su última coma, sin el paréntesis del
+      final: `_one_pais_de_la_celda`), la opción tiene que ser de ese país: así lo decidió Marcelo tras la revisión de
+      seguridad, que mostró que, con la celda «VALENCIA, SPAIN» y solo «VALENCIA, …, VENEZUELA (CY)» en la lista, la
+      elegía. Medido: de las 70 listas guardadas, 4 celdas traen país (orígenes de Chile), y no cambia ninguna. Mira las opciones de la lista, no las candidatas de siempre (que traen lo escrito tal
+      cual y no pasan de 55 caracteres): una ciudad escrita con tilde, o un nombre largo, también calzan.
+      - Si no queda una sola, no pulsa nada y la fila queda NO ENVIADA, con la regla y cuántas la cumplían en el motivo
+        («no encontré una sola sugerencia de la lista con «…» antes de su primera coma, de patio de contenedores «(CY)»
+        y de CHILE (hay N)»; con el país de la celda, «y de <país>»), con la ciudad y el país saneados
+        (`_destino_a_la_vista`: el motivo va a la planilla). Hasta ahí elegía la de más arriba que traía la ciudad.
+      - log.txt dice cuando eligió así, con la regla. El commodity (`[texto, marca]`) sigue con la regla de siempre.
+      - Medido antes del cambio (`.trabajo/e95/medir_one.py`, la regla sobre el HTML guardado de cada lista, contra la
+        elección de su log.txt): de las 66 listas de ONE de `logs/` y de «1. pruebas», 57 eligen la misma; 8 cambian,
+        todas el origen con la ciudad sola de las corridas del 03-11, que habían elegido un lugar de otro país y ahora
+        eligen el de Chile (CY); y una no tiene su elección en log.txt. Ninguna fila que hoy funciona cambia.
+      - Probado en el portal, en modo prueba, el 03-11 desde este equipo, con la ciudad sola en el origen: eligió la de
+        Chile (CY) y el destino por la regla, y llegó a OK-EJEMPLO (dos corridas).
+      - Lo vigilan `test_evidencia.TestListaDeSugerencias.test_js_one_con_la_ciudad_sola_la_regla_de_maersk` (en Node,
+        con la comparación sin tildes contra `_mk_plano`), `test_clics.TestOne.test_el_puerto_sin_una_sola_con_la_regla
+        _corta` y `test_reservar_one_dice_el_lugar_de_cada_puerto`.
   - La fecha de zarpe: el día de carga de la planilla o, si falta o no se entiende, «Select tomorrow», y entonces
     avisa que busca desde mañana y no desde hoy (`_mk_fecha`). Marcelo decidió que busque desde hoy, pero sin el
     portal no se sabe si lo acepta (FRENO, `CICLO-cola-siete-items.md`). También avisa si el portal no aceptó la
@@ -1313,7 +1344,7 @@ existe: en MAERSK tomaba la primera salida que se podía reservar, sin calzar la
 ## Red de verificación offline (`tests/`)
 
 Fotografía lo que el programa hace HOY (rarezas incluidas) sin abrir ningún portal. `unittest` de la
-biblioteca estándar; 1096 pruebas al 2026-11-03 (el corredor imprime el número vigente), y cada una tiene
+biblioteca estándar; 1104 pruebas al 2026-11-03 (el corredor imprime el número vigente), y cada una tiene
 al menos un defecto inyectado que la tumba. `test_envio` corre en **Node** el JavaScript que decide (la
 lectura del estado en el panel y los de COSCO) sobre un `document` falso: sin Node, esas pruebas fallan.
 
@@ -2154,6 +2185,29 @@ Desde el encargo 44, «opciones» trae también lo que el programa traía escrit
     NO ENVIADA, en «Contract No», las 5 filas del 26-10 y las 2 del 28-10 de ese colega; su portal ofrecía la misma única
     opción real que el de este equipo, y el código de HYUNDAI de `estable` (`b39c95c`) es el de `main` (encargo 88,
     `CICLO-hyundai-contrato-del-colega.md`).
+  - **Sin un contrato real, el portal de HYUNDAI no deja armar la reserva** (medido el 03-11 en el portal, en modo
+    prueba, encargo 95, `CICLO-one-puerto-y-contrato-hyundai.md`): en esa pantalla, «Contract No.» lleva el asterisco
+    rojo de obligatorio, y «Named Customer», no. Con la misma fila, sin contrato, con «Dummy» y con «Dummy» y Contract
+    Holder «Not Available» (lo que pide el texto del portal cuando no hay contrato), la búsqueda de la mercancía volvió
+    vacía y NEXT no pasó a «Additional Information»; con el contrato configurado, llegó a OK-EJEMPLO (el control).
+    Marcelo había decidido que sin contrato el campo quedara vacío y la reserva siguiera; con esa medición decidió
+    exigirlo y avisarlo antes de correr.
+  - **El contrato sale de un solo ayudante** (`_hmm_contrato`: el de las credenciales, sin los espacios de los extremos,
+    o el de `contratos_por_defecto`), que usan los pasos 2 y 3 y el panel.
+  - **El panel lo avisa antes de correr** (decisión de Marcelo, encargo 95): `/api/config` trae qué operadores no
+    tienen un contrato de HYUNDAI (`sin_contrato`, `_operadores_sin_contrato`; solo los nombres), y `/api/filas`, qué
+    filas de HYUNDAI con nave y ruta lo piden (`pide_contrato`, en `_con_su_marca`). La página marca esas filas, en su
+    celda «Contrato / Cot.», con «sin contrato de HYUNDAI» si el operador elegido no tiene uno, y lo dice a la vista
+    (`#aviso-panel`), con dónde se escribe; lo vuelve a pintar al cambiar de operador o al guardar las credenciales, y
+    al armar lo repite con las filas elegidas y con quién no tiene contrato leído en ese momento (`leerSinContrato`,
+    `pintarContrato`, `avisoDeContrato`; revisión de código: `config.json` pudo cambiar con la página abierta). El
+    panel pregunta sin avisar si falta la llave de `contratos_por_defecto` (`avisar=False`): su aviso caería en el
+    log.txt de una corrida en curso. La corrida no cambia: esas filas
+    entran al portal y quedan NO ENVIADA en «Contract No», con el motivo. Lo vigilan
+    `test_ayudantes.TestContratosPorDefecto` (`test_el_contrato_de_hyundai_sale_de_un_solo_ayudante` y
+    `test_el_panel_sabe_quien_no_tiene_contrato_de_hyundai`), `test_web` (`test_config_dice_quien_no_tiene_contrato_de
+    _hyundai` y `test_filas_dicen_si_piden_contrato`) y `test_envio.TestLecturaDelPanel.test_avisa_si_falta_el_contrato
+    _de_hyundai` (en Node).
   - **Con un contrato configurado, el paso 3 elige solo la única opción cuyo código o cuyo texto completo es ese
     contrato, entero** (decisiones de Marcelo, encargo 89, `CICLO-hyundai-contrato-por-posicion.md`, y encargo 90,
     `CICLO-hyundai-contrato-texto-completo.md`; `_hmm_elegir_contrato`). El código de una opción de «Contract No»

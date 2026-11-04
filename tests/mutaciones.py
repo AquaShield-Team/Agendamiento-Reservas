@@ -1955,7 +1955,9 @@ MUTACIONES += [
 # --- Ítem 7: ni teclado ni textarea a ciegas antes de la guarda (CICLO-cola-nueve-items.md) ---
 MUTACIONES += [
     dict(id='teclado-one-autocompletar', pruebas=[O1 + "test_autocompletar_sin_sugerencia_no_elige_con_el_teclado", FG],
-         viejo='            raise ObjetivoNoEncontrado(f"{etiqueta} de ONE", f"la sugerencia «{tok}» en la lista del autocompletado")\n',
+         viejo=('            raise ObjetivoNoEncontrado(f"{etiqueta} de ONE",\n'
+                '                                       f"la sugerencia «{_destino_a_la_vista(tok)[:60]}» en la lista del '
+                'autocompletado")\n'),
          nuevo='            inp.press("ArrowDown"); esperar(page, 0.4); inp.press("Enter")\n'),
     dict(id='teclado-msc-puerto', pruebas=[M1 + "test_sin_sugerencias_no_elige_con_el_teclado", FG],
          viejo='            raise ObjetivoNoEncontrado(f"{etiqueta} de MSC", f"la sugerencia que dice «{ciudad}» entre las que ofrece "\n                                                             f"el portal")\n',
@@ -5046,7 +5048,7 @@ MUTACIONES += [
          viejo="return alcance.evaluate(js, list(args) + [False]) or \"\"",
          nuevo="return alcance.evaluate(js, list(args) + [True]) or \"\""),
     dict(id="sug-js-one-sin-marca-pulsa", pruebas=[SUG_JS],
-         viejo=": [a[0], a[1] === true, ''];", nuevo=": [a[0], a[1] !== false, ''];"),
+         viejo=": [a[0], a[1] === true, '', ''];", nuevo=": [a[0], a[1] !== false, '', ''];"),
     dict(id="sug-js-msc-sin-marca-pulsa", pruebas=[SUG_JS],
          viejo="if(pulsar===true) items[0].click();", nuevo="if(pulsar!==false) items[0].click();"),
     dict(id="sug-js-hmm-sin-marca-pulsa", pruebas=[SUG_JS],
@@ -5251,7 +5253,7 @@ MUTACIONES += [
 # --- Encargo 41 · commit 6 (segunda revisión del informe): el JavaScript de ONE, llamado con el texto solo, pulsa, como
 # antes; el commit 4 quitó esta mutación sin reemplazo (CICLO-origen-y-destino.md) ---
 MUTACIONES += [
-    dict(id="sug-js-one-texto-solo-no-pulsa", pruebas=[SUG_JS], viejo="? [a, true, '']", nuevo="? [a, false, '']"),
+    dict(id="sug-js-one-texto-solo-no-pulsa", pruebas=[SUG_JS], viejo="? [a, true, '', '']", nuevo="? [a, false, '', '']"),
 ]
 
 # --- Encargo 42 · commit 1: la fila con nave y sin puerto de carga o sin destino queda NO ENVIADA sin entrar al
@@ -5415,7 +5417,7 @@ MUTACIONES += [
 # al terminar la espera que el ayudante ya tenía (_evidencia_sin_sugerencia; CICLO-maersk-y-fila-sin-ruta.md) ---
 SIN_LISTA_ONE = ('            if pendiente:\n'
                  '                _evidencia_sin_sugerencia(page, reg, evidencia, etiqueta)\n'
-                 '            raise ObjetivoNoEncontrado(f"{etiqueta} de ONE", ')
+                 '            ganan = ')
 SIN_LISTA_MSC = ('            if pendiente:\n'
                  '                _evidencia_sin_sugerencia(page, reg, evidencia, etiqueta)\n'
                  '            raise ObjetivoNoEncontrado(f"{etiqueta} de MSC", ')
@@ -5436,7 +5438,7 @@ SIN_LISTA = ('    _evidencia_antes_de_la_guarda(page, reg, nombre, f"sin una sug
 MUTACIONES += [
     # Cada ayudante, sin dejarla: como hasta el encargo 42.
     dict(id="sin-lista-one-no-deja", pruebas=[SUG_NADA], viejo=SIN_LISTA_ONE,
-         nuevo='            raise ObjetivoNoEncontrado(f"{etiqueta} de ONE", '),
+         nuevo='            ganan = '),
     dict(id="sin-lista-msc-no-deja", pruebas=[SUG_NADA], viejo=SIN_LISTA_MSC,
          nuevo='            raise ObjetivoNoEncontrado(f"{etiqueta} de MSC", '),
     dict(id="sin-lista-cosco-no-deja", pruebas=[SUG_NADA, SUG_REINTENTO_COSCO], viejo=SIN_LISTA_COSCO, nuevo=""),
@@ -5534,8 +5536,8 @@ MUTACIONES += [
          nuevo='    reg.info("lugar de entrega: sin sugerencia")\n    return "X"\n'),
     # Y el que no pudo usar el campo.
     dict(id="no-eligio-one-campo-falla-dice-que-si", pruebas=[CAMPO_FALLA],
-         viejo='        reg.info(f"{etiqueta}: error {str(e)[:80]}")\n        return False\n\n\ndef _fill_port',
-         nuevo='        reg.info(f"{etiqueta}: error {str(e)[:80]}")\n        return True\n\n\ndef _fill_port'),
+         viejo='        reg.info(f"{etiqueta}: error {str(e)[:80]}")\n        return False\n\n\ndef _one_regla_del_puerto',
+         nuevo='        reg.info(f"{etiqueta}: error {str(e)[:80]}")\n        return True\n\n\ndef _one_regla_del_puerto'),
     dict(id="no-eligio-msc-campo-falla-dice-que-si", pruebas=[CAMPO_FALLA],
          viejo='        reg.info(f"{etiqueta}: {str(e)[:70]}")\n        return False\n',
          nuevo='        reg.info(f"{etiqueta}: {str(e)[:70]}")\n        return True\n'),
@@ -5815,7 +5817,7 @@ CD_HMM = CD + "test_hyundai_sin_contrato_no_elige_a_ciegas"
 CD_PLANTILLA = CD + "test_la_plantilla_trae_las_llaves_vacias"
 CD_ONE = AY + "TestONE.test_contrato_one"
 # La línea que sigue al «return» en _contrato_por_defecto, para que sus mutaciones anclen solo ahí.
-LECTOR_CONTRATO = '    que = (f"config.json no trae «{clave}»'
+LECTOR_CONTRATO = '    if not avisar:\n        return ""\n    que = (f"config.json no trae «{clave}»'
 
 MUTACIONES += [
     dict(id="contrato-defecto-sin-strip", pruebas=[CD + "test_salen_de_config"],
@@ -5842,17 +5844,14 @@ MUTACIONES += [
     dict(id="contrato-msc-fijo", pruebas=[CD_NO_LOS_TRAE],
          viejo='or _contrato_por_defecto("msc"))', nuevo='or "XX12345680")'),
     dict(id="contrato-hyundai-fijo", pruebas=[CD_NO_LOS_TRAE],
-         viejo=('    ctto = str(creds.get("contrato") or "").strip() or _contrato_por_defecto("hyundai")\n'
-                '    if not ctto:\n'),
-         nuevo='    ctto = str(creds.get("contrato") or "").strip() or "XX12345681"\n    if not ctto:\n'),
+         viejo='    return propio or _contrato_por_defecto("hyundai", avisar=avisar)\n',
+         nuevo='    return propio or "XX12345681"\n'),
     dict(id="contrato-comentario-con-codigo", pruebas=[CD_NO_LOS_TRAE],
          viejo="    # Contrato inteligente: USA u Otros Mercados (_determinar_contrato_one).\n",
          nuevo="    # Contrato inteligente (USA = XX12345682, Otros Mercados = XX12345683)\n"),
     dict(id="hyundai-paso2-sin-guarda", pruebas=[CD_HMM],
-         viejo=('    ctto = str(creds.get("contrato") or "").strip() or _contrato_por_defecto("hyundai")\n'
-                '    if ctto:\n'),
-         nuevo=('    ctto = str(creds.get("contrato") or "").strip() or _contrato_por_defecto("hyundai")\n'
-                '    if True:\n')),
+         viejo='    ctto = _hmm_contrato(creds)\n    if ctto:\n',
+         nuevo='    ctto = _hmm_contrato(creds)\n    if True:\n'),
     dict(id="hyundai-detalles-sin-corte", pruebas=[CD_HMM],
          viejo='    if not ctto:\n        raise ObjetivoNoEncontrado("Contract No de HYUNDAI"',
          nuevo='    if False:\n        raise ObjetivoNoEncontrado("Contract No de HYUNDAI"'),
@@ -10191,11 +10190,11 @@ MUTACIONES += [
     dict(id="e87-msc-sin-la-regla", pruebas=[DFM_LECTURA, DFM_CAMINOS, E87_QUIEN],
          viejo="    separado = _destino_separado(reserva)\n", nuevo="    separado = None\n"),
     dict(id="e87-marca-sin-el-destino", pruebas=[E87_API],
-         viejo="destino_aparte=[_destino_a_la_vista(t) for t in aparte] if aparte else None)",
-         nuevo="destino_aparte=None)"),
+         viejo="destino_aparte=[_destino_a_la_vista(t) for t in aparte] if aparte else None,",
+         nuevo="destino_aparte=None,"),
     dict(id="e87-marca-sin-sanear", pruebas=[E87_API],
-         viejo="destino_aparte=[_destino_a_la_vista(t) for t in aparte] if aparte else None)",
-         nuevo="destino_aparte=list(aparte) if aparte else None)"),
+         viejo="destino_aparte=[_destino_a_la_vista(t) for t in aparte] if aparte else None,",
+         nuevo="destino_aparte=list(aparte) if aparte else None,"),
     dict(id="e87-sanea-sin-los-privados", pruebas=[E87_API],
          viejo='"?" if unicodedata.category(c).startswith("C") else c',
          nuevo='"?" if unicodedata.category(c) in ("Cc", "Cf") else c'),
@@ -10251,8 +10250,8 @@ SELECT_E89 = '        raise ObjetivoNoEncontrado("Contract No de HYUNDAI", f"có
 SI_E89 = "            if c and o and o.strip().lower() not in HMM_NO_SON_CONTRATO\n"
 CALZA_E89 = "            and c in (_hmm_codigo_del_contrato(o), _mayusculas_ascii(o.strip()))]\n"
 CODIGO_E89 = '    return _mayusculas_ascii(str(opcion or "").split(" - ")[0].strip())\n'
-PASO3_E89 = '    ctto = str(creds.get("contrato") or "").strip() or _contrato_por_defecto("hyundai")\n    if not ctto:\n'
-PASO2_E89 = '    ctto = str(creds.get("contrato") or "").strip() or _contrato_por_defecto("hyundai")\n    if ctto:\n'
+PASO3_E89 = '    ctto = _hmm_contrato(creds)\n    if not ctto:\n'
+PASO2_E89 = '    ctto = _hmm_contrato(creds)\n    if ctto:\n'
 MUTACIONES += [
     dict(id="e89-elige-la-primera-real", pruebas=[CH_NO_ESTA],
          viejo=CALZAN_E89,
@@ -10914,7 +10913,7 @@ AL_DIA_E94 = "        if textos and textos == anterior and (al_dia is None or al
 EMPIEZA_E94 = ('    return " ".join(str(sugerencia or "").split()).upper().startswith('
                '" ".join(str(escrito or "").split()).upper())\n')
 PLANO_E94 = "    const plano = (s) => (s || '').replace(/\\\\s+/g, ' ').trim().toUpperCase();\n"
-CELDA_E94 = "                              celda=\" \".join(valor.split()) if despues.strip() else \"\")\n"
+CELDA_E94 = "                              celda=\" \".join(valor.split()) if despues.strip() else \"\", lugar=lugar)\n"
 MUTACIONES += [
     dict(id="e94-msc-puerto-escribe-el-codigo", pruebas=[PUERTO_E94],
          viejo="        inp.type(escrito, delay=90)\n", nuevo="        inp.type(ciudad, delay=90)\n"),
@@ -11014,7 +11013,7 @@ MUTACIONES += [
     dict(id="e94-empieza-sin-juntar-espacios", pruebas=[MEDIAS_E94],
          viejo=EMPIEZA_E94, nuevo='    return str(sugerencia or "").upper().startswith(str(escrito or "").upper())\n'),
     dict(id="e94-one-sin-la-celda-entera", pruebas=[ONE_JS_E94],
-         viejo="    if (enteras.length) cand = enteras;\n", nuevo=""),
+         viejo="    if (enteras.length) { cand = enteras;", nuevo="    if (false) { cand = enteras;"),
     dict(id="e94-one-entera-solo-arriba", pruebas=[ONE_JS_E94],
          viejo="    const enteras = E ? all.filter(e => e.getAttribute", nuevo="    const enteras = E ? cand.filter(e => e.getAttribute"),
     dict(id="e94-one-entera-con-las-frecuentes", pruebas=[ONE_JS_E94],
@@ -11028,10 +11027,9 @@ MUTACIONES += [
     # Al pulsar con la celda, dice si eligió por ella o con la regla de siempre, y log.txt lo dice (revisión de
     # seguridad).
     dict(id="e94-one-sin-decir-si-fue-entera", pruebas=[ONE_JS_E94],
-         viejo="    const entera = E ? (enteras.length ? ' ENTERA' : ' SIN-ENTERA') : '';\n",
-         nuevo="    const entera = E ? ' ENTERA' : '';\n"),
+         viejo="cand = enteras; entera = ' ENTERA'; }", nuevo="cand = enteras; entera = ''; }"),
     dict(id="e94-one-log-sin-avisar", pruebas=[ONE_PY_E94],
-         viejo='        if celda and info.endswith(" SIN-ENTERA"):\n', nuevo="        if False:\n"),
+         viejo='        if lugar and info.endswith(" REGLA"):\n', nuevo="        if False:\n"),
     # La ciudad de ONE se escribe con los espacios de a uno: un salto de línea sería la tecla Enter.
     dict(id="e94-one-ciudad-con-sus-saltos", pruebas=[ONE_PY_E94],
          viejo='    return _fill_autocomplete(page, css, " ".join(ciudad.split()), reg,',
@@ -11043,25 +11041,160 @@ MUTACIONES += [
          viejo="    enteras.sort((a,b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);\n", nuevo=""),
     # La lectura (marca false) nunca pulsa, también con la celda (revisión de código).
     dict(id="e94-one-lectura-con-la-celda-pulsa", pruebas=[ONE_JS_E94],
-         viejo=": a.length > 2 ? [a[0], a[2] === true, a[1] || '']", nuevo=": a.length > 2 ? [a[0], a.length > 2, a[1] || '']"),
+         viejo=": a.length > 3 ? [a[0], a[3] === true,", nuevo=": a.length > 3 ? [a[0], a.length > 3,"),
     dict(id="e94-one-celda-con-mayusculas", pruebas=[ONE_JS_E94],
          viejo=PLANO_E94, nuevo="    const plano = (s) => (s || '').replace(/\\\\s+/g, ' ').trim();\n"),
     dict(id="e94-one-celda-sin-juntar-espacios", pruebas=[ONE_JS_E94],
          viejo=PLANO_E94, nuevo="    const plano = (s) => (s || '').trim().toUpperCase();\n"),
     dict(id="e94-one-marca-en-su-lugar", pruebas=[ONE_JS_E94],
-         viejo="        : a.length > 2 ? [a[0], a[2] === true, a[1] || ''] : [a[0], a[1] === true, ''];\n",
-         nuevo="        : [a[0], a[1] === true, ''];\n"),
+         viejo="        : a.length > 3 ? [a[0], a[3] === true, a[1] || '', a[2] || ''] : [a[0], a[1] === true, '', ''];\n",
+         nuevo="        : [a[0], a[1] === true, '', ''];\n"),
     dict(id="e94-one-puerto-sin-la-celda", pruebas=[ONE_PY_E94],
-         viejo=CELDA_E94, nuevo="                              celda=\"\")\n"),
+         viejo=CELDA_E94, nuevo="                              celda=\"\", lugar=lugar)\n"),
     dict(id="e94-one-celda-sin-juntar-espacios-py", pruebas=[ONE_PY_E94],
-         viejo=CELDA_E94, nuevo="                              celda=valor.strip() if despues.strip() else \"\")\n"),
+         viejo=CELDA_E94, nuevo="                              celda=valor.strip() if despues.strip() else \"\", lugar=lugar)\n"),
     dict(id="e94-one-celda-sin-la-coma", pruebas=[ONE_PY_E94],
-         viejo=CELDA_E94, nuevo="                              celda=\" \".join(valor.split()))\n"),
+         viejo=CELDA_E94, nuevo="                              celda=\" \".join(valor.split()), lugar=lugar)\n"),
     dict(id="e94-one-clic-sin-la-celda", pruebas=[ONE_PY_E94],
          viejo="                info = page.evaluate(_JS_PICK_SUGGESTION, con + [True])\n",
          nuevo="                info = page.evaluate(_JS_PICK_SUGGESTION, [tok, True])\n"),
     dict(id="e94-one-lectura-sin-la-celda", pruebas=[ONE_PY_E94],
          viejo="_sugerencia_sin_pulsar(page, _JS_PICK_SUGGESTION, con)", nuevo="_sugerencia_sin_pulsar(page, _JS_PICK_SUGGESTION, [tok])"),
     dict(id="e94-one-con-sin-celda", pruebas=[ONE_PY_E94],
-         viejo="        con = [tok, celda] if celda else [tok]\n", nuevo="        con = [tok]\n"),
+         viejo="        con = [tok, celda, lugar] if lugar else [tok]\n", nuevo="        con = [tok]\n"),
+]
+
+# --- Encargo 95 (CICLO-one-puerto-y-contrato-hyundai.md): ONE, con la ciudad sola, elige con la regla de MAERSK (el
+# nombre antes de la primera coma, sin tildes, y de patio de contenedores «(CY)»), y en el origen, de CHILE (decisión de
+# Marcelo); si no queda una sola, corta con la regla en el motivo. Y log.txt dice la versión del programa al empezar.
+ONE_REGLA_E95 = SUG + "test_js_one_con_la_ciudad_sola_la_regla_de_maersk"
+ONE_CORTA_E95 = "test_clics.TestOne.test_el_puerto_sin_una_sola_con_la_regla_corta"
+ONE_LUGAR_E95 = "test_clics.TestOne.test_reservar_one_dice_el_lugar_de_cada_puerto"
+VERSION_E95 = ["test_modo.TestModoDeCadaCorrida.test_la_linea_de_cada_modo",
+               "test_web.TestPanelCorridas.test_dice_su_candado_al_empezar",
+               "test_consola.TestEjecutarReservas.test_dice_su_candado_al_empezar",
+               "test_consola.TestEjecutarLogin.test_dice_su_candado_al_empezar"]
+MUTACIONES += [
+    dict(id="e95-one-regla-sin-cy", pruebas=[ONE_REGLA_E95],
+         viejo="            if (mk(partes[0]) !== C || !/", nuevo="            if (mk(partes[0]) !== C || false && !/"),
+    dict(id="e95-one-regla-sin-chile", pruebas=[ONE_REGLA_E95],
+         viejo="            return (lugar !== 'origen' || pais", nuevo="            return (true || pais"),
+    dict(id="e95-one-regla-con-el-nombre-contenido", pruebas=[ONE_REGLA_E95],
+         viejo="            if (mk(partes[0]) !== C ||", nuevo="            if (!mk(partes[0]).startsWith(C) ||"),
+    dict(id="e95-one-regla-con-tildes", pruebas=[ONE_REGLA_E95],
+         viejo="const mk = (s) => (s || '').normalize('NFKD')", nuevo="const mk = (s) => (s || '').normalize('NFC')"),
+    dict(id="e95-one-regla-con-las-ocultas", pruebas=[ONE_REGLA_E95],
+         viejo="            if (!e.offsetParent || !(e.getAttribute", nuevo="            if (!(e.getAttribute"),
+    dict(id="e95-one-regla-sin-el-rol", pruebas=[ONE_REGLA_E95],
+         viejo="            if (!e.offsetParent || !(e.getAttribute && e.getAttribute('role') === 'option')\n",
+         nuevo="            if (!e.offsetParent\n"),
+    dict(id="e95-one-regla-con-las-frecuentes", pruebas=[ONE_REGLA_E95],
+         viejo="                || e.closest('[class*=Frequent i],[class*=pattern i]')) return false;\n",
+         nuevo="                ) return false;\n"),
+    dict(id="e95-one-regla-con-las-tarjetas", pruebas=[ONE_REGLA_E95],
+         viejo="                || /frequent|pattern|summaryinfo|infobox|card/i.test((e.className||'').toString())\n",
+         nuevo=""),
+    dict(id="e95-one-regla-elige-la-primera", pruebas=[ONE_REGLA_E95],
+         viejo="        cand = ganan.length === 1 ? ganan : [];\n", nuevo="        cand = ganan.slice(0, 1);\n"),
+    dict(id="e95-one-regla-entre-las-candidatas", pruebas=[ONE_REGLA_E95],
+         viejo="        const ganan = [...document.querySelectorAll('[role=option]')].filter(e => {\n",
+         nuevo="        const ganan = all.filter(e => {\n"),
+    dict(id="e95-one-regla-sin-cuantas", pruebas=[ONE_REGLA_E95],
+         viejo="' SIN-REGLA:' + ganan.length;", nuevo="' SIN-REGLA:0';"),
+    dict(id="e95-one-motivo-sin-la-regla", pruebas=[ONE_CORTA_E95],
+         viejo="if lugar else None\n            if ganan:\n", nuevo="if False else None\n            if ganan:\n"),
+    dict(id="e95-one-motivo-sin-chile", pruebas=[ONE_CORTA_E95, ONE_REGLA_E95],
+         viejo='    paises = [ONE_PAIS_DEL_ORIGEN] if lugar == "origen" else []\n',
+         nuevo='    paises = []\n'),
+    dict(id="e95-one-log-sin-la-regla", pruebas=[ONE_PY_E94],
+         viejo='        if lugar and info.endswith(" REGLA"):\n', nuevo='        if lugar and info.endswith(" ENTERA"):\n'),
+    dict(id="e95-one-log-sin-la-celda", pruebas=[ONE_PY_E94],
+         viejo='                     + (f"; ninguna dice la celda entera «{_destino_a_la_vista(celda)[:60]}»" if celda else ""))\n',
+         nuevo='                     + "")\n'),
+    dict(id="e95-one-origen-como-destino", pruebas=[ONE_LUGAR_E95],
+         viejo='evidencia=f"one_f{f}_origen", lugar="origen")', nuevo='evidencia=f"one_f{f}_origen", lugar="destino")'),
+    dict(id="e95-one-puerto-sin-lugar", pruebas=[ONE_PY_E94, ONE_CORTA_E95],
+         viejo='else "", lugar=lugar)\n', nuevo='else "")\n'),
+    dict(id="e95-version-siempre-sin-git", pruebas=VERSION_E95[:1],
+         viejo='{VERSION_GIT[\'commit\']}" if VERSION_GIT\n', nuevo='{VERSION_GIT[\'commit\']}" if None\n'),
+    dict(id="e95-version-sin-linea", pruebas=VERSION_E95,
+         viejo=('    reg.paso(f"Versión del programa: {VERSION_GIT[\'rama\']} · {VERSION_GIT[\'commit\']}" if VERSION_GIT\n'
+                '             else "Versión del programa: sin datos de git")\n'),
+         nuevo=""),
+]
+
+# --- Encargo 95, «Exigir contrato y avisar» (decisión de Marcelo tras la medición en el portal): el contrato de HYUNDAI
+# sale de un solo ayudante (_hmm_contrato), que usan los pasos 2 y 3 y el panel; /api/config dice quién no lo tiene,
+# /api/filas qué filas lo piden, y la página lo marca y lo dice a la vista antes de correr.
+CT_AYUDANTE_E95 = "test_ayudantes.TestContratosPorDefecto.test_el_contrato_de_hyundai_sale_de_un_solo_ayudante"
+CT_QUIEN_E95 = "test_ayudantes.TestContratosPorDefecto.test_el_panel_sabe_quien_no_tiene_contrato_de_hyundai"
+CT_CONFIG_E95 = "test_web.TestPanelRutas.test_config_dice_quien_no_tiene_contrato_de_hyundai"
+CT_FILAS_E95 = "test_web.TestPanelCorridas.test_filas_dicen_si_piden_contrato"
+CT_PAGINA_E95 = "test_envio.TestLecturaDelPanel.test_avisa_si_falta_el_contrato_de_hyundai"
+MUTACIONES += [
+    dict(id="e95-contrato-con-sus-espacios", pruebas=[CT_AYUDANTE_E95],
+         viejo='.get("contrato") or "").strip()\n    return propio', nuevo='.get("contrato") or "")\n    return propio'),
+    dict(id="e95-contrato-sin-el-por-defecto", pruebas=[CT_AYUDANTE_E95, CT_QUIEN_E95],
+         viejo='    return propio or _contrato_por_defecto("hyundai", avisar=avisar)\n', nuevo="    return propio\n"),
+    dict(id="e95-contrato-quien-al-reves", pruebas=[CT_QUIEN_E95],
+         viejo='            if not _hmm_contrato(datos.get("hyundai")', nuevo='            if _hmm_contrato(datos.get("hyundai")'),
+    dict(id="e95-contrato-config-sin-la-lista", pruebas=[CT_CONFIG_E95],
+         viejo='"sin_contrato": _operadores_sin_contrato(cfg),', nuevo='"sin_contrato": [],'),
+    dict(id="e95-pide-contrato-cualquier-naviera", pruebas=[CT_FILAS_E95],
+         viejo='pide_contrato=nav == "hyundai" and not', nuevo="pide_contrato=bool(nav) and not"),
+    dict(id="e95-pide-contrato-sin-nave-ni-ruta", pruebas=[CT_FILAS_E95],
+         viejo='pide_contrato=nav == "hyundai" and not _fila_sin_nave(nave) and not falta)',
+         nuevo='pide_contrato=nav == "hyundai")'),
+    dict(id="e95-js-contrato-sin-esconder", pruebas=[CT_PAGINA_E95],
+         viejo="s.hidden = !SIN_CONTRATO.has(operador);", nuevo="s.hidden = false;"),
+    dict(id="e95-js-contrato-sin-limpiar", pruebas=[CT_PAGINA_E95],
+         viejo='  else if (AVISO_CONTRATO && ($("#aviso-panel") || {}).textContent === "⚠ " + AVISO_CONTRATO) notaVisible("");\n',
+         nuevo=""),
+    dict(id="e95-js-contrato-limpia-otro-aviso", pruebas=[CT_PAGINA_E95],
+         viejo='($("#aviso-panel") || {}).textContent === "⚠ " + AVISO_CONTRATO) notaVisible', nuevo="true) notaVisible"),
+    dict(id="e95-js-contrato-cuenta-todas", pruebas=[CT_PAGINA_E95],
+         viejo="  const n = filas.filter(f => f.pide_contrato).length;\n", nuevo="  const n = filas.length;\n"),
+    dict(id="e95-js-contrato-sin-el-operador", pruebas=[CT_PAGINA_E95],
+         viejo='  if (!n || !SIN_CONTRATO.has(operador)) return "";\n', nuevo='  if (!n) return "";\n'),
+    dict(id="e95-js-armar-sin-el-aviso", pruebas=[CT_PAGINA_E95],
+         viejo="  pintarContrato(FILAS.filter(f => filas.includes(f.fila)));\n", nuevo=""),
+    dict(id="e95-js-sin-repintar-al-cambiar-de-operador", pruebas=[CT_PAGINA_E95],
+         viejo='$("#usuario").onchange = () => pintarContrato();\n', nuevo=""),
+    dict(id="e95-js-marca-siempre-a-la-vista", pruebas=[CT_PAGINA_E95],
+         viejo="data-contrato hidden>", nuevo="data-contrato>"),
+    dict(id="e95-css-sin-la-marca-del-contrato", pruebas=[CT_PAGINA_E95],
+         viejo=".sin-contrato { color: var(--text-muted); font-style: italic; }\n", nuevo=""),
+]
+
+# --- Encargo 95, lo que encontró la revisión de código: al armar, quién no tiene contrato se vuelve a leer; el aviso de
+# «Armar» queda anotado como el del contrato; y el panel pregunta sin avisar.
+MUTACIONES += [
+    dict(id="e95-contrato-el-panel-avisa", pruebas=[CT_QUIEN_E95],
+         viejo="None, avisar=False)]", nuevo="None)]"),
+    dict(id="e95-contrato-avisar-no-cuenta", pruebas=[CT_QUIEN_E95],
+         viejo='    if not avisar:\n        return ""\n', nuevo=""),
+    dict(id="e95-js-armar-sin-releer", pruebas=[CT_PAGINA_E95],
+         viejo="  await leerSinContrato();\n  pintarContrato(FILAS", nuevo="  pintarContrato(FILAS"),
+    dict(id="e95-js-leer-sin-guardar", pruebas=[CT_PAGINA_E95],
+         viejo='  try { SIN_CONTRATO = new Set((await api("/api/config")).sin_contrato || []); }',
+         nuevo='  try { await api("/api/config"); }'),
+    dict(id="e95-js-pinta-siempre-todas", pruebas=[CT_PAGINA_E95],
+         viejo="const texto = avisoDeContrato(filas || FILAS, operador);",
+         nuevo="const texto = avisoDeContrato(FILAS, operador);"),
+]
+
+# --- Encargo 95, la revisión de seguridad: con la celda que trae país, la opción también tiene que ser de ese país
+# (decisión de Marcelo), y el motivo dice la ciudad y el país saneados.
+MUTACIONES += [
+    dict(id="e95-one-sin-el-pais-de-la-celda", pruebas=[ONE_REGLA_E95],
+         viejo="(lugar !== 'origen' || pais === 'CHILE') && (!P || pais === P);",
+         nuevo="(lugar !== 'origen' || pais === 'CHILE');"),
+    dict(id="e95-one-pais-de-la-celda-vacio", pruebas=[ONE_REGLA_E95],
+         viejo="        const P = paisDe(celda);\n", nuevo="        const P = '';\n"),
+    dict(id="e95-one-motivo-sin-el-pais", pruebas=[ONE_CORTA_E95],
+         viejo="    if pais and pais not in paises:\n        paises.append(pais)\n", nuevo=""),
+    dict(id="e95-one-motivo-sin-sanear", pruebas=[ONE_CORTA_E95],
+         viejo="«{_destino_a_la_vista(ciudad)[:60]}» antes de su primera coma", nuevo="«{ciudad}» antes de su primera coma"),
+    dict(id="e95-one-pais-sin-coma", pruebas=[ONE_CORTA_E95],
+         viejo='if len(partes) > 1 else ""\n', nuevo='if len(partes) > 0 else ""\n'),
 ]

@@ -1306,6 +1306,72 @@ class TestLecturaDelPanel(soporte.CasoAQ):
         self.assertIn(".sin-nave, .sin-ruta, .otro-contenedor { color: var(--text-muted); font-style: italic; }",
                       m.CSS_INDEX)
 
+    def test_avisa_si_falta_el_contrato_de_hyundai(self):
+        # Sin un contrato de HYUNDAI, su portal no deja armar la reserva y la fila queda NO ENVIADA (medido el 03-11, en
+        # modo prueba): la página lo dice antes de correr (decisión de Marcelo, encargo 95). Marca cada fila de HYUNDAI
+        # que llega a pedirlo (f.pide_contrato, de /api/filas) en su celda «Contrato / Cot.», si el operador elegido no
+        # tiene uno (SIN_CONTRATO, de /api/config), y lo dice a la vista (avisoFijo), con dónde se escribe; al cambiar a
+        # un operador que lo tiene, la marca se esconde y el aviso se va, si sigue siendo el suyo. Corre en Node.
+        js = self.mod.JS_INDEX
+        funciones = "".join(re.search(rf"^(?:async )?function {n}\(.*?\n\}}\n", js, re.S | re.M).group(0)
+                            for n in ("leerSinContrato", "avisoDeContrato", "pintarContrato"))
+        guion = (
+            "let SIN_CONTRATO = new Set(['op_sin']), AVISO_CONTRATO = '';\n"
+            "let FILAS = [{pide_contrato: true}, {pide_contrato: false}, {pide_contrato: true}];\n"
+            "const marcas = [{hidden: true}, {hidden: true}], aviso = {textContent: ''}, sel = {value: 'op_sin'};\n"
+            "const $ = (q) => (q === '#usuario' ? sel : q === '#aviso-panel' ? aviso : null);\n"
+            "const document = {querySelectorAll: () => marcas};\n"
+            "const fijos = [];\n"
+            "function notaVisible(t) { aviso.textContent = t ? '⚠ ' + t : ''; }\n"
+            "function avisoFijo(t) { fijos.push(t); notaVisible(t); }\n"
+            "let RESPUESTA = {sin_contrato: ['op_otro']};\n"
+            "async function api(ruta) { if (RESPUESTA === 'error') throw new Error('sin respuesta'); return RESPUESTA; }\n"
+            + funciones +
+            "const foto = () => [marcas.map(m => m.hidden), aviso.textContent, fijos.length];\n"
+            "const r = [];\n"
+            "pintarContrato(); r.push(foto());\n"
+            "sel.value = 'op_con'; pintarContrato(); r.push(foto());\n"
+            "sel.value = 'op_sin'; pintarContrato(); aviso.textContent = '⚠ otro aviso';\n"
+            "sel.value = 'op_con'; pintarContrato(); r.push(foto());\n"
+            "FILAS = [{pide_contrato: false}]; sel.value = 'op_sin'; pintarContrato(); r.push(foto());\n"
+            "r.push(avisoDeContrato([{pide_contrato: true}], 'op_sin'), avisoDeContrato([{pide_contrato: true}], ''));\n"
+            # Al armar, con las filas elegidas: ese aviso queda anotado, y al cambiar a un operador con contrato se va.
+            "FILAS = [{pide_contrato: true}, {pide_contrato: true}, {pide_contrato: true}];\n"
+            "sel.value = 'op_sin'; pintarContrato(FILAS.slice(0, 1)); r.push(foto());\n"
+            "sel.value = 'op_con'; pintarContrato(); r.push(foto());\n"
+            # Quién no tiene contrato se vuelve a leer de /api/config; si no contesta, queda el de antes.
+            "(async () => {\n"
+            "  await leerSinContrato(); r.push([...SIN_CONTRATO]);\n"
+            "  RESPUESTA = 'error'; await leerSinContrato(); r.push([...SIN_CONTRATO]);\n"
+            "  RESPUESTA = {}; await leerSinContrato(); r.push([...SIN_CONTRATO]);\n"
+            "  console.log(JSON.stringify(r));\n"
+            "})();\n")
+        r = correr_node(self, guion)
+        texto = ("2 reserva(s) de HYUNDAI quedan NO ENVIADA: el operador «op_sin» no tiene un contrato de HYUNDAI, y sin "
+                 "él el portal no deja armarlas. Escríbelo en Credenciales (la llave, arriba a la derecha) → HYUNDAI → "
+                 "columna Contrato.")
+        self.assertEqual(r[0], [[False, False], "⚠ " + texto, 1])
+        self.assertEqual(r[1], [[True, True], "", 1])
+        self.assertEqual(r[2], [[True, True], "⚠ otro aviso", 2])
+        self.assertEqual(r[3], [[False, False], "⚠ otro aviso", 2])
+        uno = texto.replace("2 reserva(s)", "1 reserva(s)")
+        self.assertEqual(r[4:6], [uno, ""])
+        self.assertEqual(r[6:8], [[[False, False], "⚠ " + uno, 3], [[True, True], "", 3]])
+        self.assertEqual(r[8:], [["op_otro"], ["op_otro"], []])
+        self.assertTrue(texto.endswith(self.mod.HMM_DONDE_VA_EL_CONTRATO.split("Credenciales ", 1)[1] + "."))
+        # La marca va en la celda «Contrato / Cot.», escondida hasta que pintarContrato la muestre; se pinta al cargar
+        # la hoja, al cambiar de operador y al guardar las credenciales, y al armar lo dice otra vez, con las elegidas.
+        for trozo in ("f.pide_contrato ? \"<span class='sin-contrato' data-contrato hidden>sin contrato de HYUNDAI"
+                      "</span> \" : \"\"}${",
+                      "  pintarContrato();\n  marcarTabla();\n}\n",
+                      '$("#usuario").onchange = () => pintarContrato();',
+                      "SIN_CONTRATO = new Set(d.sin_contrato || []);",
+                      "    await leerSinContrato();\n    pintarContrato();\n",
+                      "  await leerSinContrato();\n  pintarContrato(FILAS.filter(f => filas.includes(f.fila)));\n"):
+            with self.subTest(trozo=trozo[:40]):
+                self.assertEqual(js.count(trozo), 1)
+        self.assertIn(".sin-contrato { color: var(--text-muted); font-style: italic; }", self.mod.CSS_INDEX)
+
     def test_dice_si_va_con_destino_final(self):
         # La fila de MSC o de CMA-CGM que va a un puerto de descarga y después a otro destino final dice, antes de
         # correr, en la celda del destino, el puerto y «con destino final: …», con los dos textos que trae /api/filas
